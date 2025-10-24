@@ -12,3 +12,16 @@ Inside of the behavior tree exists a central "Thinking node" which passes the co
 The special thing about the BT generation step is that it can gather additional context from the cameras, GPS position and satellite map.
 
 Another special node inside the tree is a LLM querying node to update blackboard values, like to populate lists of waypoints, navigation goals, etc. for the BT subtrees to be used in versatile ways. 
+
+### Possible scenarios where this approach can outperform current methods of behavior tree generation and hence show higher levels of deliberation for the robot:
+  - Give commands like
+    - "Drive around the lake and take photos every 10m"
+      - unclear without context which lake
+    - "Explore this field and take pictures of all solitary standing trees."
+      - unclear which field, how to explore, finding solitary trees
+    - "Cover the whole field and search for a lost key"
+      - coverage path planning, search mission
+  - Situation specific recoveries like a stuck robot
+    - can't proceed to drive with current plan, trying to find an alternative path with visual context of sorrounding and satellite map
+  - Can give always suggestions or even create additions to the skill catalogue of composable bt actions
+   
