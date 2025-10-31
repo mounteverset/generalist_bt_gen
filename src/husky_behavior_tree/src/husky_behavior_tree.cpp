@@ -1,4 +1,5 @@
 #include "husky_behavior_tree/husky_behavior_tree.hpp"
+#include "husky_behavior_tree/bt_conversions.hpp"
 #include "husky_behavior_tree/drive_to.hpp"
 #include "husky_behavior_tree/log_temp.hpp"
 
