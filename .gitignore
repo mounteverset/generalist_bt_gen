@@ -1,1 +1,12 @@
 AGENTS.md
+.vscode/**
+log/** */
+log/
+build/
+install/
+*.log
+*.fbl
+*.btlog
+*.o
+*.obj
+*.so

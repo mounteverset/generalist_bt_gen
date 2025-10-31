@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4">
+  <!-- 
+    Husky Behavior Tree
+    This tree chains two actions in sequence:
+    1. DriveTo - Navigate to a target pose
+    2. LogTemp - Log temperature reading to file
+  -->
+  
+  <BehaviorTree ID="HuskyMainTree">
+    <Sequence name="MainSequence">
+      
+      <!-- Set target pose on blackboard -->
+      <Script code="target_pose:= '10.0;5.0;0.0;0.0;0.0;0.707;0.707'" />
+      
+      <!-- Drive to target location -->
+      <DriveTo 
+        name="DriveToTarget"
+        goal_pose="{target_pose}"
+      />
+      
+      <!-- Log temperature after reaching target -->
+      <LogTemp 
+        name="LogTemperature"
+      />
+      
+    </Sequence>
+  </BehaviorTree>
+  
+</root>

@@ -25,3 +25,5 @@ Another special node inside the tree is a LLM querying node to update blackboard
     - can't proceed to drive with current plan, trying to find an alternative path with visual context of sorrounding and satellite map
   - Can give always suggestions or even create additions to the skill catalogue of composable bt actions
    
+# How to start the tree
+`ros2 run husky_behavior_tree bt_main --ros-args -p tree_xml_file:=$(ros2 pkg prefix husky_behavior_tree)/share/husky_behavior_tree/config/husky_bt.xml`
