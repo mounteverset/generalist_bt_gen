@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<root BTCPP_format="4">
+  <!--
+    Husky Waypoint Tour Behavior Tree
+    Visits each waypoint sequentially, driving to the pose and logging
+    the temperature reading at every stop using available actions.
+  -->
+
+  <BehaviorTree ID="HuskyWaypointTour">
+    <Sequence name="WaypointTourSequence">
+
+      <!-- Visit waypoint 1 -->
+      <Sequence name="VisitWaypoint1">
+        <Script code="target_pose:= 'map;0.0;0.0;0.0;0.0;0.0;0.0;1.0'" />
+        <DriveTo
+          name="DriveToWaypoint1"
+          goal_pose="{target_pose}"
+        />
+        <LogTemp
+          name="LogTemperatureWaypoint1"
+        />
+      </Sequence>
+
+      <!-- Visit waypoint 2 -->
+      <Sequence name="VisitWaypoint2">
+        <Script code="target_pose:= 'map;5.0;2.0;0.0;0.0;0.0;0.0;1.0'" />
+        <DriveTo
+          name="DriveToWaypoint2"
+          goal_pose="{target_pose}"
+        />
+        <LogTemp
+          name="LogTemperatureWaypoint2"
+        />
+      </Sequence>
+
+      <!-- Visit waypoint 3 -->
+      <Sequence name="VisitWaypoint3">
+        <Script code="target_pose:= 'map;10.0;-1.0;0.0;0.0;0.0;0.0;1.0'" />
+        <DriveTo
+          name="DriveToWaypoint3"
+          goal_pose="{target_pose}"
+        />
+        <LogTemp
+          name="LogTemperatureWaypoint3"
+        />
+      </Sequence>
+
+    </Sequence>
+  </BehaviorTree>
+
+</root>
