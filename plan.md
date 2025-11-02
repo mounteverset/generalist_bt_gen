@@ -21,50 +21,50 @@
     - ~~Inputs: `BTExecutor` class interface.~~
     - ~~Outputs: Compilable `bt_executor_node.cpp`.~~
     - ~~Tests: `colcon build --packages-select bt_executor`.~~
-   - 1.6 Task: Declare BehaviorTree loading API in `include/bt_executor/bt_loader.hpp`.
-     - Inputs: Need to load XML trees and register plugins.
-     - Outputs: Header with functions for loading/parsing BT XML.
-     - Tests: `grep -R "class BTLoader" src/bt_executor/include`.
-   - 1.7 Task: Implement tree loading logic in `src/bt_loader.cpp` using `BehaviorTreeFactory`.
-     - Inputs: Loader interface, config paths from YAML.
-     - Outputs: Functionality that returns `BT::Tree` objects with registered actions.
-     - Tests: `colcon test --packages-select bt_executor --ctest-args -R bt_loader`.
-   - 1.8 Task: Declare failure handler interface in `include/bt_executor/bt_failure_handler.hpp`.
-     - Inputs: Failure handling requirements (reason capture, retries).
-     - Outputs: Header exposing methods to summarize failure state.
-     - Tests: `grep -R "class BTFailureHandler" src/bt_executor/include`.
-   - 1.9 Task: Implement failure handling logic in `src/bt_failure_handler.cpp` (collect context, trigger LLM loop).
-     - Inputs: Handler header, context service contract.
-     - Outputs: Functions that build failure reports and drive LLM query request.
-     - Tests: `colcon test --packages-select bt_executor --ctest-args -R bt_failure_handler`.
-   - 1.10 Task: Declare monitoring interface in `include/bt_executor/bt_monitor.hpp`.
-     - Inputs: Need to publish status and metrics.
-     - Outputs: Header for monitoring publisher utilities.
-     - Tests: `grep -R "class BTMonitor" src/bt_executor/include`.
-   - 1.11 Task: Implement monitoring publishers in `src/bt_monitor.cpp` (status topics, diagnostics).
-     - Inputs: Monitor header, ROS topic names.
-     - Outputs: Node methods that emit BT status messages.
-     - Tests: `colcon test --packages-select bt_executor --ctest-args -R bt_monitor`.
-   - 1.12 Task: Add runtime configuration at `config/bt_config.yaml` (tree path, retry limits, context services).
-     - Inputs: Parameters enumerated in architecture.
-     - Outputs: YAML file under `src/bt_executor/config/`.
-     - Tests: `python3 - <<'PY'\nimport yaml\nyaml.safe_load(open('src/bt_executor/config/bt_config.yaml'))\nPY`.
-   - 1.13 Task: Author base Behavior Tree XML in `src/bt_executor/trees/base_tree.xml`.
-     - Inputs: Initial behaviors required (existing actions and LLM nodes).
-     - Outputs: Valid BT XML file referencing registered plugins.
-     - Tests: `xmllint --noout src/bt_executor/trees/base_tree.xml`.
-   - 1.14 Task: Provide launch file `launch/bt_executor.launch.py` to start executor with parameters.
-     - Inputs: Node name, config file path.
-     - Outputs: ROS 2 launch script under `src/bt_executor/launch/`.
-     - Tests: `ros2 launch bt_executor bt_executor.launch.py --show-args`.
-   - 1.15 Task: Implement gtests validating loader, monitor, and failure handler components.
-     - Inputs: Test cases covering configuration parsing and failure workflows.
-     - Outputs: Test sources under `src/bt_executor/test/`.
-     - Tests: `colcon test --packages-select bt_executor`.
-   - 1.16 Task: Add system test that launches executor against mock services and checks `ros2 node list` for `bt_executor_node`.
-     - Inputs: Launch test description.
-     - Outputs: Integration test under `src/bt_executor/test/launch/`.
-     - Tests: `ros2 test src/bt_executor/test/launch/test_bt_executor_launch.py`.
+  - ~~1.6 Task: Declare BehaviorTree loading API in `include/bt_executor/bt_loader.hpp`.~~
+    - ~~Inputs: Need to load XML trees and register plugins.~~
+    - ~~Outputs: Header with functions for loading/parsing BT XML.~~
+    - ~~Tests: `grep -R "class BTLoader" src/bt_executor/include`.~~
+  - ~~1.7 Task: Implement tree loading logic in `src/bt_loader.cpp` using `BehaviorTreeFactory`.~~
+    - ~~Inputs: Loader interface, config paths from YAML.~~
+    - ~~Outputs: Functionality that returns `BT::Tree` objects with registered actions.~~
+    - ~~Tests: `colcon test --packages-select bt_executor --ctest-args -R bt_loader`.~~
+  - ~~1.8 Task: Declare failure handler interface in `include/bt_executor/bt_failure_handler.hpp`.~~
+    - ~~Inputs: Failure handling requirements (reason capture, retries).~~
+    - ~~Outputs: Header exposing methods to summarize failure state.~~
+    - ~~Tests: `grep -R "class BTFailureHandler" src/bt_executor/include`.~~
+  - ~~1.9 Task: Implement failure handling logic in `src/bt_failure_handler.cpp` (collect context, trigger LLM loop).~~
+    - ~~Inputs: Handler header, context service contract.~~
+    - ~~Outputs: Functions that build failure reports and drive LLM query request.~~
+    - ~~Tests: `colcon test --packages-select bt_executor --ctest-args -R bt_failure_handler`.~~
+  - ~~1.10 Task: Declare monitoring interface in `include/bt_executor/bt_monitor.hpp`.~~
+    - ~~Inputs: Need to publish status and metrics.~~
+    - ~~Outputs: Header for monitoring publisher utilities.~~
+    - ~~Tests: `grep -R "class BTMonitor" src/bt_executor/include`.~~
+  - ~~1.11 Task: Implement monitoring publishers in `src/bt_monitor.cpp` (status topics, diagnostics).~~
+    - ~~Inputs: Monitor header, ROS topic names.~~
+    - ~~Outputs: Node methods that emit BT status messages.~~
+    - ~~Tests: `colcon test --packages-select bt_executor --ctest-args -R bt_monitor`.~~
+  - ~~1.12 Task: Add runtime configuration at `config/bt_config.yaml` (tree path, retry limits, context services).~~
+    - ~~Inputs: Parameters enumerated in architecture.~~
+    - ~~Outputs: YAML file under `src/bt_executor/config/`.~~
+    - ~~Tests: `python3 - <<'PY'\nimport yaml\nyaml.safe_load(open('src/bt_executor/config/bt_config.yaml'))\nPY`.~~
+  - ~~1.13 Task: Author base Behavior Tree XML in `src/bt_executor/trees/base_tree.xml`.~~
+    - ~~Inputs: Initial behaviors required (existing actions and LLM nodes).~~
+    - ~~Outputs: Valid BT XML file referencing registered plugins.~~
+    - ~~Tests: `xmllint --noout src/bt_executor/trees/base_tree.xml`.~~
+  - ~~1.14 Task: Provide launch file `launch/bt_executor.launch.py` to start executor with parameters.~~
+    - ~~Inputs: Node name, config file path.~~
+    - ~~Outputs: ROS 2 launch script under `src/bt_executor/launch/`.~~
+    - ~~Tests: `ros2 launch bt_executor bt_executor.launch.py --show-args`.~~
+  - ~~1.15 Task: Implement gtests validating loader, monitor, and failure handler components.~~
+    - ~~Inputs: Test cases covering configuration parsing and failure workflows.~~
+    - ~~Outputs: Test sources under `src/bt_executor/test/`.~~
+    - ~~Tests: `colcon test --packages-select bt_executor`.~~
+  - ~~1.16 Task: Add system test that launches executor against mock services and checks `ros2 node list` for `bt_executor_node`.~~
+     - ~~Inputs: Launch test description.~~
+     - ~~Outputs: Integration test under `src/bt_executor/test/launch/`.~~
+     - ~~Tests: `ros2 test src/bt_executor/test/launch/test_bt_executor_launch.py`.~~
 
 2. **bt_actions**
    - 2.1 Task: Create `bt_actions` ROS 2 package skeleton with `ament_cmake`.

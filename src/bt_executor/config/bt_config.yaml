@@ -1,0 +1,18 @@
+tree:
+  xml_path: package://bt_executor/trees/base_tree.xml
+  tick_period_ms: 100
+  auto_start: true
+
+plugins:
+  libraries:
+    - libbt_actions.so
+    - libbt_nodes_llm.so
+
+recovery:
+  max_retries: 3
+  retry_delay_ms: 2000
+
+services:
+  context_snapshot: /context_gatherer/snapshot
+  llm_query: /llm_interface/llm_query
+  update_tree: /bt_updater/update_tree
