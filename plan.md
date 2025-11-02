@@ -1,26 +1,26 @@
 # Implementation Plan
 
 1. **bt_executor**
-   - 1.1 Task: Create `bt_executor` ROS 2 package skeleton with `ament_cmake`.
-     - Inputs: Package name `bt_executor`, node name requirements from architecture.
-     - Outputs: `src/bt_executor/` directory containing default `CMakeLists.txt` and `package.xml`.
-     - Tests: `colcon list | grep bt_executor`.
-   - 1.2 Task: Declare dependencies (`rclcpp`, `behaviortree_cpp`, `yaml-cpp`, `nlohmann_json`, `std_srvs`) in `src/bt_executor/package.xml`.
-     - Inputs: Dependency list from architecture.
-     - Outputs: Updated `package.xml` with `<depend>` entries.
-     - Tests: `colcon build --packages-select bt_executor --event-handlers console_direct+`.
-   - 1.3 Task: Configure `src/bt_executor/CMakeLists.txt` to build `bt_executor` library and node executable.
-     - Inputs: Source file list and dependency libraries.
-     - Outputs: Populated CMake target definitions linking required libraries.
-     - Tests: `colcon build --packages-select bt_executor`.
-   - 1.4 Task: Define core executor interface in `include/bt_executor/bt_executor.hpp`.
-     - Inputs: Responsibilities listed in architecture.
-     - Outputs: Header declaring `BTExecutor` class with lifecycle, tick loop, service clients.
-     - Tests: `grep -R "class BTExecutor" src/bt_executor/include`.
-   - 1.5 Task: Implement node entry point in `src/bt_executor_node.cpp` (initialize rclcpp, instantiate executor, spin).
-     - Inputs: `BTExecutor` class interface.
-     - Outputs: Compilable `bt_executor_node.cpp`.
-     - Tests: `colcon build --packages-select bt_executor`.
+  - ~~1.1 Task: Create `bt_executor` ROS 2 package skeleton with `ament_cmake`.~~
+    - ~~Inputs: Package name `bt_executor`, node name requirements from architecture.~~
+    - ~~Outputs: `src/bt_executor/` directory containing default `CMakeLists.txt` and `package.xml`.~~
+    - ~~Tests: `colcon list | grep bt_executor`.~~
+  - ~~1.2 Task: Declare dependencies (`rclcpp`, `behaviortree_cpp`, `yaml-cpp`, `nlohmann_json`, `std_srvs`) in `src/bt_executor/package.xml`.~~
+    - ~~Inputs: Dependency list from architecture.~~
+    - ~~Outputs: Updated `package.xml` with `<depend>` entries.~~
+    - ~~Tests: `colcon build --packages-select bt_executor --event-handlers console_direct+`.~~
+  - ~~1.3 Task: Configure `src/bt_executor/CMakeLists.txt` to build `bt_executor` library and node executable.~~
+    - ~~Inputs: Source file list and dependency libraries.~~
+    - ~~Outputs: Populated CMake target definitions linking required libraries.~~
+    - ~~Tests: `colcon build --packages-select bt_executor`.~~
+  - ~~1.4 Task: Define core executor interface in `include/bt_executor/bt_executor.hpp`.~~
+    - ~~Inputs: Responsibilities listed in architecture.~~
+    - ~~Outputs: Header declaring `BTExecutor` class with lifecycle, tick loop, service clients.~~
+    - ~~Tests: `grep -R "class BTExecutor" src/bt_executor/include`.~~
+  - ~~1.5 Task: Implement node entry point in `src/bt_executor_node.cpp` (initialize rclcpp, instantiate executor, spin).~~
+    - ~~Inputs: `BTExecutor` class interface.~~
+    - ~~Outputs: Compilable `bt_executor_node.cpp`.~~
+    - ~~Tests: `colcon build --packages-select bt_executor`.~~
    - 1.6 Task: Declare BehaviorTree loading API in `include/bt_executor/bt_loader.hpp`.
      - Inputs: Need to load XML trees and register plugins.
      - Outputs: Header with functions for loading/parsing BT XML.
