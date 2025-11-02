@@ -21,16 +21,9 @@ namespace husky_behavior_tree
 class LogTempAction : public BT::SyncActionNode
 {
 public:
-    LogTempAction(const std::string& name,
-                  const BT::NodeConfig& config,
-                  const rclcpp::Node::SharedPtr& node)
-    : BT::SyncActionNode(name, config), node_(node)
+    LogTempAction(const std::string& name, const BT::NodeConfig& config)
+    : BT::SyncActionNode(name, config)
     {
-        if (!node_)
-        {
-            throw std::runtime_error("LogTempAction constructor received null rclcpp::Node");
-        }
-        client_ = node_->create_client<std_srvs::srv::Trigger>("/read_temp");
     }
 
     static BT::PortsList providedPorts()
@@ -42,6 +35,11 @@ public:
     BT::NodeStatus tick() override
     {
         using namespace std::chrono_literals;
+
+        if (!ensureNodeAndClient())
+        {
+            return BT::NodeStatus::FAILURE;
+        }
 
         // Ensure the service is available
         if (!client_->wait_for_service(1s))
@@ -93,19 +91,45 @@ public:
     }
 
 private:
+    bool ensureNodeAndClient()
+    {
+        if (!node_)
+        {
+            auto bb = config().blackboard;
+            if (!bb)
+            {
+                RCLCPP_ERROR(rclcpp::get_logger("LogTempAction"), "Blackboard unavailable for node '%s'", name().c_str());
+                return false;
+            }
+            try
+            {
+                node_ = bb->get<rclcpp::Node::SharedPtr>("node");
+            }
+            catch (const BT::RuntimeError&)
+            {
+                RCLCPP_ERROR(rclcpp::get_logger("LogTempAction"),
+                             "Failed to access blackboard entry 'node' for '%s'", name().c_str());
+                return false;
+            }
+        }
+
+        if (!node_)
+        {
+            auto node_logger = rclcpp::get_logger("LogTempAction");
+            RCLCPP_ERROR(node_logger, "Null rclcpp::Node provided on blackboard for '%s'", name().c_str());
+            return false;
+        }
+
+        if (!client_)
+        {
+            client_ = node_->create_client<std_srvs::srv::Trigger>("/read_temp");
+        }
+
+        return true;
+    }
+
     rclcpp::Node::SharedPtr node_;
     rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr client_;
 };
-
-// Helper to register the node type with a factory, passing the ROS2 node
-inline void registerLogTempNode(BT::BehaviorTreeFactory& factory,
-                                const rclcpp::Node::SharedPtr& node)
-{
-    BT::NodeBuilder builder = [node](const std::string& name, const BT::NodeConfig& config)
-    {
-        return std::make_unique<husky_behavior_tree::LogTempAction>(name, config, node);
-    };
-    factory.registerBuilder<husky_behavior_tree::LogTempAction>("LogTemp", builder);
-}
 
 }  // namespace husky_behavior_tree

@@ -20,7 +20,7 @@ namespace husky_behavior_tree
 
 // Basic BT.CPP v4 async action that sends a NavigateToPose goal using a ROS 2 action client.
 // - Input Port: "goal_pose" (geometry_msgs::msg::PoseStamped)
-// - The action name (topic) is read from a ROS 2 parameter "action_name" during construction.
+// - The rclcpp::Node is retrieved from the blackboard entry "node".
 // - onStart() sends the goal; onRunning() checks for the result; onHalted() cancels if needed.
 class DriveTo : public BT::StatefulActionNode
 {
@@ -36,53 +36,9 @@ public:
         };
     }
 
-    // Recommended: pass an rclcpp::Node::SharedPtr explicitly when registering this node.
-    // Example:
-    //   factory.registerNodeType<husky_behavior_tree::DriveTo>("DriveTo", node);
-    DriveTo(const std::string& name,
-                    const BT::NodeConfig& config,
-                    const rclcpp::Node::SharedPtr& node)
-        : BT::StatefulActionNode(name, config),
-            node_(node)
+    DriveTo(const std::string& name, const BT::NodeConfig& config)
+        : BT::StatefulActionNode(name, config)
     {
-        if (!node_) {
-            throw std::runtime_error("DriveTo requires a valid rclcpp::Node");
-        }
-
-        // Get action name from ROS 2 parameter during construction
-        // Default aligns with Nav2's NavigateToPose action server name.
-        if (!node_->has_parameter("action_name")) {
-            node_->declare_parameter<std::string>("action_name", "navigate_to_pose");
-        }
-        node_->get_parameter("action_name", action_name_);
-
-        client_ = rclcpp_action::create_client<NavigateToPose>(node_, action_name_);
-
-        // Pre-configure callbacks
-        send_goal_options_.goal_response_callback =
-            [this](typename GoalHandle::SharedPtr gh) {
-                goal_handle_ = gh;
-                if (!gh) {
-                    RCLCPP_ERROR(node_->get_logger(), "[DriveTo] Goal was rejected by server '%s'", action_name_.c_str());
-                    goal_rejected_ = true;
-                } else {
-                    RCLCPP_DEBUG(node_->get_logger(), "[DriveTo] Goal accepted by server '%s'", action_name_.c_str());
-                }
-            };
-
-        send_goal_options_.feedback_callback =
-            [this](GoalHandle::SharedPtr /*handle*/,
-                         const std::shared_ptr<const NavigateToPose::Feedback> /*feedback*/) {
-                // Feedback not used here, but could be logged or published.
-            };
-
-        send_goal_options_.result_callback =
-            [this](const WrappedResult& result) {
-                last_result_ = result;
-                result_received_ = true;
-                RCLCPP_DEBUG(node_->get_logger(), "[DriveTo] Result received from '%s' (code=%d)",
-                                         action_name_.c_str(), static_cast<int>(result.code));
-            };
     }
 
     BT::NodeStatus onStart() override
@@ -92,6 +48,10 @@ public:
         goal_rejected_ = false;
         last_result_.reset();
         goal_handle_.reset();
+
+        if (!ensureNodeAndClient()) {
+            return BT::NodeStatus::FAILURE;
+        }
 
         // Read goal from port
         geometry_msgs::msg::PoseStamped goal_pose;
@@ -103,7 +63,7 @@ public:
         // Non-blocking check for server availability; keep trying while RUNNING
         if (!client_->wait_for_action_server(std::chrono::seconds(0))) {
             RCLCPP_WARN_THROTTLE(node_->get_logger(), *node_->get_clock(), 2000,
-                                                     "[DriveTo] Action server '%s' not available yet", action_name_.c_str());
+                                 "[DriveTo] Action server '%s' not available yet", action_name_.c_str());
             // Try again on next tick
             return BT::NodeStatus::RUNNING;
         }
@@ -124,6 +84,10 @@ public:
 
     BT::NodeStatus onRunning() override
     {
+        if (!node_) {
+            return BT::NodeStatus::FAILURE;
+        }
+
         // If the goal was immediately rejected
         if (goal_rejected_) {
             return BT::NodeStatus::FAILURE;
@@ -153,9 +117,13 @@ public:
         if (goal_handle_) {
             try {
                 (void)client_->async_cancel_goal(goal_handle_);
-                RCLCPP_DEBUG(node_->get_logger(), "[DriveTo] Goal canceled on halt");
+                if (node_) {
+                    RCLCPP_DEBUG(node_->get_logger(), "[DriveTo] Goal canceled on halt");
+                }
             } catch (const std::exception& e) {
-                RCLCPP_WARN(node_->get_logger(), "[DriveTo] async_cancel_goal exception: %s", e.what());
+                if (node_) {
+                    RCLCPP_WARN(node_->get_logger(), "[DriveTo] async_cancel_goal exception: %s", e.what());
+                }
             }
         }
 
@@ -167,8 +135,71 @@ public:
     }
 
 private:
+    bool ensureNodeAndClient()
+    {
+        if (!node_) {
+            auto bb = config().blackboard;
+            if (!bb) {
+                RCLCPP_ERROR(rclcpp::get_logger("DriveTo"), "Blackboard unavailable for node '%s'", name().c_str());
+                return false;
+            }
+            try {
+                node_ = bb->get<rclcpp::Node::SharedPtr>("node");
+            } catch (const BT::RuntimeError& e) {
+                (void)e;
+                RCLCPP_ERROR(rclcpp::get_logger("DriveTo"),
+                             "Failed to access blackboard entry 'node' for '%s'", name().c_str());
+                return false;
+            }
+            if (!node_) {
+                RCLCPP_ERROR(rclcpp::get_logger("DriveTo"),
+                             "Null rclcpp::Node provided on blackboard for '%s'", name().c_str());
+                return false;
+            }
+
+            if (!node_->has_parameter("action_name")) {
+                node_->declare_parameter<std::string>("action_name", action_name_);
+            }
+            node_->get_parameter("action_name", action_name_);
+        }
+
+        if (!client_) {
+            client_ = rclcpp_action::create_client<NavigateToPose>(node_, action_name_);
+
+            // Pre-configure callbacks
+            send_goal_options_.goal_response_callback =
+                [this](typename GoalHandle::SharedPtr gh) {
+                    goal_handle_ = gh;
+                    if (!gh) {
+                        RCLCPP_ERROR(node_->get_logger(), "[DriveTo] Goal was rejected by server '%s'", action_name_.c_str());
+                        goal_rejected_ = true;
+                    } else {
+                        RCLCPP_DEBUG(node_->get_logger(), "[DriveTo] Goal accepted by server '%s'", action_name_.c_str());
+                    }
+                };
+
+            send_goal_options_.feedback_callback =
+                [this](GoalHandle::SharedPtr /*handle*/,
+                       const std::shared_ptr<const NavigateToPose::Feedback> /*feedback*/) {
+                    // Feedback not used here, but could be logged or published.
+                };
+
+            send_goal_options_.result_callback =
+                [this](const WrappedResult& result) {
+                    last_result_ = result;
+                    result_received_ = true;
+                    if (node_) {
+                        RCLCPP_DEBUG(node_->get_logger(), "[DriveTo] Result received from '%s' (code=%d)",
+                                     action_name_.c_str(), static_cast<int>(result.code));
+                    }
+                };
+        }
+
+        return true;
+    }
+
     rclcpp::Node::SharedPtr node_;
-    std::string action_name_;
+    std::string action_name_{"navigate_to_pose"};
     rclcpp_action::Client<NavigateToPose>::SharedPtr client_;
     typename GoalHandle::SharedPtr goal_handle_;
 
@@ -180,9 +211,3 @@ private:
 };
 
 }  // namespace husky_behavior_tree
-
-// Helper to register with BT factory when you have a node available.
-inline void RegisterDriveTo(BT::BehaviorTreeFactory& factory, const rclcpp::Node::SharedPtr& node)
-{
-    factory.registerNodeType<husky_behavior_tree::DriveTo>("DriveTo", node);
-}

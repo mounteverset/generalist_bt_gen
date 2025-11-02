@@ -1,7 +1,6 @@
 #include "husky_behavior_tree/husky_behavior_tree.hpp"
 #include "husky_behavior_tree/bt_conversions.hpp"
-#include "husky_behavior_tree/drive_to.hpp"
-#include "husky_behavior_tree/log_temp.hpp"
+#include "husky_behavior_tree/register_nodes.hpp"
 
 #include <fstream>
 #include <filesystem>
@@ -202,25 +201,7 @@ BT::Blackboard::Ptr HuskyBehaviorTree::getBlackboard()
 void HuskyBehaviorTree::registerNodes()
 {
   RCLCPP_INFO(node_->get_logger(), "Registering custom behavior tree nodes");
-  
-  // Register DriveTo action node
-  try {
-    RegisterDriveTo(factory_, node_);
-    RCLCPP_INFO(node_->get_logger(), "Registered node: DriveTo");
-  } catch (const std::exception& e) {
-    RCLCPP_ERROR(node_->get_logger(), "Failed to register DriveTo: %s", e.what());
-    throw;
-  }
-  
-  // Register LogTemp action node
-  try {
-    registerLogTempNode(factory_, node_);
-    RCLCPP_INFO(node_->get_logger(), "Registered node: LogTemp");
-  } catch (const std::exception& e) {
-    RCLCPP_ERROR(node_->get_logger(), "Failed to register LogTemp: %s", e.what());
-    throw;
-  }
-  
+  register_behavior_tree_nodes(factory_);
   RCLCPP_INFO(node_->get_logger(), "All custom nodes registered successfully");
 }
 
@@ -236,6 +217,11 @@ bool HuskyBehaviorTree::createTree(const std::string& tree_xml_path)
     // Load and create the tree from XML file
     tree_ = factory_.createTreeFromFile(tree_xml_path);
     RCLCPP_INFO(node_->get_logger(), "Behavior tree created from: %s", tree_xml_path.c_str());
+
+    // Provide the ROS node on the blackboard for plugin nodes
+    if (tree_.rootBlackboard()) {
+      tree_.rootBlackboard()->set("node", node_);
+    }
     
     // Log tree structure for debugging
     RCLCPP_DEBUG(node_->get_logger(), "Tree structure:");

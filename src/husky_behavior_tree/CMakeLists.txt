@@ -22,6 +22,7 @@ include_directories(
 # Build the behavior tree library
 add_library(${PROJECT_NAME}_lib
   src/husky_behavior_tree.cpp
+  src/register_nodes.cpp
 )
 
 ament_target_dependencies(${PROJECT_NAME}_lib
@@ -47,6 +48,21 @@ ament_target_dependencies(bt_main
   behaviortree_cpp
 )
 
+# Build BehaviorTree plugin library
+add_library(${PROJECT_NAME}_bt_plugin SHARED
+  src/register_nodes.cpp
+  src/husky_bt_plugin.cpp
+)
+
+ament_target_dependencies(${PROJECT_NAME}_bt_plugin
+  rclcpp
+  rclcpp_action
+  behaviortree_cpp
+  geometry_msgs
+  nav2_msgs
+  std_srvs
+)
+
 # Install targets
 install(TARGETS
   ${PROJECT_NAME}_lib
@@ -58,6 +74,13 @@ install(TARGETS
 install(TARGETS
   bt_main
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(TARGETS
+  ${PROJECT_NAME}_bt_plugin
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
 # Install include files

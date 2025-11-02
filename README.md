@@ -27,3 +27,9 @@ Another special node inside the tree is a LLM querying node to update blackboard
    
 # How to start the tree
 `ros2 run husky_behavior_tree bt_main --ros-args -p tree_xml_file:=$(ros2 pkg prefix husky_behavior_tree)/share/husky_behavior_tree/config/husky_bt.xml`
+
+## Using Husky behaviors as a BehaviorTree.CPP plugin
+
+- Build and source the workspace (`colcon build --packages-select husky_behavior_tree && source install/setup.bash`).
+- From another package, load the shared library with `factory.registerFromPlugin("libhusky_behavior_tree_bt_plugin.so")`. On macOS the suffix is `.dylib`, on Windows `.dll`.
+- The plugin expects a `rclcpp::Node::SharedPtr` stored on the blackboard under the key `node` before ticking the tree, e.g. `tree.rootBlackboard()->set("node", shared_node);`.
