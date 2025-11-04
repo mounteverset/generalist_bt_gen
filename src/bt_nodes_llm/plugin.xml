@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<library path="bt_nodes_llm">
+  <class type="bt_nodes_llm::ThinkingNode" base_class_type="BT::TreeNode" name="bt_nodes_llm::ThinkingNode">
+    <description>BT node invoking the LLM to choose next behavior.</description>
+  </class>
+  <class type="bt_nodes_llm::BlackboardUpdateNode" base_class_type="BT::TreeNode" name="bt_nodes_llm::BlackboardUpdateNode">
+    <description>BT node that queries the LLM for updated blackboard data.</description>
+  </class>
+</library>

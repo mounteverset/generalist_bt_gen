@@ -125,46 +125,46 @@
      - ~~Tests: `ros2 launch src/bt_actions/test/launch/test_bt_actions_launch.py` then `ros2 action list`.~~
 
 3. **bt_nodes_llm**
-   - 3.1 Task: Create `bt_nodes_llm` ROS 2 package skeleton with `ament_cmake`.
-     - Inputs: Package name `bt_nodes_llm`.
-     - Outputs: `src/bt_nodes_llm/`.
-     - Tests: `colcon list | grep bt_nodes_llm`.
-   - 3.2 Task: Add dependencies (`rclcpp`, `behaviortree_cpp`, `nlohmann_json`, `openai_sdk`) to `package.xml`.
-     - Inputs: Required libraries.
-     - Outputs: Updated dependency entries.
-     - Tests: `colcon build --packages-select bt_nodes_llm`.
-   - 3.3 Task: Configure `CMakeLists.txt` for plugin library build and include directories.
-     - Inputs: Source files.
-     - Outputs: Library target with exported plugin symbols.
-     - Tests: `colcon build --packages-select bt_nodes_llm`.
-   - 3.4 Task: Declare `ThinkingNode` interface in `include/bt_nodes_llm/thinking_node.hpp`.
-     - Inputs: Architecture description (LLM reasoning).
-     - Outputs: Header file with public API.
-     - Tests: `grep -R "class ThinkingNode" src/bt_nodes_llm/include`.
-   - 3.5 Task: Implement `thinking_node.cpp` to assemble prompt, call LLM service, and write response to blackboard.
-     - Inputs: `ThinkingNode` header, `llm_interface` service contract.
-     - Outputs: Completed node implementation.
-     - Tests: `colcon test --packages-select bt_nodes_llm --ctest-args -R thinking_node`.
-   - 3.6 Task: Declare `BlackboardUpdateNode` interface in `include/bt_nodes_llm/blackboard_update_node.hpp`.
-     - Inputs: Need to write structured context to BT blackboard.
-     - Outputs: Header file.
-     - Tests: `grep -R "class BlackboardUpdateNode" src/bt_nodes_llm/include`.
-   - 3.7 Task: Implement `blackboard_update_node.cpp` to extract ROS context and update BT blackboard entries.
-     - Inputs: Header definitions and context topic interfaces.
-     - Outputs: Implementation file.
-     - Tests: `colcon test --packages-select bt_nodes_llm --ctest-args -R blackboard_update_node`.
-   - 3.8 Task: Populate `plugin.xml` registering LLM-related nodes.
-     - Inputs: Class names prepared above.
-     - Outputs: `src/bt_nodes_llm/plugin.xml`.
-     - Tests: `xmllint --noout src/bt_nodes_llm/plugin.xml`.
-   - 3.9 Task: Add unit tests for LLM nodes with mocked service responses.
-     - Inputs: GTest or `ament_catch2` harness.
-     - Outputs: Test sources verifying JSON parsing and blackboard writes.
-     - Tests: `colcon test --packages-select bt_nodes_llm`.
-   - 3.10 Task: Provide launch test to load BT containing LLM nodes and verify `ros2 service list` includes `llm_interface/LLMQuery`.
-     - Inputs: Launch description referencing executor and mock service.
-     - Outputs: Launch test under `src/bt_nodes_llm/test/launch/`.
-     - Tests: `ros2 launch src/bt_nodes_llm/test/launch/test_llm_bt_nodes.launch.py` then `ros2 service list`.
+  - ~~3.1 Task: Create `bt_nodes_llm` ROS 2 package skeleton with `ament_cmake`.~~
+    - ~~Inputs: Package name `bt_nodes_llm`.~~
+    - ~~Outputs: `src/bt_nodes_llm/`.~~
+    - ~~Tests: `colcon list | grep bt_nodes_llm`.~~
+  - ~~3.2 Task: Add dependencies (`rclcpp`, `behaviortree_cpp`, `nlohmann_json`, `openai_sdk`) to `package.xml`.~~
+    - ~~Inputs: Required libraries.~~
+    - ~~Outputs: Updated dependency entries.~~
+    - ~~Tests: `colcon build --packages-select bt_nodes_llm`.~~
+  - ~~3.3 Task: Configure `CMakeLists.txt` for plugin library build and include directories.~~
+    - ~~Inputs: Source files.~~
+    - ~~Outputs: Library target with exported plugin symbols.~~
+    - ~~Tests: `colcon build --packages-select bt_nodes_llm`.~~
+  - ~~3.4 Task: Declare `ThinkingNode` interface in `include/bt_nodes_llm/thinking_node.hpp`.~~
+    - ~~Inputs: Architecture description (LLM reasoning).~~
+    - ~~Outputs: Header file with public API.~~
+    - ~~Tests: `grep -R "class ThinkingNode" src/bt_nodes_llm/include`.~~
+  - ~~3.5 Task: Implement `thinking_node.cpp` to assemble prompt, call LLM service, and write response to blackboard.~~
+    - ~~Inputs: `ThinkingNode` header, `llm_interface` service contract.~~
+    - ~~Outputs: Completed node implementation.~~
+    - ~~Tests: `colcon test --packages-select bt_nodes_llm --ctest-args -R thinking_node`.~~
+  - ~~3.6 Task: Declare `BlackboardUpdateNode` interface in `include/bt_nodes_llm/blackboard_update_node.hpp`.~~
+    - ~~Inputs: Need to write structured context to BT blackboard.~~
+    - ~~Outputs: Header file.~~
+    - ~~Tests: `grep -R "class BlackboardUpdateNode" src/bt_nodes_llm/include`.~~
+  - ~~3.7 Task: Implement `blackboard_update_node.cpp` to extract ROS context and update BT blackboard entries.~~
+    - ~~Inputs: Header definitions and context topic interfaces.~~
+    - ~~Outputs: Implementation file.~~
+    - ~~Tests: `colcon test --packages-select bt_nodes_llm --ctest-args -R blackboard_update_node`.~~
+  - ~~3.8 Task: Populate `plugin.xml` registering LLM-related nodes.~~
+    - ~~Inputs: Class names prepared above.~~
+    - ~~Outputs: `src/bt_nodes_llm/plugin.xml`.~~
+    - ~~Tests: `xmllint --noout src/bt_nodes_llm/plugin.xml`.~~
+  - ~~3.9 Task: Add unit tests for LLM nodes with mocked service responses.~~
+    - ~~Inputs: GTest or `ament_catch2` harness.~~
+    - ~~Outputs: Test sources verifying JSON parsing and blackboard writes.~~
+    - ~~Tests: `colcon test --packages-select bt_nodes_llm`.~~
+  - ~~3.10 Task: Provide launch test to load BT containing LLM nodes and verify `ros2 service list` includes `llm_interface/LLMQuery`.~~
+    - ~~Inputs: Launch description referencing executor and mock service.~~
+    - ~~Outputs: Launch test under `src/bt_nodes_llm/test/launch/`.~~
+    - ~~Tests: `ros2 launch src/bt_nodes_llm/test/launch/test_llm_bt_nodes.launch.py` then `ros2 service list`.~~
 
 4. **context_gatherer**
    - 4.1 Task: Create `context_gatherer` ROS 2 package skeleton with `ament_cmake`.
