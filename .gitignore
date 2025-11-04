@@ -12,3 +12,4 @@ install/
 *.so
 *.pdf
 *.gv
+__pycache__/

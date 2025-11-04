@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<library path="bt_actions">
+  <class type="bt_actions::NavigateAction"
+         base_class_type="BT::TreeNode"
+         name="bt_actions::NavigateAction">
+    <description>Navigate to a pose using Nav2 NavigateToPose action.</description>
+  </class>
+  <class type="bt_actions::TakePhotoAction"
+         base_class_type="BT::TreeNode"
+         name="bt_actions::TakePhotoAction">
+    <description>Capture an image from a camera topic and store it on the blackboard.</description>
+  </class>
+  <class type="bt_actions::DetectTreeCondition"
+         base_class_type="BT::TreeNode"
+         name="bt_actions::DetectTreeCondition">
+    <description>Condition node checking for detected trees exceeding a confidence threshold.</description>
+  </class>
+  <class type="bt_actions::ExploreFieldAction"
+         base_class_type="BT::TreeNode"
+         name="bt_actions::ExploreFieldAction">
+    <description>Execute a field exploration by following waypoints.</description>
+  </class>
+</library>

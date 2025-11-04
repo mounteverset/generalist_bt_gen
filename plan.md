@@ -67,62 +67,62 @@
      - ~~Tests: `ros2 test src/bt_executor/test/launch/test_bt_executor_launch.py`.~~
 
 2. **bt_actions**
-   - 2.1 Task: Create `bt_actions` ROS 2 package skeleton with `ament_cmake`.
-     - Inputs: Package name `bt_actions`.
-     - Outputs: `src/bt_actions/` with default build files.
-     - Tests: `colcon list | grep bt_actions`.
-   - 2.2 Task: Declare dependencies (`rclcpp`, `behaviortree_cpp`, `nav2_msgs`, `sensor_msgs`, `geometry_msgs`, `action_msgs`) in `package.xml`.
-     - Inputs: Dependency list from architecture.
-     - Outputs: Updated `package.xml` with `<depend>` entries.
-     - Tests: `colcon build --packages-select bt_actions`.
-   - 2.3 Task: Configure `CMakeLists.txt` to compile shared library exporting BT plugins.
-     - Inputs: Source files list.
-     - Outputs: Library target with `PLUGINLIB_EXPORT_CLASS` registration.
-     - Tests: `colcon build --packages-select bt_actions`.
-   - 2.4 Task: Create header and stub implementation for `navigate_action` plugin.
-     - Inputs: Navigation action requirements (goal pose).
-     - Outputs: `include/bt_actions/navigate_action.hpp`, `src/navigate_action.cpp`.
-     - Tests: `colcon build --packages-select bt_actions`.
-   - 2.5 Task: Implement `navigate_action` execute/tick logic using `nav2_msgs::NavigateToPose`.
-     - Inputs: ROS action client API.
-     - Outputs: Completed `navigate_action.cpp`.
-     - Tests: `colcon test --packages-select bt_actions --ctest-args -R navigate_action`.
-   - 2.6 Task: Create header and stub for `take_photo_action`.
-     - Inputs: Camera capture requirement.
-     - Outputs: `include/bt_actions/take_photo_action.hpp`, `src/take_photo_action.cpp`.
-     - Tests: `colcon build --packages-select bt_actions`.
-   - 2.7 Task: Implement `take_photo_action` logic (trigger capture, store file reference).
-     - Inputs: Camera service/topic contract.
-     - Outputs: Completed implementation storing result on blackboard.
-     - Tests: `colcon test --packages-select bt_actions --ctest-args -R take_photo_action`.
-   - 2.8 Task: Create header and stub for `detect_tree_condition`.
-     - Inputs: Condition requirements (sensor data).
-     - Outputs: `include/bt_actions/detect_tree_condition.hpp`, `src/detect_tree_condition.cpp`.
-     - Tests: `colcon build --packages-select bt_actions`.
-   - 2.9 Task: Implement `detect_tree_condition` to query detection topic and return `SUCCESS`/`FAILURE`.
-     - Inputs: Detection topic interface.
-     - Outputs: Condition node logic.
-     - Tests: `colcon test --packages-select bt_actions --ctest-args -R detect_tree_condition`.
-   - 2.10 Task: Create header and stub for `explore_field_action`.
-     - Inputs: Exploration behavior specification.
-     - Outputs: `include/bt_actions/explore_field_action.hpp`, `src/explore_field_action.cpp`.
-     - Tests: `colcon build --packages-select bt_actions`.
-   - 2.11 Task: Implement `explore_field_action` to trigger coverage path or frontier exploration.
-     - Inputs: Navigation primitives, parameters.
-     - Outputs: Completed action implementation.
-     - Tests: `colcon test --packages-select bt_actions --ctest-args -R explore_field_action`.
-   - 2.12 Task: Populate `plugin.xml` registering all BT action/condition classes.
-     - Inputs: Class names, library path.
-     - Outputs: `src/bt_actions/plugin.xml`.
-     - Tests: `xmllint --noout src/bt_actions/plugin.xml`.
-   - 2.13 Task: Add unit tests using BT factory to load each plugin and tick with mocked ROS handles.
-     - Inputs: Mock nodes or dependency injection.
-     - Outputs: Tests under `src/bt_actions/test/`.
-     - Tests: `colcon test --packages-select bt_actions`.
-   - 2.14 Task: Provide manual verification instructions by launching dummy BT and checking `ros2 action list` for any temporary servers.
-     - Inputs: Launch description referencing test nodes.
-     - Outputs: `src/bt_actions/test/launch/test_bt_actions_launch.py`.
-     - Tests: `ros2 launch src/bt_actions/test/launch/test_bt_actions_launch.py` then `ros2 action list`.
+   - ~~2.1 Task: Create `bt_actions` ROS 2 package skeleton with `ament_cmake`.~~
+     - ~~Inputs: Package name `bt_actions`.~~
+     - ~~Outputs: `src/bt_actions/` with default build files.~~
+     - ~~Tests: `colcon list | grep bt_actions`.~~
+   - ~~2.2 Task: Declare dependencies (`rclcpp`, `behaviortree_cpp`, `nav2_msgs`, `sensor_msgs`, `geometry_msgs`, `action_msgs`) in `package.xml`.~~
+     - ~~Inputs: Dependency list from architecture.~~
+     - ~~Outputs: Updated `package.xml` with `<depend>` entries.~~
+     - ~~Tests: `colcon build --packages-select bt_actions`.~~
+   - ~~2.3 Task: Configure `CMakeLists.txt` to compile shared library exporting BT plugins.~~
+     - ~~Inputs: Source files list.~~
+     - ~~Outputs: Library target with `PLUGINLIB_EXPORT_CLASS` registration.~~
+     - ~~Tests: `colcon build --packages-select bt_actions`.~~
+   - ~~2.4 Task: Create header and stub implementation for `navigate_action` plugin.~~
+     - ~~Inputs: Navigation action requirements (goal pose).~~
+     - ~~Outputs: `include/bt_actions/navigate_action.hpp`, `src/navigate_action.cpp`.~~
+     - ~~Tests: `colcon build --packages-select bt_actions`.~~
+   - ~~2.5 Task: Implement `navigate_action` execute/tick logic using `nav2_msgs::NavigateToPose`.~~
+     - ~~Inputs: ROS action client API.~~
+     - ~~Outputs: Completed `navigate_action.cpp`.~~
+     - ~~Tests: `colcon test --packages-select bt_actions --ctest-args -R navigate_action`.~~
+   - ~~2.6 Task: Create header and stub for `take_photo_action`.~~
+     - ~~Inputs: Camera capture requirement.~~
+     - ~~Outputs: `include/bt_actions/take_photo_action.hpp`, `src/take_photo_action.cpp`.~~
+     - ~~Tests: `colcon build --packages-select bt_actions`.~~
+   - ~~2.7 Task: Implement `take_photo_action` logic (trigger capture, store file reference).~~
+     - ~~Inputs: Camera service/topic contract.~~
+     - ~~Outputs: Completed implementation storing result on blackboard.~~
+     - ~~Tests: `colcon test --packages-select bt_actions --ctest-args -R take_photo_action`.~~
+   - ~~2.8 Task: Create header and stub for `detect_tree_condition`.~~
+     - ~~Inputs: Condition requirements (sensor data).~~
+     - ~~Outputs: `include/bt_actions/detect_tree_condition.hpp`, `src/detect_tree_condition.cpp`.~~
+     - ~~Tests: `colcon build --packages-select bt_actions`.~~
+   - ~~2.9 Task: Implement `detect_tree_condition` to query detection topic and return `SUCCESS`/`FAILURE`.~~
+     - ~~Inputs: Detection topic interface.~~
+     - ~~Outputs: Condition node logic.~~
+     - ~~Tests: `colcon test --packages-select bt_actions --ctest-args -R detect_tree_condition`.~~
+   - ~~2.10 Task: Create header and stub for `explore_field_action`.~~
+     - ~~Inputs: Exploration behavior specification.~~
+     - ~~Outputs: `include/bt_actions/explore_field_action.hpp`, `src/explore_field_action.cpp`.~~
+     - ~~Tests: `colcon build --packages-select bt_actions`.~~
+   - ~~2.11 Task: Implement `explore_field_action` to trigger coverage path or frontier exploration.~~
+     - ~~Inputs: Navigation primitives, parameters.~~
+     - ~~Outputs: Completed action implementation.~~
+     - ~~Tests: `colcon test --packages-select bt_actions --ctest-args -R explore_field_action`.~~
+   - ~~2.12 Task: Populate `plugin.xml` registering all BT action/condition classes.~~
+     - ~~Inputs: Class names, library path.~~
+     - ~~Outputs: `src/bt_actions/plugin.xml`.~~
+     - ~~Tests: `xmllint --noout src/bt_actions/plugin.xml`.~~
+   - ~~2.13 Task: Add unit tests using BT factory to load each plugin and tick with mocked ROS handles.~~
+     - ~~Inputs: Mock nodes or dependency injection.~~
+     - ~~Outputs: Tests under `src/bt_actions/test/`.~~
+     - ~~Tests: `colcon test --packages-select bt_actions`.~~
+   - ~~2.14 Task: Provide manual verification instructions by launching dummy BT and checking `ros2 action list` for any temporary servers.~~
+     - ~~Inputs: Launch description referencing test nodes.~~
+     - ~~Outputs: `src/bt_actions/test/launch/test_bt_actions_launch.py`.~~
+     - ~~Tests: `ros2 launch src/bt_actions/test/launch/test_bt_actions_launch.py` then `ros2 action list`.~~
 
 3. **bt_nodes_llm**
    - 3.1 Task: Create `bt_nodes_llm` ROS 2 package skeleton with `ament_cmake`.
