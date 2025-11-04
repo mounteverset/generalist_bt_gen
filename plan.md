@@ -167,38 +167,38 @@
     - ~~Tests: `ros2 launch src/bt_nodes_llm/test/launch/test_llm_bt_nodes.launch.py` then `ros2 service list`.~~
 
 4. **context_gatherer**
-   - 4.1 Task: Create `context_gatherer` ROS 2 package skeleton with `ament_cmake`.
-     - Inputs: Package name `context_gatherer`.
-     - Outputs: `src/context_gatherer/`.
-     - Tests: `colcon list | grep context_gatherer`.
-   - 4.2 Task: Declare dependencies (`rclcpp`, `sensor_msgs`, `nav_msgs`, `geographic_msgs`, `cv_bridge`, `image_transport`) in `package.xml`.
-     - Inputs: Sensor data requirements.
-     - Outputs: Updated dependency tags.
-     - Tests: `colcon build --packages-select context_gatherer`.
-   - 4.3 Task: Configure `CMakeLists.txt` to build node executable and link OpenCV if needed.
-     - Inputs: Node source files, OpenCV include paths.
-     - Outputs: Updated build script.
-     - Tests: `colcon build --packages-select context_gatherer`.
-   - 4.4 Task: Define node interface in `include/context_gatherer/context_gatherer.hpp`.
-     - Inputs: Architecture design (collect camera, GPS, map).
-     - Outputs: Header describing publishers, subscriptions, service servers.
-     - Tests: `grep -R "class ContextGathererNode" src/context_gatherer/include`.
-   - 4.5 Task: Implement `context_gatherer_node.cpp` to aggregate data into a JSON message/service response.
-     - Inputs: Header definitions, ROS APIs.
-     - Outputs: Working node in `src/context_gatherer/src/`.
-     - Tests: `colcon build --packages-select context_gatherer`.
-   - 4.6 Task: Add launch file `launch/context_gatherer.launch.py` to start node with remappings.
-     - Inputs: Topic names, frame IDs.
-     - Outputs: Launch script.
-     - Tests: `ros2 launch context_gatherer context_gatherer.launch.py --show-args`.
-   - 4.7 Task: Implement test node publishing synthetic sensor data for automated verification.
-     - Inputs: Mock sensor messages.
-     - Outputs: Test publisher under `src/context_gatherer/test/`.
-     - Tests: `colcon test --packages-select context_gatherer --ctest-args -R mock_sensor`.
-   - 4.8 Task: Add integration test that launches context gatherer and verifies aggregated context via `ros2 service call /context_gatherer/get_context std_srvs/srv/Trigger`.
-     - Inputs: Launch test file.
-     - Outputs: Launch test script under `test/launch`.
-     - Tests: `ros2 launch src/context_gatherer/test/launch/test_context_gatherer.launch.py` then `ros2 service call ...`.
+  - ~~4.1 Task: Create `context_gatherer` ROS 2 package skeleton with `ament_cmake`.~~
+    - ~~Inputs: Package name `context_gatherer`.~~
+    - ~~Outputs: `src/context_gatherer/`.~~
+    - ~~Tests: `colcon list | grep context_gatherer`.~~
+  - ~~4.2 Task: Declare dependencies (`rclcpp`, `sensor_msgs`, `nav_msgs`, `geographic_msgs`, `cv_bridge`, `image_transport`) in `package.xml`.~~
+    - ~~Inputs: Sensor data requirements.~~
+    - ~~Outputs: Updated dependency tags.~~
+    - ~~Tests: `colcon build --packages-select context_gatherer`.~~
+  - ~~4.3 Task: Configure `CMakeLists.txt` to build node executable and link OpenCV if needed.~~
+    - ~~Inputs: Node source files, OpenCV include paths.~~
+    - ~~Outputs: Updated build script.~~
+    - ~~Tests: `colcon build --packages-select context_gatherer`.~~
+  - ~~4.4 Task: Define node interface in `include/context_gatherer/context_gatherer.hpp`.~~
+    - ~~Inputs: Architecture design (collect camera, GPS, map).~~
+    - ~~Outputs: Header describing publishers, subscriptions, service servers.~~
+    - ~~Tests: `grep -R "class ContextGathererNode" src/context_gatherer/include`.~~
+  - ~~4.5 Task: Implement `context_gatherer_node.cpp` to aggregate data into a JSON message/service response.~~
+    - ~~Inputs: Header definitions, ROS APIs.~~
+    - ~~Outputs: Working node in `src/context_gatherer/src/`.~~
+    - ~~Tests: `colcon build --packages-select context_gatherer`.~~
+  - ~~4.6 Task: Add launch file `launch/context_gatherer.launch.py` to start node with remappings.~~
+    - ~~Inputs: Topic names, frame IDs.~~
+    - ~~Outputs: Launch script.~~
+    - ~~Tests: `ros2 launch context_gatherer context_gatherer.launch.py --show-args`.~~
+  - ~~4.7 Task: Implement test node publishing synthetic sensor data for automated verification.~~
+    - ~~Inputs: Mock sensor messages.~~
+    - ~~Outputs: Test publisher under `src/context_gatherer/test/`.~~
+    - ~~Tests: `colcon test --packages-select context_gatherer --ctest-args -R mock_sensor`.~~
+  - ~~4.8 Task: Add integration test that launches context gatherer and verifies aggregated context via `ros2 service call /context_gatherer/get_context std_srvs/srv/Trigger`.~~
+    - ~~Inputs: Launch test file.~~
+    - ~~Outputs: Launch test script under `test/launch`.~~
+    - ~~Tests: `ros2 launch src/context_gatherer/test/launch/test_context_gatherer.launch.py` then `ros2 service call ...`.~~
    - 4.9 Task: Document manual check to run `ros2 topic list` and confirm expected camera/map topics while node runs.
      - Inputs: Running node.
      - Outputs: Verification instructions in tests/README if desired.
