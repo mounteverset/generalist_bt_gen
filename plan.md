@@ -205,38 +205,38 @@
      - Tests: `ros2 topic list`.
 
 5. **llm_interface**
-   - 5.1 Task: Create `llm_interface` ROS 2 Python package with `ament_python`.
-     - Inputs: Package name `llm_interface`.
-     - Outputs: `src/llm_interface/` containing setup files.
-     - Tests: `colcon list | grep llm_interface`.
-   - 5.2 Task: Define custom service `srv/LLMQuery.srv` (request prompt/context, response XML string).
-     - Inputs: Service contract from architecture.
-     - Outputs: `src/llm_interface/srv/LLMQuery.srv`.
-     - Tests: `ros2 interface show llm_interface/srv/LLMQuery`.
-   - 5.3 Task: Populate `package.xml` with dependencies (`rclpy`, `openai`, `nlohmann_json`, `requests`).
-     - Inputs: Dependency list.
-     - Outputs: Updated package metadata.
-     - Tests: `colcon build --packages-select llm_interface`.
-   - 5.4 Task: Implement `prompt_templates.py` to manage reusable prompt snippets.
-     - Inputs: Prompt requirements.
-     - Outputs: Python module returning formatted strings.
-     - Tests: `pytest src/llm_interface/test/test_prompt_templates.py`.
-   - 5.5 Task: Implement `bt_xml_generator.py` to turn LLM JSON into BT XML.
-     - Inputs: XML schema, LLM output format.
-     - Outputs: Python module with conversion functions.
-     - Tests: `pytest src/llm_interface/test/test_bt_xml_generator.py`.
-   - 5.6 Task: Implement `llm_service_node.py` responding to `LLMQuery` requests and calling OpenAI client (mocked in tests).
-     - Inputs: Service definition, prompt modules.
-     - Outputs: ROS 2 node entry point script.
-     - Tests: `pytest src/llm_interface/test/test_llm_service_node.py`.
-   - 5.7 Task: Add configuration file `config/prompt_config.yaml` storing API parameters and prompt handles.
-     - Inputs: Parameter values.
-     - Outputs: YAML config file.
-     - Tests: `python3 - <<'PY'\nimport yaml\nyaml.safe_load(open('src/llm_interface/config/prompt_config.yaml'))\nPY`.
-   - 5.8 Task: Provide launch description to start service with parameter file.
-     - Inputs: Node script, config path.
-     - Outputs: `launch/llm_interface.launch.py`.
-     - Tests: `ros2 launch llm_interface llm_interface.launch.py --show-args`.
+  - ~~5.1 Task: Create `llm_interface` ROS 2 Python package with `ament_python`.~~
+    - ~~Inputs: Package name `llm_interface`.~~
+    - ~~Outputs: `src/llm_interface/` containing setup files.~~
+    - ~~Tests: `colcon list | grep llm_interface`.~~
+  - ~~5.2 Task: Define custom service `srv/LLMQuery.srv` (request prompt/context, response XML string).~~
+    - ~~Inputs: Service contract from architecture.~~
+    - ~~Outputs: `src/llm_interface/srv/LLMQuery.srv`.~~
+    - ~~Tests: `ros2 interface show llm_interface/srv/LLMQuery`.~~
+  - ~~5.3 Task: Populate `package.xml` with dependencies (`rclpy`, `openai`, `nlohmann_json`, `requests`).~~
+    - ~~Inputs: Dependency list.~~
+    - ~~Outputs: Updated package metadata.~~
+    - ~~Tests: `colcon build --packages-select llm_interface`.~~
+  - ~~5.4 Task: Implement `prompt_templates.py` to manage reusable prompt snippets.~~
+    - ~~Inputs: Prompt requirements.~~
+    - ~~Outputs: Python module returning formatted strings.~~
+    - ~~Tests: `pytest src/llm_interface/test/test_prompt_templates.py`.~~
+  - ~~5.5 Task: Implement `bt_xml_generator.py` to turn LLM JSON into BT XML.~~
+    - ~~Inputs: XML schema, LLM output format.~~
+    - ~~Outputs: Python module with conversion functions.~~
+    - ~~Tests: `pytest src/llm_interface/test/test_bt_xml_generator.py`.~~
+  - ~~5.6 Task: Implement `llm_service_node.py` responding to `LLMQuery` requests and calling OpenAI client (mocked in tests).~~
+    - ~~Inputs: Service definition, prompt modules.~~
+    - ~~Outputs: ROS 2 node entry point script.~~
+    - ~~Tests: `pytest src/llm_interface/test/test_llm_service_node.py`.~~
+  - ~~5.7 Task: Add configuration file `config/prompt_config.yaml` storing API parameters and prompt handles.~~
+    - ~~Inputs: Parameter values.~~
+    - ~~Outputs: YAML config file.~~
+    - ~~Tests: `python3 - <<'PY'\nimport yaml\nyaml.safe_load(open('src/llm_interface/config/prompt_config.yaml'))\nPY`.~~
+  - ~~5.8 Task: Provide launch description to start service with parameter file.~~
+    - ~~Inputs: Node script, config path.~~
+    - ~~Outputs: `launch/llm_interface.launch.py`.~~
+    - ~~Tests: `ros2 launch llm_interface llm_interface.launch.py --show-args`.~~
    - 5.9 Task: Add integration test spinning up service with mocked OpenAI backend and verifying `ros2 service call /llm_query llm_interface/srv/LLMQuery`.
      - Inputs: Test harness and monkeypatch.
      - Outputs: Launch or pytest test file.

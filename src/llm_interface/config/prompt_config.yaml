@@ -1,0 +1,24 @@
+defaults:
+  model: gpt-4o-mini
+  temperature: 0.2
+  max_tokens: 2048
+  response_format: json_object
+prompts:
+  llm_query:
+    description: Base prompt used to request new Behavior Tree updates from the LLM.
+    system: |
+      You are an expert robotics software engineer assisting with Behavior Tree generation.
+      Always produce concise, deterministic responses.
+    user: |
+      # Mission Request
+      {prompt}
+
+      # Execution Context (JSON)
+      {context}
+
+      # Blackboard / Additional Metadata (JSON)
+      {metadata}
+
+      Respond with a JSON object containing:
+        - behavior_tree: description of the tree with fields `tree_id`, `root`, and `nodes`.
+        - reasoning: short natural-language justification.
