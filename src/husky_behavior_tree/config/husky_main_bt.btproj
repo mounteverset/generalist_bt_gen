@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4" project_name="Project">
+    <include path="husky_bt.xml"/>
+    <!-- Description of Node Models (used by Groot) -->
+    <TreeNodesModel>
+        <Action ID="DriveTo" editable="true">
+            <input_port name="goal_pose"/>
+        </Action>
+        <Action ID="LogTemp" editable="true"/>
+    </TreeNodesModel>
+</root>

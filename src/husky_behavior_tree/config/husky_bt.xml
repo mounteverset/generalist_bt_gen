@@ -1,30 +1,24 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <root BTCPP_format="4">
-  <!-- 
-    Husky Behavior Tree
-    This tree chains two actions in sequence:
-    1. DriveTo - Navigate to a target pose
-    2. LogTemp - Log temperature reading to file
-  -->
-  
   <BehaviorTree ID="HuskyMainTree">
     <Sequence name="MainSequence">
-      
-      <!-- Set target pose on blackboard -->
-      <Script code="target_pose:= '10.0;5.0;0.0;0.0;0.0;0.707;0.707'" />
-      
-      <!-- Drive to target location -->
-      <DriveTo 
-        name="DriveToTarget"
-        goal_pose="{target_pose}"
-      />
-      
-      <!-- Log temperature after reaching target -->
-      <LogTemp 
-        name="LogTemperature"
-      />
-      
+      <Script code="target_pose:= &apos;10.0;5.0;0.0;0.0;0.0;0.707;0.707&apos;"/>
+      <DriveTo name="DriveToTarget"
+               goal_pose="{target_pose}"
+               _description="Drives to a position taking a 2D position (X,Y,Yaw in rad)&#10;Using Nav2 action server to send goals"/>
+      <LogTemp name="LogTemperature"
+               _description="Logs the temperature at specific "/>
     </Sequence>
   </BehaviorTree>
-  
+
+  <!-- Description of Node Models (used by Groot) -->
+  <TreeNodesModel>
+    <Action ID="DriveTo"
+            editable="true">
+      <input_port name="goal_pose"/>
+    </Action>
+    <Action ID="LogTemp"
+            editable="true"/>
+  </TreeNodesModel>
+
 </root>
