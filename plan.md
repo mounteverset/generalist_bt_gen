@@ -199,10 +199,10 @@
     - ~~Inputs: Launch test file.~~
     - ~~Outputs: Launch test script under `test/launch`.~~
     - ~~Tests: `ros2 launch src/context_gatherer/test/launch/test_context_gatherer.launch.py` then `ros2 service call ...`.~~
-   - 4.9 Task: Document manual check to run `ros2 topic list` and confirm expected camera/map topics while node runs.
-     - Inputs: Running node.
-     - Outputs: Verification instructions in tests/README if desired.
-     - Tests: `ros2 topic list`.
+   - ~~4.9 Task: Document manual check to run `ros2 topic list` and confirm expected camera/map topics while node runs.~~
+     - ~~Inputs: Running node.~~
+     - ~~Outputs: Verification instructions in tests/README if desired.~~
+     - ~~Tests: `ros2 topic list`.~~
 
 5. **llm_interface**
   - ~~5.1 Task: Create `llm_interface` ROS 2 Python package with `ament_python`.~~

@@ -62,6 +62,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
   find_package(launch_testing_ament_cmake REQUIRED)
+  option(CONTEXT_GATHERER_ENABLE_LAUNCH_TEST "Enable launch tests requiring DDS transports" OFF)
   set(ament_cmake_cpplint_FOUND TRUE)
   set(ament_cmake_uncrustify_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
@@ -89,7 +90,7 @@ if(BUILD_TESTING)
       geographic_msgs
       image_transport)
     set_tests_properties(context_gatherer_mock_sensor_test PROPERTIES
-      ENVIRONMENT "ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_logs")
+      ENVIRONMENT "ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_logs;LD_LIBRARY_PATH=/opt/ros/jazzy/lib:$ENV{LD_LIBRARY_PATH}")
   endif()
 
   add_executable(context_gatherer_mock_sensor_node
@@ -99,10 +100,9 @@ if(BUILD_TESTING)
   ament_target_dependencies(context_gatherer_mock_sensor_node
     rclcpp)
 
-  if(COMMAND add_launch_test)
-    add_launch_test(test/launch/test_context_gatherer.launch.py
-      TARGET context_gatherer_launch_test
-      PYTHON_EXECUTABLE /usr/bin/python3)
+  if(CONTEXT_GATHERER_ENABLE_LAUNCH_TEST AND COMMAND ament_add_launch_test)
+    ament_add_launch_test(test/launch/test_context_gatherer.launch.py
+      TARGET context_gatherer_launch_test)
     if(TARGET context_gatherer_launch_test)
       set_tests_properties(context_gatherer_launch_test PROPERTIES
         ENVIRONMENT "ROS_LOG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_logs;LD_LIBRARY_PATH=/opt/ros/jazzy/lib:$ENV{LD_LIBRARY_PATH}")
