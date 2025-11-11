@@ -13,6 +13,22 @@ The special thing about the BT generation step is that it can gather additional 
 
 Another special node inside the tree is a LLM querying node to update blackboard values, like to populate lists of waypoints, navigation goals, etc. for the BT subtrees to be used in versatile ways. 
 
+## Dependencies / Tech stack
+
+BehaviorTree.CPP as Behavior Tree framework
+ROS 2 Jazzy 
+BehaviorTree.ROS2 as behavior tree wrapper
+LangChain to use PromptTemplates and Tool Calls / MCP servers
+OpenAI API / Gemini API / Claude API
+MCP Servers: ROS2 MCP server https://github.com/robotmcp/ros-mcp-server OpenStreetMapMCP https://github.com/wiseman/osm-mcp
+
+## Repo structure
+
+bt_executor -> extends BehaviorTree.ROS2 with needed functionality
+robot_actions -> robot specific behavior tree actions like Drive, TakePicture etc.
+llm_actions -> Thinking and Blackboard context node
+llm_interface/context_gatherer -> LangChain
+
 ### Possible scenarios where this approach can outperform current methods of behavior tree generation and hence show higher levels of deliberation for the robot:
   - Give commands like
     - "Drive around the lake and take photos every 10m"
@@ -24,12 +40,4 @@ Another special node inside the tree is a LLM querying node to update blackboard
   - Situation specific recoveries like a stuck robot
     - can't proceed to drive with current plan, trying to find an alternative path with visual context of sorrounding and satellite map
   - Can give always suggestions or even create additions to the skill catalogue of composable bt actions
-   
-# How to start the tree
-`ros2 run husky_behavior_tree bt_main --ros-args -p tree_xml_file:=$(ros2 pkg prefix husky_behavior_tree)/share/husky_behavior_tree/config/husky_bt.xml`
 
-## Using Husky behaviors as a BehaviorTree.CPP plugin
-
-- Build and source the workspace (`colcon build --packages-select husky_behavior_tree && source install/setup.bash`).
-- From another package, load the shared library with `factory.registerFromPlugin("libhusky_behavior_tree_bt_plugin.so")`. On macOS the suffix is `.dylib`, on Windows `.dll`.
-- The plugin expects a `rclcpp::Node::SharedPtr` stored on the blackboard under the key `node` before ticking the tree, e.g. `tree.rootBlackboard()->set("node", shared_node);`.

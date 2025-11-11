@@ -1,232 +1,79 @@
-# LLM-Augmented Behavior Tree Executor — System Architecture
+# BehaviorTree.ROS2 + LangChain Architecture
 
 ## Overview
 
-This system enables an **autonomous robot** to execute user commands through a **Behavior Tree (BT)** architecture that can **adapt and expand itself dynamically** using **LLM reasoning** when existing skills are insufficient.
+`generalist_bt_gen` combines ROS 2 Jazzy, BehaviorTree.CPP, BehaviorTree.ROS2, and LangChain to let a field robot execute natural-language tasks and expand its own behavior tree when it detects capability gaps. The executor now subclasses `behaviortree_ros2::TreeExecutionServer`, so BT runs are exposed as ROS 2 Actions with built-in logging, preemption, and plugin management. When the tree cannot complete a command, LangChain orchestrates LLM reasoning, tool calls, and MCP servers to synthesize new BT subtrees that are merged into the running executor without restarting the rest of the stack.
 
-When the BT fails, the system collects sensor data, queries an **LLM**, generates a **new subtree**, merges it into the BT, and **relaunches** execution—allowing the robot to continuously extend its behavior repertoire.
+## Technology Stack
 
----
+| Layer | Tooling | Notes |
+| --- | --- | --- |
+| Behavior tree runtime | BehaviorTree.CPP 4.x | Core BT engine and plugin API. |
+| ROS integration | BehaviorTree.ROS2 (`TreeExecutionServer`) | Wraps BT execution inside an `rclcpp_action::Server`, handles XML/plugin discovery, Groot2 logging, and action feedback. |
+| Robotics middleware | ROS 2 Jazzy | Provides rclcpp/rclpy nodes, services, actions, Nav2 + sensor interfaces. |
+| LLM orchestration | LangChain (Python) | Supplies prompt templates, multi-provider LLM clients (OpenAI/Gemini/Claude), tool-calling, and MCP server integration for structured plans and BT specs. |
+| Cloud LLMs | OpenAI, Google Gemini, Anthropic Claude | Configurable via LangChain; selected per prompt config. |
 
-## Package Structure
+## Package Responsibilities
 
-| Package | Description | Key Dependencies |
-|----------|--------------|------------------|
-| **bt_executor** | Core orchestrator: loads, executes, monitors, and rebuilds the Behavior Tree. Handles failure exceptions and LLM subtree generation loop. | `rclcpp`, `behaviortree_cpp_v4`, `yaml-cpp`, `nlohmann_json`, `std_srvs` |
-| **bt_actions** | Defines all available BT actions and conditions that map to robot skills (navigation, sensing, manipulation). | `rclcpp`, `behaviortree_cpp_v4`, `nav2_msgs`, `sensor_msgs`, `geometry_msgs`, `action_msgs` |
-| **bt_nodes_llm** | BT nodes that interact with the LLM (e.g., ThinkingNode, BlackboardQueryNode). | `rclcpp`, `behaviortree_cpp_v4`, `nlohmann_json`, `openai` |
-| **context_gatherer** | Collects multimodal context: camera images, GPS position, satellite map, and environment descriptors. | `rclcpp`, `sensor_msgs`, `nav_msgs`, `geographic_msgs`, `cv_bridge`, `image_transport` |
-| **llm_interface** | Provides a unified ROS 2 service for querying the LLM with prompts, context, and BT regeneration requests. | `rclcpp`, `openai`, `nlohmann_json`, `requests` |
-| **bt_updater** | Handles merging of new subtrees into the main BT XML and reloading the BT. | `rclcpp`, `behaviortree_cpp_v4`, `tinyxml2`, `yaml-cpp` |
-| **chat_interface** | CLI or web-based interface for user task input and robot dialogue. | `rclpy`, `FastAPI`/`Flask`, `websockets`, `std_msgs` |
-| **bt_visualizer** *(optional)* | Visual web dashboard for BT structure and status. | `rclcpp`, `behaviortree_cpp_v4`, `rosbridge_server` |
+| Package | Purpose | Key Dependencies |
+| --- | --- | --- |
+| `bt_executor` | Extends `TreeExecutionServer` with custom hooks: registers BT plugins, seeds the global blackboard, listens for failure states, and drives the LLM regeneration loop. Publishes action feedback/metrics. | `behaviortree_cpp`, `behaviortree_ros2`, `rclcpp`, `std_srvs`, `yaml-cpp`, `nlohmann_json`. |
+| `robot_actions` *(replacing `bt_actions`)* | ROS-native BT plugins for locomotion, manipulation, and sensing (Nav2 goals, camera triggers, etc.). | `rclcpp`, `behaviortree_cpp`, `nav2_msgs`, `sensor_msgs`, `geometry_msgs`, `action_msgs`. |
+| `llm_actions` | BT nodes that gate behavior based on LLM output, update the blackboard, and bridge to the LangChain service (e.g., Thinking node, plan validator). | `rclcpp`, `behaviortree_cpp`, `nlohmann_json`, `llm_interface`. |
+| `context_gatherer` | Aggregates camera frames, GPS, point clouds, and semantic context into the format expected by LangChain tools/MPL servers. | `rclcpp`, `sensor_msgs`, `nav_msgs`, `geographic_msgs`, `image_transport`, `cv_bridge`, `nlohmann_json`. |
+| `llm_interface` | Python ROS node exposing `LLMQuery.srv`. Uses LangChain PromptTemplates, tool chains, and MCP-backed retrievers to generate BT specs + artifacts. | `rclpy`, `langchain`, `openai`, `google-generativeai`, `anthropic`, `requests`, `python3-yaml`. |
+| `bt_updater` | Applies LangChain-generated XML patches to the authoritative BT tree, validates them with TinyXML2, and requests the executor to reload. | `rclcpp`, `behaviortree_cpp`, `tinyxml2`, `yaml-cpp`. |
+| `chat_interface` | CLI/web UI for human commands; now capable of acting as an Action client to the executor (start/cancel missions, show progress). | `rclpy`, `FastAPI`/`Flask`, `websockets`, `action_msgs`. |
 
----
+Optional packages such as `bt_visualizer` can subscribe to the executor action feedback or Groot2 stream for live dashboards.
 
-## File Layout
-
-```text
-src/
-├── bt_executor/
-│   ├── src/
-│   │   ├── bt_executor_node.cpp
-│   │   ├── bt_loader.cpp
-│   │   ├── bt_failure_handler.cpp
-│   │   └── bt_monitor.cpp
-│   ├── include/bt_executor/
-│   │   ├── bt_executor.hpp
-│   │   ├── bt_loader.hpp
-│   │   ├── bt_failure_handler.hpp
-│   │   └── bt_monitor.hpp
-│   ├── launch/
-│   │   └── bt_executor.launch.py
-│   ├── config/
-│   │   └── bt_config.yaml
-│   └── trees/
-│       └── base_tree.xml
-│
-├── bt_actions/
-│   ├── src/
-│   │   ├── navigate_action.cpp
-│   │   ├── take_photo_action.cpp
-│   │   ├── detect_tree_condition.cpp
-│   │   ├── explore_field_action.cpp
-│   ├── include/bt_actions/
-│   │   └── *.hpp
-│   └── plugin.xml
-│
-├── bt_nodes_llm/
-│   ├── src/
-│   │   ├── thinking_node.cpp
-│   │   ├── blackboard_update_node.cpp
-│   ├── include/bt_nodes_llm/
-│   │   └── *.hpp
-│   └── plugin.xml
-│
-├── context_gatherer/
-│   ├── src/
-│   │   └── context_gatherer_node.cpp
-│   ├── include/context_gatherer/
-│   │   └── *.hpp
-│   └── launch/
-│       └── context_gatherer.launch.py
-│
-├── llm_interface/
-│   ├── src/
-│   │   ├── llm_service_node.py
-│   │   ├── prompt_templates.py
-│   │   ├── bt_xml_generator.py
-│   ├── srv/
-│   │   └── LLMQuery.srv
-│   └── config/
-│       └── prompt_config.yaml
-│
-├── bt_updater/
-│   ├── src/
-│   │   ├── bt_updater_node.cpp
-│   │   ├── xml_merger.cpp
-│   ├── include/bt_updater/
-│   │   └── *.hpp
-│   └── srv/
-│       └── UpdateTree.srv
-│
-├── chat_interface/
-│   ├── src/
-│   │   ├── cli_interface.py
-│   │   ├── web_interface.py
-│   ├── srv/
-│   │   └── UserCommand.srv
-│   └── templates/
-│       └── index.html
-│
-└── bt_visualizer/
-    ├── src/
-    │   └── visualizer_node.py
-    └── webapp/
-        ├── static/
-        └── templates/
-```
-
----
-
-## Node Communication Overview
+## Runtime Flow
 
 ```mermaid
 sequenceDiagram
-    %% Actors and Nodes
     actor User
-    participant ChatInterface as chat_interface
-    participant BTExecutor as bt_executor_node
-    participant BTNodes as bt_actions / bt_nodes_llm
-    participant Context as context_gatherer
-    participant LLM as llm_interface
-    participant Updater as bt_updater
+    participant UI as chat_interface (Action Client)
+    participant Exec as bt_executor (TreeExecutionServer)
+    participant Skills as robot_actions / llm_actions
+    participant Ctx as context_gatherer
+    participant LLM as llm_interface (LangChain)
+    participant Upd as bt_updater
 
-    %% User command flow
-    User->>ChatInterface: Sends command ("Explore the field...")
-    ChatInterface->>BTExecutor: UserCommand.srv(command)
-    BTExecutor->>BTNodes: Start BT execution (base_tree.xml)
-    BTNodes->>BTExecutor: Return tick status (SUCCESS / RUNNING / FAILURE)
+    User->>UI: "Explore the field and photograph lonely trees"
+    UI->>Exec: Send `ExecuteTree` goal (command payload)
+    Exec->>Skills: Tick BT via TreeExecutionServer loop
+    Skills-->>Exec: RUNNING / SUCCESS / FAILURE
+    Exec-->>UI: Action feedback (node status, tick count, telemetry)
 
-    %% Normal execution
-    BTExecutor->>BTNodes: Tick loop continues
-    note right of BTExecutor: If all nodes succeed → mission complete
+    Note over Exec,Skills: Normal run completes when root returns SUCCESS.
 
-    %% Failure and LLM loop
-    BTNodes-->>BTExecutor: Exception(FailureReason)
-    note right of BTExecutor: Failure detected<br/>Reason: "No subtree for requested behavior"
-
-    BTExecutor->>Context: Request sensor + environment context
-    Context-->>BTExecutor: Context JSON (camera, GPS, map)
-
-    BTExecutor->>LLM: LLMQuery.srv(command, fail_reason, context_json)
-    note right of LLM: LLM generates new subtree XML<br/>via OpenAI API call
-
-    LLM-->>BTExecutor: Return new_subtree.xml
-
-    BTExecutor->>Updater: UpdateTree.srv(new_subtree.xml)
-    Updater-->>BTExecutor: Confirmation(success)
-
-    BTExecutor->>BTExecutor: Reload BT (merged XML)
-    BTExecutor->>BTNodes: Resume execution with updated tree
-    note right of BTExecutor: Robot executes new behavior
-
-    %% Optional: Loop continuation
-    BTExecutor->>ChatInterface: Report success or new capability
-    ChatInterface-->>User: "Task completed successfully!"
+    Skills-->>Exec: FAILURE (missing capability)
+    Exec->>Ctx: std_srvs/Trigger (snapshot context)
+    Ctx-->>Exec: Context JSON (imagery, GPS, map clips)
+    Exec->>LLM: LLMQuery.srv(command, failure_reason, context)
+    LLM->>LLM: LangChain prompt + tool chain → BT spec + artifacts
+    LLM-->>Exec: {behavior_tree_xml, reasoning, metadata}
+    Exec->>Upd: UpdateTree.srv(behavior_tree_xml)
+    Upd-->>Exec: OK + merged XML path
+    Exec->>Exec: Reload TreeExecutionServer tree + global blackboard
+    Exec->>Skills: Resume ticks with new subtree
+    Exec-->>UI: Feedback → SUCCESS notification
 ```
 
-## Architecture
+## Failure & Regeneration Lifecycle
 
-                                        ┌──────────────────────────────┐
-                                        │         User Interface       │
-                                        │ (CLI / Web via chat_interface)│
-                                        └──────────────┬───────────────┘
-                                                       │
-                             UserCommand.srv           │
-                                                       ▼
-                                        ┌──────────────────────────────┐
-                                        │        bt_executor_node      │
-                                        │ (Executes & monitors BT)     │
-                                        ├──────────────────────────────┤
-                                        │  - loads base_tree.xml       │
-                                        │  - runs BT tick loop         │
-                                        │  - catches BT failures       │
-                                        │  - relaunches updated tree   │
-                                        └──────────┬───────────────────┘
-                                                   │
-                             Tick loop / BT.CPP    │
-                                                   ▼
-         ┌──────────────────────────────┐   ┌─────────────────────────────┐
-         │          bt_actions          │   │         bt_nodes_llm        │
-         │(Skill & condition plugins)   │   │ (ThinkingNode, Blackboard...)│
-         └────────────┬─────────────────┘   └──────────────┬──────────────┘
-                      │                                   │
-                      │                                   │
-                      │<──────────────┬───────────────────┘
-                      │               │
-                      │      BT failure detected
-                      │               │
-                      ▼               ▼
-       ┌──────────────────────┐   ┌──────────────────────────────┐
-       │   context_gatherer   │   │        llm_interface         │
-       │ (camera, gps, map)   │   │ (calls OpenAI API)           │
-       └──────────┬───────────┘   └──────────┬──────────────────┘
-                  │                         │
-                  │   context JSON          │
-                  │────────────────────────>│
-                                            │ LLMQuery.srv
-                                            ▼
-                             ┌──────────────────────────────┐
-                             │         bt_updater           │
-                             │ (merges subtree XML, reloads │
-                             │  new BT structure)           │
-                             └──────────┬──────────────────┘
-                                        │
-                      Updated BT XML     │
-                                        ▼
-                             ┌──────────────────────────────┐
-                             │        bt_executor_node      │
-                             │     reloads BT.CPP engine    │
-                             └──────────┬──────────────────┘
-                                        │
-                                        ▼
-                             Continues BT execution
-                                        │
-                                        ▼
-                             Robot performs new behavior
-´´´
+1. **Detection** – `TreeExecutionServer::onLoopAfterTick` inspects every tick result. When the BT returns `FAILURE` or a guard node signals `NEEDS_EXTENSION`, the hook stops the action goal and enters regeneration mode.
+2. **Context capture** – A dedicated `context_gatherer` tool is invoked via ROS service. Output is saved to disk/cloud storage and passed as structured JSON to LangChain.
+3. **LangChain workflow** – `llm_interface` loads the configured PromptTemplate, selects a model (OpenAI/Gemini/Claude) and orchestrates tool calls (e.g., map query, knowledge base). The final response contains a validated BT spec plus supporting artifacts (new plugin hints, metadata).
+4. **Tree update** – `bt_updater` merges the generated subtree into the canonical XML, leveraging TinyXML2 + schema validation. Conflicts are resolved via predefined anchors (e.g., `LearningSelector` insertion point).
+5. **Executor reload** – `bt_executor` calls `TreeExecutionServer::createTreeFromText` with the merged XML, reattaches loggers, repopulates the blackboard, and restarts the Action goal so ticks continue seamlessly.
 
---- 
+## Configuration & Observability
 
-### Key Design Highlights
+- **Parameters**: BehaviorTree.ROS2 parameters set plugin folders, XML search paths, executor QoS, and action names. Additional YAML files define LangChain prompt configs, tool endpoints, and MCP server credentials.
+- **Secrets**: Cloud API keys (OpenAI, Gemini, Claude) live in `llm_interface` environment files; the setup script provisions them via `.cloud_secrets/openai.env`.
+- **Monitoring**: Groot2 is enabled by default via `TreeExecutionServer`. `bt_executor` can attach extra publishers that mirror action feedback to `diagnostics` topics for Prometheus dashboards. LangChain reasoning traces are logged to JSONL for auditing.
+- **Testing hooks**: BehaviorTree.ROS2’s headless tools allow dry-run execution of XML trees. LangChain pipelines are unit-tested with mock LLMs and tool call fixtures.
 
-- Extensible skill library: Drop-in BT plugins for new actions.
-
-- LLM-driven expansion: Generates new subtrees only when necessary.
-
-- Context awareness: Combines camera, GPS, and map data for reasoning.
-
-- Safe autonomy: LLM never directly controls actuators—only modifies BT logic.
-
-- Transparent execution: Updated XMLs remain human-readable.
+This revised architecture keeps the modular ROS 2 package layout while delegating BT execution concerns to BehaviorTree.ROS2 and adopting LangChain for multi-provider LLM orchestration, aligning the codebase with the updated tech stack in `README.md`.

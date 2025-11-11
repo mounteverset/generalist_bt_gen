@@ -1,5 +1,37 @@
 # Implementation Plan
 
+## Migration Plan (BehaviorTree.ROS2 + LangChain)
+
+1. **bt_executor / BehaviorTree.ROS2 adoption**
+   - 1.1 Task: Create a `TreeExecutionServer` subclass (`LLMTreeServer`) that wires in plugin registration, global blackboard setup, and overrides `onLoopAfterTick` / `onTreeExecutionCompleted` to trigger the LLM regeneration loop.  
+     - Inputs: BehaviorTree.ROS2 docs, existing `bt_executor` logic.  
+     - Outputs: New source files under `src/bt_executor/` plus updated `CMakeLists.txt`/`package.xml`.  
+     - Tests: `colcon build --packages-select bt_executor && source install/setup.bash && ros2 run bt_executor llm_tree_server --help`.
+   - 1.2 Task: Port launch + parameter files to BehaviorTree.ROS2 conventions (tree folders, plugin directories, action names) and ensure chat_interface uses the new ROS Action API.  
+     - Tests: `ros2 launch bt_executor bt_executor.launch.py --show-args` and `ros2 action list | grep ExecuteTree`.
+   - 1.3 Task: Replace bespoke monitoring/failure-handling utilities with BehaviorTree.ROS2 loggers + diagnostics topics; preserve any extra metrics via action feedback.  
+     - Tests: `ros2 topic echo /bt_executor/feedback --once` plus Groot2 connection.
+
+2. **LangChain upgrade for llm_interface + context pipeline**
+   - 2.1 Task: Introduce LangChain dependency set (prompt templates, tool registry, MCP clients) and refactor `llm_service_node.py` into composable chains with model routing (OpenAI/Gemini/Claude).  
+     - Tests: `pytest src/llm_interface/test` with mocked LLMs.  
+   - 2.2 Task: Extend `context_gatherer` outputs to match LangChain tool schemas (structured JSON, attachments) and expose them via ROS services/files accessible to the LangChain agent.  
+     - Tests: `ros2 service call context_gatherer/snapshot std_srvs/srv/Trigger {}`.
+   - 2.3 Task: Update `llm_actions` to consume the new response format (artifacts, tool traces) and populate the BT blackboard accordingly.  
+     - Tests: behavior tree unit tests or ros2 launch dry-run verifying blackboard keys.
+
+3. **BT plugin alignment**
+   - 3.1 Task: Rename / reorganize `bt_actions` into `robot_actions`, ensuring plugin manifests and install rules follow BehaviorTree.ROS2 discovery (shared lib names, plugin.xml).  
+     - Tests: `ros2 run bt_executor list_nodes` (TreeExecutionServer helper) shows new plugins.  
+   - 3.2 Task: Audit `llm_actions` to ensure any synchronous service calls remain non-blocking within BT (e.g., wrap LangChain requests with AsyncActionNode).  
+     - Tests: unit tests plus runtime checks for tick deadlines.
+
+4. **Documentation & tooling**
+   - 4.1 Task: Update README, architecture.md, launch READMEs, and sample XMLs to reflect the new stack, including instructions for LangChain secrets and BehaviorTree.ROS2 actions.  
+     - Tests: markdown lint, `xmllint` on sample trees.  
+   - 4.2 Task: Enhance `scripts/setup_cloud_env.sh` to install BehaviorTree.ROS2 + LangChain extras (already partially done; verify on fresh VM).  
+     - Tests: run script end-to-end on clean Ubuntu 24.04 node.
+
 1. **bt_executor**
   - ~~1.1 Task: Create `bt_executor` ROS 2 package skeleton with `ament_cmake`.~~
     - ~~Inputs: Package name `bt_executor`, node name requirements from architecture.~~
