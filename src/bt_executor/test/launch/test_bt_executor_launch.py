@@ -19,7 +19,7 @@ def generate_test_description():
     bt_node = Node(
         package='bt_executor',
         executable='bt_executor_node',
-        name='bt_executor',
+        name='bt_action_server',
         output='screen',
         parameters=[config_path],
     )
@@ -40,7 +40,7 @@ class TestBtExecutorLaunch(unittest.TestCase):
 
         try:
             def is_present():
-                return '/bt_executor' in node.get_node_names()
+                return '/bt_action_server' in node.get_node_names()
 
             self.assertTrue(launch_testing.tools.wait_for(is_present, timeout=5.0))
         finally:

@@ -14,13 +14,13 @@ def generate_launch_description():
     config_arg = DeclareLaunchArgument(
         'config',
         default_value=default_config,
-        description='Path to the bt_executor parameter YAML file',
+        description='Path to the TreeExecutionServer parameter YAML file',
     )
 
     node = Node(
         package='bt_executor',
         executable='bt_executor_node',
-        name='bt_executor',
+        name='bt_action_server',
         output='screen',
         parameters=[LaunchConfiguration('config')],
     )

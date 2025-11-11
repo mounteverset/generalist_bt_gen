@@ -1,81 +1,42 @@
 #ifndef BT_EXECUTOR__BT_EXECUTOR_HPP_
 #define BT_EXECUTOR__BT_EXECUTOR_HPP_
 
-#include <atomic>
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 
-#include "behaviortree_cpp/bt_factory.h"
-#include "behaviortree_cpp/behavior_tree.h"
-#include "rclcpp/rclcpp.hpp"
-#include "std_srvs/srv/trigger.hpp"
+#include "behaviortree_ros2/tree_execution_server.hpp"
+
+#include "bt_executor/bt_failure_handler.hpp"
+#include "bt_executor/bt_monitor.hpp"
 
 namespace bt_executor
 {
 
-class BTLoader;
-class BTFailureHandler;
-class BTMonitor;
-
-struct ExecutorConfig
-{
-  std::string tree_xml_path;
-  std::string config_yaml_path;
-  std::chrono::milliseconds tick_period{100};
-  bool auto_start{true};
-};
-
-class BTExecutor : public rclcpp::Node
+class LLMTreeServer : public BT::TreeExecutionServer
 {
 public:
-  explicit BTExecutor(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
-  ~BTExecutor() override;
+  explicit LLMTreeServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions());
 
-  void configure();
-  void start();
-  void stop();
-  void tick();
-  bool is_running() const;
-
-  const ExecutorConfig & config() const;
-
-  BT::Tree & tree();
-  BT::Blackboard::Ptr blackboard();
-
-  BTLoader & loader();
-  BTMonitor & monitor();
-  BTFailureHandler & failure_handler();
-
-  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr context_request_client() const;
-  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr update_tree_client() const;
+protected:
+  void onTreeCreated(BT::Tree & tree) override;
+  std::optional<BT::NodeStatus> onLoopAfterTick(BT::NodeStatus status) override;
+  std::optional<std::string> onTreeExecutionCompleted(
+    BT::NodeStatus status, bool was_cancelled) override;
+  std::optional<std::string> onLoopFeedback() override;
 
 private:
-  void declare_parameters();
-  void read_parameters();
-  void initialize_components();
-  void initialize_services();
-  void create_tree();
-  void schedule_tick_timer();
-  void teardown_tree();
+  void update_blackboard(BT::Tree & tree);
 
-  ExecutorConfig config_;
+  rclcpp::Logger logger_;
+  std::unique_ptr<BTMonitor> monitor_;
+  std::unique_ptr<BTFailureHandler> failure_handler_;
 
-  BT::BehaviorTreeFactory factory_;
-  BT::Tree tree_;
-  BT::Blackboard::Ptr blackboard_;
+  BT::Tree * active_tree_{nullptr};
+  std::optional<std::chrono::steady_clock::time_point> last_tick_time_;
 
-  std::shared_ptr<BTLoader> loader_;
-  std::shared_ptr<BTMonitor> monitor_;
-  std::shared_ptr<BTFailureHandler> failure_handler_;
-
-  rclcpp::TimerBase::SharedPtr tick_timer_;
-
-  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr context_client_;
-  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr updater_client_;
-
-  std::atomic_bool configured_{false};
-  std::atomic_bool running_{false};
+  bool publish_feedback_{true};
 };
 
 }  // namespace bt_executor

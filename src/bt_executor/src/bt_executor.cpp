@@ -1,183 +1,119 @@
 #include "bt_executor/bt_executor.hpp"
 
-#include <functional>
+#include <chrono>
 #include <stdexcept>
+#include <string>
+
+#include "behaviortree_cpp/basic_types.h"
+#include "behaviortree_cpp/blackboard.h"
+#include "bt_executor/bt_failure_handler.hpp"
+#include "bt_executor/bt_monitor.hpp"
+#include "nlohmann/json.hpp"
+#include "rclcpp/rclcpp.hpp"
 
 namespace bt_executor
 {
 
 namespace
 {
-constexpr char kNodeName[] = "bt_executor";
-constexpr char kContextServiceName[] = "context_gatherer/snapshot";
-constexpr char kUpdaterServiceName[] = "bt_updater/reload_tree";
+constexpr char kPublishFeedbackParam[] = "publish_feedback";
 }  // namespace
 
-BTExecutor::BTExecutor(const rclcpp::NodeOptions & options)
-: rclcpp::Node(kNodeName, options)
+LLMTreeServer::LLMTreeServer(const rclcpp::NodeOptions & options)
+: BT::TreeExecutionServer(options),
+  logger_{node()->get_logger()}
 {
-  declare_parameters();
+  node()->declare_parameter<bool>(kPublishFeedbackParam, true);
+  publish_feedback_ = node()->get_parameter(kPublishFeedbackParam).as_bool();
+
+  monitor_ = std::make_unique<BTMonitor>(*node());
+  failure_handler_ = std::make_unique<BTFailureHandler>(*node());
+
+  executeRegistration();
 }
 
-BTExecutor::~BTExecutor()
+void LLMTreeServer::onTreeCreated(BT::Tree & tree)
 {
-  stop();
+  active_tree_ = &tree;
+  last_tick_time_.reset();
+  failure_handler_->reset();
+  update_blackboard(tree);
+  monitor_->publish_status(tree);
 }
 
-void BTExecutor::configure()
+void LLMTreeServer::update_blackboard(BT::Tree & tree)
 {
-  read_parameters();
-  initialize_components();
-  initialize_services();
-  create_tree();
-  configured_.store(true);
-
-  if (config_.auto_start) {
-    start();
+  if (auto blackboard = tree.rootBlackboard()) {
+    blackboard->set("node", node());
+    blackboard->set("global_blackboard", globalBlackboard());
   }
 }
 
-void BTExecutor::start()
+std::optional<BT::NodeStatus> LLMTreeServer::onLoopAfterTick(BT::NodeStatus status)
 {
-  if (!configured_.load()) {
-    configure();
-    return;
+  const auto now = std::chrono::steady_clock::now();
+  if (last_tick_time_) {
+    const auto duration =
+      std::chrono::duration_cast<std::chrono::milliseconds>(now - *last_tick_time_);
+    monitor_->publish_tick_duration(duration);
+  }
+  last_tick_time_ = now;
+
+  if (active_tree_) {
+    monitor_->publish_status(*active_tree_);
   }
 
-  if (running_.exchange(true)) {
-    return;
+  if (status == BT::NodeStatus::FAILURE && active_tree_) {
+    auto report = failure_handler_->build_report(*active_tree_, status, "Behavior tree failed");
+    failure_handler_->request_context_snapshot(report);
+    failure_handler_->request_llm_assistance(report);
+    monitor_->publish_failure(report);
   }
 
-  schedule_tick_timer();
+  return std::nullopt;
 }
 
-void BTExecutor::stop()
+std::optional<std::string> LLMTreeServer::onTreeExecutionCompleted(
+  BT::NodeStatus status, bool was_cancelled)
 {
-  running_.store(false);
-  if (tick_timer_) {
-    tick_timer_->cancel();
-    tick_timer_.reset();
-  }
-}
+  last_tick_time_.reset();
+  active_tree_ = nullptr;
+  failure_handler_->reset();
 
-void BTExecutor::tick()
-{
-  if (!running_.load()) {
-    return;
-  }
+  const auto status_str = BT::toStr(status);
+  RCLCPP_INFO(
+    logger_, "Tree '%s' completed with status %s (cancelled=%s)", treeName().c_str(),
+    status_str.c_str(), was_cancelled ? "true" : "false");
 
-  if (!tree_.rootNode()) {
-    RCLCPP_WARN_THROTTLE(
-      get_logger(), *get_clock(), 5000.0, "Behavior tree root node not set, skipping tick");
-    return;
+  if (was_cancelled) {
+    return std::string("Execution cancelled by client");
   }
 
-  tree_.tickOnce();
-}
-
-bool BTExecutor::is_running() const
-{
-  return running_.load();
-}
-
-const ExecutorConfig & BTExecutor::config() const
-{
-  return config_;
-}
-
-BT::Tree & BTExecutor::tree()
-{
-  return tree_;
-}
-
-BT::Blackboard::Ptr BTExecutor::blackboard()
-{
-  return blackboard_;
-}
-
-BTLoader & BTExecutor::loader()
-{
-  if (!loader_) {
-    throw std::runtime_error("BTLoader is not initialised");
+  if (status == BT::NodeStatus::FAILURE) {
+    return std::string("Behavior tree execution failed");
   }
 
-  return *loader_;
+  return std::nullopt;
 }
 
-BTMonitor & BTExecutor::monitor()
+std::optional<std::string> LLMTreeServer::onLoopFeedback()
 {
-  if (!monitor_) {
-    throw std::runtime_error("BTMonitor is not initialised");
+  if (!publish_feedback_ || !active_tree_) {
+    return std::nullopt;
   }
 
-  return *monitor_;
-}
-
-BTFailureHandler & BTExecutor::failure_handler()
-{
-  if (!failure_handler_) {
-    throw std::runtime_error("BTFailureHandler is not initialised");
+  auto * root = active_tree_->rootNode();
+  if (!root) {
+    return std::nullopt;
   }
 
-  return *failure_handler_;
+  nlohmann::json feedback{
+    {"tree", treeName()},
+    {"root_node", root->name()},
+    {"status", BT::toStr(root->status())},
+  };
+
+  return feedback.dump();
 }
 
-rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr BTExecutor::context_request_client() const
-{
-  return context_client_;
-}
-
-rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr BTExecutor::update_tree_client() const
-{
-  return updater_client_;
-}
-
-void BTExecutor::declare_parameters()
-{
-  config_.tick_period = std::chrono::milliseconds(100);
-  config_.auto_start = true;
-
-  this->declare_parameter<std::string>("tree_xml_path", config_.tree_xml_path);
-  this->declare_parameter<std::string>("config_yaml_path", config_.config_yaml_path);
-  this->declare_parameter<int>("tick_period_ms", static_cast<int>(config_.tick_period.count()));
-  this->declare_parameter<bool>("auto_start", config_.auto_start);
-}
-
-void BTExecutor::read_parameters()
-{
-  config_.tree_xml_path = this->get_parameter("tree_xml_path").as_string();
-  config_.config_yaml_path = this->get_parameter("config_yaml_path").as_string();
-  config_.tick_period = std::chrono::milliseconds(
-    this->get_parameter("tick_period_ms").as_int());
-  config_.auto_start = this->get_parameter("auto_start").as_bool();
-}
-
-void BTExecutor::initialize_components()
-{
-  // Component instances will be created once their implementations are available.
-}
-
-void BTExecutor::initialize_services()
-{
-  context_client_ = this->create_client<std_srvs::srv::Trigger>(kContextServiceName);
-  updater_client_ = this->create_client<std_srvs::srv::Trigger>(kUpdaterServiceName);
-}
-
-void BTExecutor::create_tree()
-{
-  tree_ = BT::Tree();
-  blackboard_ = tree_.rootBlackboard();
-}
-
-void BTExecutor::schedule_tick_timer()
-{
-  tick_timer_ = this->create_wall_timer(
-    config_.tick_period, std::bind(&BTExecutor::tick, this));
-}
-
-void BTExecutor::teardown_tree()
-{
-  tree_ = BT::Tree();
-  blackboard_.reset();
-}
 }  // namespace bt_executor

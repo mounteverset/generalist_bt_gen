@@ -10,31 +10,34 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(behaviortree_ros2 REQUIRED)
 find_package(behaviortree_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(btcpp_ros2_interfaces REQUIRED)
 
 set(bt_executor_sources
   src/bt_executor.cpp
-  src/bt_loader.cpp
   src/bt_failure_handler.cpp
   src/bt_monitor.cpp
 )
 
-add_library(bt_executor SHARED ${bt_executor_sources})
+add_library(bt_executor STATIC ${bt_executor_sources})
 target_include_directories(bt_executor PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(bt_executor yaml-cpp)
 ament_target_dependencies(bt_executor
   rclcpp
+  behaviortree_ros2
   behaviortree_cpp
   yaml-cpp
   nlohmann_json
   std_srvs
-  std_msgs)
+  std_msgs
+  btcpp_ros2_interfaces)
 
 add_executable(bt_executor_node src/bt_executor_node.cpp)
 target_link_libraries(bt_executor_node bt_executor)
@@ -62,11 +65,13 @@ install(DIRECTORY
 ament_export_targets(export_bt_executor HAS_LIBRARY_TARGET)
 ament_export_dependencies(
   rclcpp
+  behaviortree_ros2
   behaviortree_cpp
   yaml-cpp
   nlohmann_json
   std_srvs
-  std_msgs)
+  std_msgs
+  btcpp_ros2_interfaces)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

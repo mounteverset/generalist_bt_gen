@@ -1,18 +1,18 @@
-tree:
-  xml_path: package://bt_executor/trees/base_tree.xml
-  tick_period_ms: 100
-  auto_start: true
+bt_action_server:
+  ros__parameters:
+    action_name: "execute_tree"
+    tick_frequency: 50
+    ros_plugins_timeout: 1000
+    groot2_port: 1667
 
-plugins:
-  libraries:
-    - libbt_actions.so
-    - libbt_nodes_llm.so
+    # BehaviorTree.ROS2 will scan these package-relative folders for BT plugins.
+    plugins:
+      - bt_actions/lib
+      - bt_nodes_llm/lib
 
-recovery:
-  max_retries: 3
-  retry_delay_ms: 2000
+    # XML subtrees made available to TreeExecutionServer.
+    behavior_trees:
+      - bt_executor/trees
 
-services:
-  context_snapshot: /context_gatherer/snapshot
-  llm_query: /llm_interface/llm_query
-  update_tree: /bt_updater/update_tree
+    # Custom parameters consumed by LLMTreeServer.
+    publish_feedback: true

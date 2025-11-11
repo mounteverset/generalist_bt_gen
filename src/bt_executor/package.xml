@@ -9,11 +9,13 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>rclcpp</depend>
+  <depend>behaviortree_ros2</depend>
   <depend>behaviortree_cpp</depend>
   <depend>yaml-cpp</depend>
   <depend>nlohmann_json</depend>
   <depend>std_srvs</depend>
   <depend>std_msgs</depend>
+  <depend>btcpp_ros2_interfaces</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
