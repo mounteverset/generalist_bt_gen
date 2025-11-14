@@ -1,0 +1,12 @@
+# Goal: natural-language mission with optional metadata/context.
+string command
+string session_id
+string context_json
+---
+# Result: acceptance + summary or error message for the UI.
+bool accepted
+string outcome_message
+---
+# Feedback: stage transitions streamed back to the UI.
+string stage
+string detail

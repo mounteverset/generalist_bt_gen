@@ -8,8 +8,8 @@ Overriding the following methods with the following purpose:
 | --- | --- |
 | `void onTreeCreated(BT::Tree& tree)` | set the goal payload of the action call goal to "user_command" on the blackboard | 
 | `std::optional<BT::NodeStatus> onLoopAfterTick(BT::NodeStatus status)` | t.b.d | 
-| `void onTreeExecutionCompleted(BT::NodeStatus status, bool was_cancelled)` | If the tree failed we trigger the extension of the tree here | 
-| `std::optional<std::string> onLoopFeedback()` | The feedback is used to display information in the user interface on the flask webpage | 
+| `void onTreeExecutionCompleted(BT::NodeStatus status, bool was_cancelled)` | If the tree failed we trigger the extension of the tree here by returning a custom error message to the action client | 
+| `std::optional<std::string> onLoopFeedback()` | The feedback is used to display information in the user interface on the webpage, active node for example, blackboard status stuff like this | 
 
 --- 
 

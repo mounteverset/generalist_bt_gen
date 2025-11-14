@@ -1,0 +1,23 @@
+/**:
+  mission_coordinator:
+    ros__parameters:
+      # External interface names
+      mission_action_name: "/mission_coordinator/execute_tree"
+      llm_plan_service: "/llm_interface/plan_subtree"
+      bt_executor_action: "/bt_executor/execute_tree"
+      context_snapshot_service: "/context_gatherer/snapshot"
+      status_topic: "/mission_coordinator/status_text"
+      active_subtree_topic: "/mission_coordinator/active_subtree"
+
+      # Behavior flags
+      enable_context_snapshot: true
+      require_operator_accept: false
+      demo_mode: true  # When true, skip ROS calls and emit mock status.
+
+      # Timing
+      llm_timeout_sec: 45.0
+      bt_timeout_sec: 120.0
+      spin_period_sec: 0.1
+
+      # Logging
+      transcript_directory: "~/.generalist_bt/mission_logs"
