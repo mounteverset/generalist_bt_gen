@@ -28,6 +28,18 @@
 
 Optional packages such as `bt_visualizer` can subscribe to the executor action feedback or Groot2 stream for live dashboards.
 
+## Main Tree Structure
+
+```
+ReactiveSequence:
+    - ChatInterfaceAbortSignalConditionCheck
+    - Thinking Action Node (outputs decision enum)
+    - Fallback:
+        - Subtrees to execute (preconditioned with skipIf: decision != subtree_enum)
+        - FailureFallbackAction (triggers tree-expansion as no subtree was executed or they failed while running)
+
+```
+
 ## Runtime Flow
 
 ```mermaid

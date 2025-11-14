@@ -19,7 +19,7 @@ BehaviorTree.CPP as Behavior Tree framework
 ROS 2 Jazzy 
 BehaviorTree.ROS2 as behavior tree wrapper
 LangChain to use PromptTemplates and Tool Calls / MCP servers
-OpenAI API / Gemini API / Claude API
+OpenAI API / Gemini API / Claude API / Gemini Robotics 1.5 https://ai.google.dev/gemini-api/docs/robotics-overview
 MCP Servers: ROS2 MCP server https://github.com/robotmcp/ros-mcp-server OpenStreetMapMCP https://github.com/wiseman/osm-mcp
 
 ## Repo structure

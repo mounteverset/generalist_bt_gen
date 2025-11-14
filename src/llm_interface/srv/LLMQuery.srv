@@ -1,7 +1,0 @@
-string prompt
-string context_json
-string metadata_json
----
-bool success
-string response_json
-string reasoning
