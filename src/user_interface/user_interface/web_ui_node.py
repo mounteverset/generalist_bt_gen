@@ -1,0 +1,271 @@
+import asyncio
+import json
+from collections import deque
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Deque, Dict, List, Optional
+
+import rclpy
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.templating import Jinja2Templates
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.node import Node
+from std_msgs.msg import String
+import uvicorn
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - Python < 3.9
+        ZoneInfo = None  # type: ignore[assignment]
+
+
+TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
+
+
+class WebInterfaceNode(Node):
+    """Web-based chat UI that exposes orchestrator hooks via HTTP."""
+
+    def __init__(self) -> None:
+        super().__init__('chat_web_interface')
+
+        self.declare_parameter('ui_title', 'Generalist BT Chat')
+        self.declare_parameter('orchestrator_action', '/bt_orchestrator/execute_tree')
+        self.declare_parameter('orchestrator_namespace', '/bt_orchestrator')
+        self.declare_parameter('status_service', '/bt_orchestrator/status')
+        self.declare_parameter('regen_service', '/bt_orchestrator/request_regen')
+        self.declare_parameter('llm_prompt_service', '/llm_interface/chat_complete')
+        self.declare_parameter('status_topic', '/bt_orchestrator/status_text')
+        self.declare_parameter('subtree_topic', '/bt_orchestrator/active_subtree')
+        self.declare_parameter('diagnostics_topics', [])
+        self.declare_parameter('transcript_directory', '~/.generalist_bt/chat_logs')
+        self.declare_parameter('enable_langchain_proxy', False)
+        self.declare_parameter('refresh_period', 0.1)
+        self.declare_parameter('timestamp_timezone', 'UTC')
+        self.declare_parameter('demo_mode', True)
+        self.declare_parameter('web_host', '0.0.0.0')
+        self.declare_parameter('web_port', 8080)
+
+        self.ui_title = self.get_parameter('ui_title').value
+        self.orchestrator_action = self.get_parameter('orchestrator_action').value
+        self.status_service = self.get_parameter('status_service').value
+        self.regen_service = self.get_parameter('regen_service').value
+        self.llm_prompt_service = self.get_parameter('llm_prompt_service').value
+        self.status_topic = self.get_parameter('status_topic').value
+        self.subtree_topic = self.get_parameter('subtree_topic').value
+        self.transcript_directory = Path(self.get_parameter('transcript_directory').value).expanduser()
+        self.demo_mode = bool(self.get_parameter('demo_mode').value)
+        self.refresh_period = float(self.get_parameter('refresh_period').value)
+        self.web_host = self.get_parameter('web_host').value or '0.0.0.0'
+        self.web_port = int(self.get_parameter('web_port').value)
+
+        tz_name = self.get_parameter('timestamp_timezone').value or 'UTC'
+        self._tzinfo = self._resolve_timezone(tz_name)
+        self._shutdown_event: asyncio.Event = asyncio.Event()
+        self._log_handle = self._prepare_transcript()
+
+        self.status_snapshot = 'Idle'
+        self.active_subtree = 'unknown'
+        self.diagnostics: Dict[str, str] = {}
+        self.messages: Deque[Dict[str, str]] = deque(maxlen=200)
+
+        self.create_subscription(String, self.status_topic, self._status_callback, 10)
+        if self.subtree_topic:
+            self.create_subscription(String, self.subtree_topic, self._subtree_callback, 10)
+
+        diagnostics_topics = self.get_parameter('diagnostics_topics').value
+        if isinstance(diagnostics_topics, list):
+            for topic in diagnostics_topics:
+                if isinstance(topic, str) and topic:
+                    self.create_subscription(
+                        String,
+                        topic,
+                        lambda msg, t=topic: self._diagnostics_callback(t, msg),
+                        10,
+                    )
+
+        self._record_message('system', 'Web UI initialized.')
+
+    # region Utilities
+    @property
+    def shutdown_event(self) -> asyncio.Event:
+        return self._shutdown_event
+
+    def _resolve_timezone(self, tz_name: str):
+        if ZoneInfo:
+            try:
+                return ZoneInfo(tz_name)
+            except Exception:  # pragma: no cover
+                pass
+        return timezone.utc
+
+    def _prepare_transcript(self):
+        self.transcript_directory.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        log_path = self.transcript_directory / f'web_chat_{timestamp}.jsonl'
+        handle = log_path.open('a', encoding='utf-8')
+        self.get_logger().info(f'Logging transcript to {log_path}')
+        return handle
+
+    def _write_transcript(self, role: str, content: str, metadata: Optional[dict] = None) -> None:
+        entry = {
+            'ts': datetime.now(self._tzinfo).isoformat(),
+            'role': role,
+            'content': content,
+        }
+        if metadata:
+            entry['meta'] = metadata
+        if self._log_handle:
+            self._log_handle.write(json.dumps(entry) + '\n')
+            self._log_handle.flush()
+
+    def _record_message(self, role: str, content: str) -> None:
+        ts = datetime.now(self._tzinfo).isoformat()
+        self.messages.append({'role': role, 'content': content, 'ts': ts})
+        self._write_transcript(role, content)
+
+    async def handle_user_input(self, text: str) -> None:
+        stripped = text.strip()
+        if not stripped:
+            return
+        if stripped.startswith('/'):
+            await self._handle_command(stripped)
+        else:
+            self._record_message('user', stripped)
+            if self.demo_mode:
+                await self._demo_response(stripped)
+            else:
+                self._record_message(
+                    'system',
+                    f'Ready to send text to orchestrator action {self.orchestrator_action}',
+                )
+
+    async def _handle_command(self, text: str) -> None:
+        cmd, *rest = text[1:].split(' ', 1)
+        payload = rest[0] if rest else ''
+        command = cmd.lower()
+        if command == 'status':
+            self._record_message('system', f'Would invoke {self.status_service}')
+        elif command == 'regen':
+            self._record_message('system', f'Would invoke {self.regen_service}')
+        elif command == 'llm':
+            if not payload.strip():
+                self._record_message('system', 'Usage: /llm <message>')
+            else:
+                self._record_message(
+                    'system',
+                    f'(llm_interface) Would call {self.llm_prompt_service} with payload.',
+                )
+        else:
+            self._record_message('system', f'Unknown command {text}')
+
+    async def _demo_response(self, message: str) -> None:
+        await asyncio.sleep(0.1)
+        self._record_message(
+            'demo',
+            f'Pretend to dispatch "{message}" to {self.orchestrator_action} (demo mode).',
+        )
+
+    def close(self) -> None:
+        if self._log_handle:
+            self._log_handle.close()
+            self._log_handle = None  # type: ignore[assignment]
+
+    # endregion
+
+    # region ROS Callbacks
+    def _status_callback(self, msg: String) -> None:
+        self.status_snapshot = msg.data
+
+    def _subtree_callback(self, msg: String) -> None:
+        self.active_subtree = msg.data
+
+    def _diagnostics_callback(self, topic: str, msg: String) -> None:
+        self.diagnostics[topic] = msg.data
+
+    # endregion
+
+    def build_app(self) -> FastAPI:
+        app = FastAPI(title=self.ui_title)
+        templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+        @app.get('/', response_class=HTMLResponse)
+        async def index(request: Request):
+            context = {
+                'request': request,
+                'ui_title': self.ui_title,
+                'status': self.status_snapshot,
+                'active_subtree': self.active_subtree,
+            }
+            return templates.TemplateResponse('index.html', context)
+
+        @app.get('/state')
+        async def state():
+            return JSONResponse(
+                {
+                    'status': self.status_snapshot,
+                    'active_subtree': self.active_subtree,
+                    'messages': list(self.messages),
+                    'diagnostics': self.diagnostics,
+                }
+            )
+
+        @app.post('/command')
+        async def command(payload: Dict[str, str]):
+            text = payload.get('text', '')
+            if not text.strip():
+                raise HTTPException(status_code=400, detail='Command text cannot be empty')
+            await self.handle_user_input(text)
+            return {'ok': True}
+
+        app.state.ros_node = self
+        return app
+
+
+async def _spin_ros(node: WebInterfaceNode, executor: SingleThreadedExecutor) -> None:
+    try:
+        while rclpy.ok() and not node.shutdown_event.is_set():
+            await asyncio.to_thread(executor.spin_once, timeout_sec=node.refresh_period)
+    except (asyncio.CancelledError, KeyboardInterrupt):  # pragma: no cover
+        pass
+
+
+async def _serve_http(node: WebInterfaceNode, app: FastAPI) -> None:
+    config = uvicorn.Config(
+        app,
+        host=node.web_host,
+        port=node.web_port,
+        log_level='info',
+        loop='asyncio',
+        access_log=False,
+    )
+    server = uvicorn.Server(config)
+    node.get_logger().info(
+        f'Starting web UI at http://{node.web_host}:{node.web_port} (demo_mode={node.demo_mode})'
+    )
+    await server.serve()
+    node.shutdown_event.set()
+
+
+async def main_async(args=None) -> None:
+    rclpy.init(args=args)
+    node = WebInterfaceNode()
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    app = node.build_app()
+
+    try:
+        await asyncio.gather(_spin_ros(node, executor), _serve_http(node, app))
+    finally:
+        node.close()
+        executor.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+def main(args=None) -> None:
+    asyncio.run(main_async(args=args))
+
+
+if __name__ == '__main__':  # pragma: no cover
+    main()
