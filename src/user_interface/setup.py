@@ -22,7 +22,7 @@ setup(
     zip_safe=True,
     maintainer='luke',
     maintainer_email='Lukas.E@web.de',
-    description='Terminal chat UI for configuring commands sent to the LangChain/BT orchestrator.',
+    description='Terminal + web chat UIs for configuring commands sent to the LangChain/BT mission coordinator.',
     license='TODO: License declaration',
     extras_require={
         'test': [

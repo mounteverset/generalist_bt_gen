@@ -2,13 +2,13 @@
   user_interface:
     ros__parameters:
       ui_title: "Generalist BT Chat"
-      orchestrator_action: "/bt_orchestrator/execute_tree"
-      orchestrator_namespace: "/bt_orchestrator"
-      status_service: "/bt_orchestrator/status"
-      regen_service: "/bt_orchestrator/request_regen"
+      mission_coordinator_action: "/mission_coordinator/execute_tree"
+      mission_coordinator_namespace: "/mission_coordinator"
+      status_service: "/mission_coordinator/status"
+      regen_service: "/mission_coordinator/request_regen"
       llm_prompt_service: "/llm_interface/chat_complete"
-      status_topic: "/bt_orchestrator/status_text"
-      subtree_topic: "/bt_orchestrator/active_subtree"
+      status_topic: "/mission_coordinator/status_text"
+      subtree_topic: "/mission_coordinator/active_subtree"
       transcript_directory: "~/.generalist_bt/chat_logs"
       enable_langchain_proxy: false
       diagnostics_topics:

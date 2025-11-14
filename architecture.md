@@ -10,8 +10,8 @@
 
 To keep the behavior tree focused on **execution** and move “Thinking” / planning outside, the architecture uses an explicit orchestration layer between the user and `bt_executor`:
 
-- The **chat_interface** is a **pure UI layer**: it displays information to the user and forwards high-level commands to the orchestrator.
-- A separate **orchestrator node** implements the **logic layer**:
+- The **chat_interface** is a **pure UI layer**: it displays information to the user and forwards high-level commands to the mission coordinator.
+- A separate **mission coordinator node** implements the **logic layer**:
   - Receives user commands from the UI.
   - Calls `llm_interface` as a pre‑hook to interpret the command and design a plan over available BT subtrees.
   - Optionally synthesizes or updates subtrees via `bt_updater` / `llm_interface` before any BT run.
@@ -24,9 +24,9 @@ To keep the behavior tree focused on **execution** and move “Thinking” / pla
 
 This means:
 
-- The “Thinking node” can live entirely **outside** the BT as a pre‑hook inside the orchestrator.
+- The “Thinking node” can live entirely **outside** the BT as a pre‑hook inside the mission coordinator.
 - The BT XML hosted by `bt_executor` is a collection of **reusable subtrees** and glue logic, not a monolithic “do everything” tree.
-- The regeneration logic and decisions about which subtree to execute are expressed in **normal ROS 2 node code** in the orchestrator, which can also implement higher-level stopping criteria for open-ended missions (like exploration).
+- The regeneration logic and decisions about which subtree to execute are expressed in **normal ROS 2 node code** in the mission coordinator, which can also implement higher-level stopping criteria for open-ended missions (like exploration).
 
 ## Technology Stack
 
@@ -42,14 +42,14 @@ This means:
 
 | Package | Purpose | Key Dependencies |
 | --- | --- | --- |
-| `bt_executor` | Extends `TreeExecutionServer` with custom hooks: registers BT plugins once, seeds the global blackboard, listens for failure states, and drives the LLM regeneration loop. On regeneration, it stops the current BT run and calls `createTreeFromText` with updated XML, without restarting the ROS 2 Action server or node. The current action goal is completed with an explicit result (e.g., `NEEDS_EXTENSION` or `TREE_UPDATED`), and the orchestrator is expected to re-issue or continue the mission via a follow-up goal. Publishes action feedback/metrics. | `behaviortree_cpp`, `behaviortree_ros2`, `rclcpp`, `std_srvs`, `yaml-cpp`, `nlohmann_json`. |
+| `bt_executor` | Extends `TreeExecutionServer` with custom hooks: registers BT plugins once, seeds the global blackboard, listens for failure states, and drives the LLM regeneration loop. On regeneration, it stops the current BT run and calls `createTreeFromText` with updated XML, without restarting the ROS 2 Action server or node. The current action goal is completed with an explicit result (e.g., `NEEDS_EXTENSION` or `TREE_UPDATED`), and the mission coordinator is expected to re-issue or continue the mission via a follow-up goal. Publishes action feedback/metrics. | `behaviortree_cpp`, `behaviortree_ros2`, `rclcpp`, `std_srvs`, `yaml-cpp`, `nlohmann_json`. |
 | `robot_actions` | ROS-native BT plugins for locomotion, manipulation, and sensing (Nav2 goals, camera triggers, etc.). | `rclcpp`, `behaviortree_cpp`, `nav2_msgs`, `sensor_msgs`, `geometry_msgs`, `action_msgs`. |
 | `llm_actions` | BT nodes that gate behavior based on LLM output, update the blackboard, and bridge to the LangChain service (e.g., Thinking node, plan validator). These are optional if the project decides to keep all “Thinking” in the external orchestration layer and use the BT purely for execution. | `rclcpp`, `behaviortree_cpp`, `nlohmann_json`, `llm_interface`. |
 | `context_gatherer` | Aggregates camera frames, GPS, point clouds, and semantic context into the format expected by LangChain tools/MPL servers. | `rclcpp`, `sensor_msgs`, `nav_msgs`, `geographic_msgs`, `image_transport`, `cv_bridge`, `nlohmann_json`. |
 | `llm_interface` | Python ROS node exposing `LLMQuery.srv`. Uses LangChain PromptTemplates, tool chains, and MCP-backed retrievers to generate BT specs + artifacts. It is called both as a **pre‑hook** before BT execution (to choose/churn subtrees) and during regeneration when new capabilities are needed. | `rclpy`, `langchain`, `openai`, `google-generativeai`, `anthropic`, `requests`, `python3-yaml`. |
 | `bt_updater` | Applies LangChain-generated XML patches to the authoritative BT tree, validates them with TinyXML2, and returns merged XML to the executor, which then recreates the internal `BT::Tree`. | `rclcpp`, `behaviortree_cpp`, `tinyxml2`, `yaml-cpp`. |
-| `orchestrator` | Logic layer between UI and BT execution. Receives commands from `chat_interface`, calls `llm_interface` to interpret them, plans over available subtrees, triggers `bt_updater` when new subtrees are needed, sends `ExecuteTree` goals to `bt_executor`, monitors feedback, and decides when to chain further subtrees, halt execution, or ask the user for confirmation (e.g., when open-ended goals like “explore the area” appear sufficiently satisfied). | `rclpy`/`rclcpp`, `action_msgs`, `llm_interface`, `bt_updater`, `context_gatherer`. |
-| `chat_interface` | Pure UI layer for human commands and status; acts as a client of the `orchestrator` (via ROS 2 or HTTP/WebSocket). Displays progress, questions (e.g., “stop exploration now?”), and final results but does not directly talk to `bt_executor`. | `rclpy`, `FastAPI`/`Flask`, `websockets`. |
+| `mission_coordinator` | Logic layer between UI and BT execution. Receives commands from `chat_interface`, calls `llm_interface` to interpret them, plans over available subtrees, triggers `bt_updater` when new subtrees are needed, sends `ExecuteTree` goals to `bt_executor`, monitors feedback, and decides when to chain further subtrees, halt execution, or ask the user for confirmation (e.g., when open-ended goals like “explore the area” appear sufficiently satisfied). | `rclpy`/`rclcpp`, `action_msgs`, `llm_interface`, `bt_updater`, `context_gatherer`. |
+| `chat_interface` | Pure UI layer for human commands and status; acts as a client of the `mission_coordinator` (via ROS 2 or HTTP/WebSocket). Displays progress, questions (e.g., “stop exploration now?”), and final results but does not directly talk to `bt_executor`. | `rclpy`, `FastAPI`/`Flask`, `websockets`. |
 
 Optional packages such as `bt_visualizer` can subscribe to the executor action feedback or Groot2 stream for live dashboards.
 
@@ -73,7 +73,7 @@ ReactiveSequence:
 sequenceDiagram
     actor User
     participant UI as chat_interface (UI Layer)
-    participant Orc as orchestrator (Logic Layer)
+    participant Orc as mission_coordinator (Logic Layer)
     participant Exec as bt_executor (TreeExecutionServer, Execution Layer)
     participant Skills as robot_actions / llm_actions
     participant Ctx as context_gatherer
@@ -83,7 +83,7 @@ sequenceDiagram
     User->>UI: "Explore the field and photograph lonely trees"
     UI->>Orc: sendCommand(command)
 
-    Note over Orc,LLM: Pre-hook "Thinking" in the orchestrator
+    Note over Orc,LLM: Pre-hook "Thinking" in the mission coordinator
     Orc->>LLM: LLMQuery.srv(command, available_subtrees, recent_results)
     LLM-->>Orc: plan = { subtree_ids[], maybe_new_subtree_spec }
 
@@ -117,14 +117,14 @@ sequenceDiagram
 
 ## Failure & Regeneration Lifecycle
 
-1. **Detection (inside BT)** – `TreeExecutionServer::onLoopAfterTick` still inspects every tick result. When the BT returns `FAILURE` or a guard node signals `NEEDS_EXTENSION`, the hook stops the current action goal and enters regeneration mode. The `TreeExecutionServer` node and Action server remain active; the goal finishes with a differentiable status/result that the orchestrator understands.
+1. **Detection (inside BT)** – `TreeExecutionServer::onLoopAfterTick` still inspects every tick result. When the BT returns `FAILURE` or a guard node signals `NEEDS_EXTENSION`, the hook stops the current action goal and enters regeneration mode. The `TreeExecutionServer` node and Action server remain active; the goal finishes with a differentiable status/result that the mission coordinator understands.
 2. **Decision (outside BT)** – The **orchestration layer** (typically `chat_interface`) receives the Action result and decides whether to:
    - Simply report failure to the user, or
    - Invoke the LLM again to repair or extend capabilities.
-3. **Context capture** – The orchestrator can request a snapshot from `context_gatherer` via ROS service. Output is saved and passed as structured JSON to LangChain.
+3. **Context capture** – The mission coordinator can request a snapshot from `context_gatherer` via ROS service. Output is saved and passed as structured JSON to LangChain.
 4. **LangChain workflow** – `llm_interface` loads the configured PromptTemplate, selects a model (OpenAI/Gemini/Claude) and orchestrates tool calls (e.g., map query, knowledge base). The final response contains a validated BT spec plus supporting artifacts (new plugin hints, metadata).
-5. **Tree update** – `bt_updater` merges the generated subtree into the canonical XML, leveraging TinyXML2 + schema validation. Conflicts are resolved via predefined anchors (e.g., `LearningSelector` insertion point). The merged XML is returned to the orchestrator and/or `bt_executor`.
-6. **Executor reload** – `bt_executor` calls `TreeExecutionServer::createTreeFromText` with the merged XML, reattaches loggers, repopulates or reuses the blackboard, and waits for the next Action goal. The orchestrator then sends a **new** `ExecuteTree` goal (for the same mission or the next step in the plan), so the robot continues with an updated set of subtrees.
+5. **Tree update** – `bt_updater` merges the generated subtree into the canonical XML, leveraging TinyXML2 + schema validation. Conflicts are resolved via predefined anchors (e.g., `LearningSelector` insertion point). The merged XML is returned to the mission coordinator and/or `bt_executor`.
+6. **Executor reload** – `bt_executor` calls `TreeExecutionServer::createTreeFromText` with the merged XML, reattaches loggers, repopulates or reuses the blackboard, and waits for the next Action goal. The mission coordinator then sends a **new** `ExecuteTree` goal (for the same mission or the next step in the plan), so the robot continues with an updated set of subtrees.
 
 ## Configuration & Observability
 

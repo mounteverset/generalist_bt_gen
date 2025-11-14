@@ -21,18 +21,20 @@ console = Console()
 
 
 class ChatInterfaceNode(Node):
-    """Minimal CLI chat UI that proxies user commands to the orchestrator layer."""
+    """Minimal CLI chat UI that proxies user commands to the mission coordinator layer."""
 
     def __init__(self) -> None:
         super().__init__('chat_interface')
 
         self.declare_parameter('ui_title', 'Generalist BT Chat')
-        self.declare_parameter('orchestrator_action', '/bt_orchestrator/execute_tree')
-        self.declare_parameter('orchestrator_namespace', '/bt_orchestrator')
-        self.declare_parameter('status_service', '/bt_orchestrator/status')
-        self.declare_parameter('regen_service', '/bt_orchestrator/request_regen')
+        self.declare_parameter('mission_coordinator_action', '/mission_coordinator/execute_tree')
+        self.declare_parameter(
+            'mission_coordinator_namespace', '/mission_coordinator'
+        )
+        self.declare_parameter('status_service', '/mission_coordinator/status')
+        self.declare_parameter('regen_service', '/mission_coordinator/request_regen')
         self.declare_parameter('llm_prompt_service', '/llm_interface/chat_complete')
-        self.declare_parameter('status_topic', '/bt_orchestrator/status_text')
+        self.declare_parameter('status_topic', '/mission_coordinator/status_text')
         self.declare_parameter('diagnostics_topics', [])
         self.declare_parameter('transcript_directory', '~/.generalist_bt/chat_logs')
         self.declare_parameter('enable_langchain_proxy', False)
@@ -41,7 +43,9 @@ class ChatInterfaceNode(Node):
         self.declare_parameter('demo_mode', True)
 
         self.ui_title = self.get_parameter('ui_title').get_parameter_value().string_value
-        self.orchestrator_action = self.get_parameter('orchestrator_action').value
+        self.mission_coordinator_action = self.get_parameter(
+            'mission_coordinator_action'
+        ).value
         self.status_service = self.get_parameter('status_service').value
         self.regen_service = self.get_parameter('regen_service').value
         self.llm_prompt_service = self.get_parameter('llm_prompt_service').value
@@ -57,7 +61,7 @@ class ChatInterfaceNode(Node):
 
         self._log_handle = self._prepare_transcript()
 
-        # Subscriptions for orchestrator status + diagnostics.
+        # Subscriptions for mission coordinator status + diagnostics.
         self.create_subscription(String, self.status_topic, self._status_callback, 10)
         diag_topics = self.get_parameter('diagnostics_topics').value
         if isinstance(diag_topics, list):
@@ -139,16 +143,19 @@ class ChatInterfaceNode(Node):
             else:
                 self._emit_system_line(f'Unknown command: /{cmd}')
         else:
-            await self._forward_to_orchestrator(stripped)
+            await self._forward_to_mission_coordinator(stripped)
 
-    async def _forward_to_orchestrator(self, message: str) -> None:
+    async def _forward_to_mission_coordinator(self, message: str) -> None:
         self._emit_user_line(message)
-        self._write_transcript('user', message, {'target_action': self.orchestrator_action})
+        self._write_transcript(
+            'user', message, {'target_action': self.mission_coordinator_action}
+        )
         if self.demo_mode:
             await self._emit_demo_response(message)
         else:
             self._emit_system_line(
-                f'Ready to send message to orchestrator action {self.orchestrator_action}'
+                'Ready to send message to mission coordinator action '
+                f'{self.mission_coordinator_action}'
             )
 
     # endregion
@@ -168,8 +175,8 @@ class ChatInterfaceNode(Node):
 
     async def _cmd_help(self, _: str) -> None:
         lines = [
-            '/status  - Request orchestrator status update',
-            '/regen   - Ask orchestrator to regenerate BT subtree',
+            '/status  - Request mission coordinator status update',
+            '/regen   - Ask mission coordinator to regenerate BT subtree',
             '/llm msg - Forward note to llm_interface prompt stream',
             '/quit    - Exit the chat UI',
         ]
@@ -205,11 +212,13 @@ class ChatInterfaceNode(Node):
     async def _emit_demo_response(self, message: str) -> None:
         await asyncio.sleep(0.1)
         response = (
-            f'[DEMO] Would dispatch "{message}" to {self.orchestrator_action} and await feedback.'
+            f'[DEMO] Would dispatch "{message}" to {self.mission_coordinator_action} and await feedback.'
         )
         self._emit_system_line(response)
         self._write_transcript(
-            'demo', response, {'orchestrator_action': self.orchestrator_action}
+            'demo',
+            response,
+            {'mission_coordinator_action': self.mission_coordinator_action},
         )
 
     # endregion

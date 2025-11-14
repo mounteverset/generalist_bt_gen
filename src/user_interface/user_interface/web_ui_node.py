@@ -24,19 +24,23 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
 
 
 class WebInterfaceNode(Node):
-    """Web-based chat UI that exposes orchestrator hooks via HTTP."""
+    """Web-based chat UI that exposes mission coordinator hooks via HTTP."""
 
     def __init__(self) -> None:
         super().__init__('chat_web_interface')
 
         self.declare_parameter('ui_title', 'Generalist BT Chat')
-        self.declare_parameter('orchestrator_action', '/bt_orchestrator/execute_tree')
-        self.declare_parameter('orchestrator_namespace', '/bt_orchestrator')
-        self.declare_parameter('status_service', '/bt_orchestrator/status')
-        self.declare_parameter('regen_service', '/bt_orchestrator/request_regen')
+        self.declare_parameter(
+            'mission_coordinator_action', '/mission_coordinator/execute_tree'
+        )
+        self.declare_parameter(
+            'mission_coordinator_namespace', '/mission_coordinator'
+        )
+        self.declare_parameter('status_service', '/mission_coordinator/status')
+        self.declare_parameter('regen_service', '/mission_coordinator/request_regen')
         self.declare_parameter('llm_prompt_service', '/llm_interface/chat_complete')
-        self.declare_parameter('status_topic', '/bt_orchestrator/status_text')
-        self.declare_parameter('subtree_topic', '/bt_orchestrator/active_subtree')
+        self.declare_parameter('status_topic', '/mission_coordinator/status_text')
+        self.declare_parameter('subtree_topic', '/mission_coordinator/active_subtree')
         self.declare_parameter('diagnostics_topics', [])
         self.declare_parameter('transcript_directory', '~/.generalist_bt/chat_logs')
         self.declare_parameter('enable_langchain_proxy', False)
@@ -47,7 +51,9 @@ class WebInterfaceNode(Node):
         self.declare_parameter('web_port', 8080)
 
         self.ui_title = self.get_parameter('ui_title').value
-        self.orchestrator_action = self.get_parameter('orchestrator_action').value
+        self.mission_coordinator_action = self.get_parameter(
+            'mission_coordinator_action'
+        ).value
         self.status_service = self.get_parameter('status_service').value
         self.regen_service = self.get_parameter('regen_service').value
         self.llm_prompt_service = self.get_parameter('llm_prompt_service').value
@@ -137,7 +143,8 @@ class WebInterfaceNode(Node):
             else:
                 self._record_message(
                     'system',
-                    f'Ready to send text to orchestrator action {self.orchestrator_action}',
+                    'Ready to send text to mission coordinator action '
+                    f'{self.mission_coordinator_action}',
                 )
 
     async def _handle_command(self, text: str) -> None:
@@ -163,7 +170,7 @@ class WebInterfaceNode(Node):
         await asyncio.sleep(0.1)
         self._record_message(
             'demo',
-            f'Pretend to dispatch "{message}" to {self.orchestrator_action} (demo mode).',
+            f'Pretend to dispatch "{message}" to {self.mission_coordinator_action} (demo mode).',
         )
 
     def close(self) -> None:

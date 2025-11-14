@@ -3,7 +3,7 @@
 <package format="3">
   <name>user_interface</name>
   <version>0.0.0</version>
-  <description>Terminal and web chat UI that forwards operator commands to the orchestrator / llm_interface layers.</description>
+  <description>Terminal and web chat UI that forwards operator commands to the mission coordinator / llm_interface layers.</description>
   <maintainer email="Lukas.E@web.de">luke</maintainer>
   <license>TODO: License declaration</license>
 
