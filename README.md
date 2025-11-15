@@ -20,6 +20,7 @@ MCP Servers: ROS2 MCP server https://github.com/robotmcp/ros-mcp-server OpenStre
 
 ## Repo structure
 
+project_roadmap.md -> currently working on v0.5
 bt_executor -> extends BehaviorTree.ROS2 with needed functionality
 robot_actions -> robot specific behavior tree actions like Drive, TakePicture etc.
 mission_coordinator -> orchestrates LLM planning + bt_executor goals
