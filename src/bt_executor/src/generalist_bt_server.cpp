@@ -39,6 +39,7 @@ void GeneralistBehaviorTreeServer::onTreeCreated(BT::Tree & tree)
 
   blackboard->set<std::string>("logfile_path", "/tmp/mission_temp_log.txt");
   blackboard->set("user_command", payload);
+  blackboard->set<std::string>("waypoints_raw", "");
   const auto payload_json = parse_payload_json(payload, node()->get_logger());
   const auto stats = load_payload_into_blackboard(blackboard, payload_json, node()->get_logger());
   if (stats.entries_written > 0) {
@@ -47,9 +48,14 @@ void GeneralistBehaviorTreeServer::onTreeCreated(BT::Tree & tree)
       stats.entries_written, stats.warnings);
   }
 
-  const auto waypoint_queue = build_waypoint_queue_from_payload(payload_json, node()->get_logger());
-  blackboard->set("waypoint_queue", waypoint_queue);
-  blackboard->set("waypoint_count", static_cast<int>(waypoint_queue->size()));
+  const auto waypoint_it = payload_json.find("waypoints");
+  if (waypoint_it != payload_json.end()) {
+    if (waypoint_it->is_string()) {
+      blackboard->set("waypoints_raw", waypoint_it->get<std::string>());
+    } else {
+      blackboard->set("waypoints_raw", waypoint_it->dump());
+    }
+  }
 }
 
 std::optional<BT::NodeStatus> GeneralistBehaviorTreeServer::onLoopAfterTick(BT::NodeStatus status)

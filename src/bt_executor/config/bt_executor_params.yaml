@@ -12,6 +12,9 @@ bt_action_server:
     # bt_executor custom parameters
     plugin_directories:
       - "robot_actions/lib"
+    nav2_action_name: "/navigate_to_pose"
+    log_temperature_service_name: "/log_temperature"
+    take_picture_service_name: "/take_picture"
     status_topic: "/mission_coordinator/status_text"
     active_node_topic: "/mission_coordinator/active_subtree"
     auto_restart_on_failure: false

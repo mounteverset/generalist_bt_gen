@@ -27,6 +27,7 @@ add_library(${PROJECT_NAME} SHARED
   src/take_picture.cpp
   src/log_temperature.cpp
   src/restart_node.cpp
+  src/parse_waypoints.cpp
   src/plugin_registration.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
