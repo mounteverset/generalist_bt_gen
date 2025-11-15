@@ -3,15 +3,11 @@
 This repository contains a software module which runs a behavior tree for an autonomous mobile robot. 
 Whenever the behavior tree executor detects that the BT in its current form has got limitations and can not complete its mission with the available behaviors it will query an LLM in order for it to generate a new subtree which purpose it is to be expand the domain of the robot. The tree then gets relaunched and the robot can finish its task with the new and improved BT guiding its action.
 
-The general idea is to have a given set of actions that are calling ROS 2 services and actions, and the LLM has to craft a BT that is able to fulfill the commands it receives.
+The general idea is to have a given set of BT skills that call ROS 2 services/actions, while a **mission coordinator** node outside the tree talks to the LLM (via `llm_interface`) to decide **which** subtree/entry point should run next. It also triggers tree regeneration when the skill catalog is insufficient. The BT itself remains a pure execution layer.
 
-The way to interact with the BT executor and give it tasks is by chat, either via CLI or via a simple web interface. 
+The way to interact with the system is by chat, either via CLI or via a simple web interface; both talk to the mission coordinator action server.
 
-Inside of the behavior tree exists a central "Thinking node" which passes the command that the robot should do to a LLM and it will return an enum to choose which subtree to execute. Also this Thinking node is the first line of detection if the robot is capable of exhibiting the desired behavior. If the LLM reasons that from the available subtrees none can accomplish the desired behavior it will exit the subtree and the LLM BT update step is triggered.
-
-The special thing about the BT generation step is that it can gather additional context from the cameras, GPS position and satellite map.
-
-Another special node inside the tree is a LLM querying node to update blackboard values, like to populate lists of waypoints, navigation goals, etc. for the BT subtrees to be used in versatile ways. 
+All “Thinking” (LLM calls, plan validation, regeneration) now happens **outside** the BT. The coordinator gathers context (cameras, GPS, satellite map) via `context_gatherer`, queries LangChain, and then instructs `bt_executor` which subtree to execute. Blackboard updates produced by the LLM are injected before the BT run; no dedicated LLM plugins live inside the tree anymore.
 
 ## Dependencies / Tech stack
 
@@ -26,7 +22,7 @@ MCP Servers: ROS2 MCP server https://github.com/robotmcp/ros-mcp-server OpenStre
 
 bt_executor -> extends BehaviorTree.ROS2 with needed functionality
 robot_actions -> robot specific behavior tree actions like Drive, TakePicture etc.
-llm_actions -> Thinking and Blackboard context node
+mission_coordinator -> orchestrates LLM planning + bt_executor goals
 llm_interface/context_gatherer -> LangChain
 
 ### Possible scenarios where this approach can outperform current methods of behavior tree generation and hence show higher levels of deliberation for the robot:
@@ -40,4 +36,3 @@ llm_interface/context_gatherer -> LangChain
   - Situation specific recoveries like a stuck robot
     - can't proceed to drive with current plan, trying to find an alternative path with visual context of sorrounding and satellite map
   - Can give always suggestions or even create additions to the skill catalogue of composable bt actions
-

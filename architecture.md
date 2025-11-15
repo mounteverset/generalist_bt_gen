@@ -44,7 +44,6 @@ This means:
 | --- | --- | --- |
 | `bt_executor` | Extends `TreeExecutionServer` with custom hooks: registers BT plugins once, seeds the global blackboard, listens for failure states, and drives the LLM regeneration loop. On regeneration, it stops the current BT run and calls `createTreeFromText` with updated XML, without restarting the ROS 2 Action server or node. The current action goal is completed with an explicit result (e.g., `NEEDS_EXTENSION` or `TREE_UPDATED`), and the mission coordinator is expected to re-issue or continue the mission via a follow-up goal. Publishes action feedback/metrics. | `behaviortree_cpp`, `behaviortree_ros2`, `rclcpp`, `std_srvs`, `yaml-cpp`, `nlohmann_json`. |
 | `robot_actions` | ROS-native BT plugins for locomotion, manipulation, and sensing (Nav2 goals, camera triggers, etc.). | `rclcpp`, `behaviortree_cpp`, `nav2_msgs`, `sensor_msgs`, `geometry_msgs`, `action_msgs`. |
-| `llm_actions` | BT nodes that gate behavior based on LLM output, update the blackboard, and bridge to the LangChain service (e.g., Thinking node, plan validator). These are optional if the project decides to keep all “Thinking” in the external orchestration layer and use the BT purely for execution. | `rclcpp`, `behaviortree_cpp`, `nlohmann_json`, `llm_interface`. |
 | `context_gatherer` | Aggregates camera frames, GPS, point clouds, and semantic context into the format expected by LangChain tools/MPL servers. | `rclcpp`, `sensor_msgs`, `nav_msgs`, `geographic_msgs`, `image_transport`, `cv_bridge`, `nlohmann_json`. |
 | `llm_interface` | Python ROS node exposing `LLMQuery.srv`. Uses LangChain PromptTemplates, tool chains, and MCP-backed retrievers to generate BT specs + artifacts. It is called both as a **pre‑hook** before BT execution (to choose/churn subtrees) and during regeneration when new capabilities are needed. | `rclpy`, `langchain`, `openai`, `google-generativeai`, `anthropic`, `requests`, `python3-yaml`. |
 | `bt_updater` | Applies LangChain-generated XML patches to the authoritative BT tree, validates them with TinyXML2, and returns merged XML to the executor, which then recreates the internal `BT::Tree`. | `rclcpp`, `behaviortree_cpp`, `tinyxml2`, `yaml-cpp`. |
@@ -56,16 +55,14 @@ Optional packages such as `bt_visualizer` can subscribe to the executor action f
 ## Main Tree Structure
 
 ```markdown
-// filepath: /home/luke/generalist_bt_gen/architecture.md
 ReactiveSequence:
-    - ChatInterfaceAbortSignalConditionCheck
-    - Thinking Action Node (outputs decision enum)
-    - Fallback:
-        - Subtrees to execute (preconditioned with skipIf: decision != subtree_enum)
-        - FailureFallbackAction (triggers tree-expansion as no subtree was executed or they failed while running)
+    - CommandAbortGuard (checks for stop signals from UI/mission coordinator)
+    - SelectedMissionEntry (tree entry chosen by mission coordinator)
+        - Sequence/Fallback of robot_actions plugins (nav, sensing, manipulation)
+        - Safety/Recovery subtrees
 ```
 
-> **Variant:** In the “Thinking outside BT” design, the above root may be simplified to a **pure execution tree** (e.g., a `Sequence`/`Fallback` over robot skills and guards), while the LLM “Thinking Action Node” and `FailureFallbackAction` logic move into the orchestration layer. The BT then executes a specific subtree ID or entry point chosen by the LLM pre‑hook.
+> **Note:** All “Thinking” happens outside the BT now. The mission coordinator pre-selects which subtree/entry point to run and handles regeneration. The BT focuses purely on execution of `robot_actions` plugins plus safety guards.
 
 ## Runtime Flow
 
@@ -75,7 +72,7 @@ sequenceDiagram
     participant UI as chat_interface (UI Layer)
     participant Orc as mission_coordinator (Logic Layer)
     participant Exec as bt_executor (TreeExecutionServer, Execution Layer)
-    participant Skills as robot_actions / llm_actions
+    participant Skills as robot_actions
     participant Ctx as context_gatherer
     participant LLM as llm_interface (LangChain)
     participant Upd as bt_updater

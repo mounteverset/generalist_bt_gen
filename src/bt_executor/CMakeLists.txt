@@ -7,9 +7,54 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
+find_package(behaviortree_ros2 REQUIRED)
+find_package(behaviortree_cpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(gen_bt_interfaces REQUIRED)
+
+set(dependencies
+  rclcpp
+  rclcpp_action
+  behaviortree_ros2
+  behaviortree_cpp
+  std_msgs
+  gen_bt_interfaces
+)
+
+add_executable(bt_executor_node
+  src/generalist_bt_server.cpp
+  src/bt_executor_node.cpp
+)
+ament_target_dependencies(bt_executor_node ${dependencies})
+target_include_directories(bt_executor_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
+)
+
+install(
+  DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}
+)
+install(
+  DIRECTORY trees
+  DESTINATION share/${PROJECT_NAME}
+)
+install(
+  DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(TARGETS bt_executor_node
+  EXPORT export_${PROJECT_NAME}
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -22,5 +67,8 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+ament_export_dependencies(${dependencies})
+ament_export_targets(export_${PROJECT_NAME})
 
 ament_package()
