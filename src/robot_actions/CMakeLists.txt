@@ -7,11 +7,19 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(behaviortree_cpp REQUIRED)
+find_package(behaviortree_ros2 REQUIRED)
+find_package(nav2_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_srvs REQUIRED)
 
 set(dependencies
   behaviortree_cpp
+  behaviortree_ros2
+  nav2_msgs
+  geometry_msgs
   rclcpp
+  std_srvs
 )
 
 add_library(${PROJECT_NAME} SHARED
@@ -25,6 +33,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
+target_compile_definitions(${PROJECT_NAME} PRIVATE BT_PLUGIN_EXPORT)
 ament_target_dependencies(${PROJECT_NAME} ${dependencies})
 
 install(

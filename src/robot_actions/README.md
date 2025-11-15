@@ -7,7 +7,7 @@ ROS - related nodes will be making use of the boilerplate classes in behaviortre
 
 | Action Class Name | Type | Ports | Description | 
 | --- | --- | --- | --- |
-| MoveTo | AsyncAction | InputPort: pose (string convert to X,Y, Yaw) | Calls the Nav2 action server |
-| TakePicture | AsyncAction | OutputPort: filepath (string) | Calls a service to save a picture | 
-| LogTemperature | AsyncAction | InputPort: logfile_path (string) | Calls a service to measure the temp and log it to a file |
-| RestartNode | AsyncAction | InputPort: node_name (string) | Triggers a restart of a specific node to regain functionality | 
+| MoveTo | `RosActionNode<nav2_msgs::action::NavigateToPose>` | `pose` (`"x,y,theta"`) | Sends NavigateToPose goals to Nav2 |
+| TakePicture | `RosServiceNode<std_srvs::srv::Trigger>` | `filepath` (output) | Invokes camera capture service and returns saved path |
+| LogTemperature | `RosServiceNode<std_srvs::srv::Trigger>` | `logfile_path` (input) | Requests a temperature capture/logging service |
+| RestartNode | `RosServiceNode<std_srvs::srv::SetBool>` | `node_name` (input) | Asks supervisor service to restart the specified node |

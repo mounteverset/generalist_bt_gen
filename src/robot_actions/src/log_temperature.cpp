@@ -5,22 +5,36 @@
 namespace robot_actions
 {
 
-LogTemperature::LogTemperature(const std::string & name, const BT::NodeConfig & config)
-: BT::SyncActionNode(name, config)
+LogTemperature::LogTemperature(const std::string & name, const BT::NodeConfig & config, const BT::RosNodeParams & params)
+: BT::RosServiceNode<std_srvs::srv::Trigger>(name, config, params)
 {
 }
 
 BT::PortsList LogTemperature::providedPorts()
 {
-  return {BT::InputPort<std::string>("logfile_path", "/tmp/temperature_log.txt")};
+  return providedBasicPorts({BT::InputPort<std::string>("logfile_path", "/tmp/temperature_log.txt")});
 }
 
-BT::NodeStatus LogTemperature::tick()
+bool LogTemperature::setRequest(Request::SharedPtr & request)
 {
-  const auto path = getInput<std::string>("logfile_path").value_or("/tmp/temperature_log.txt");
-  RCLCPP_INFO(get_logger(), "LogTemperature → measured temp and appended to %s", path.c_str());
-  // TODO: call temperature service and append data.
-  return BT::NodeStatus::SUCCESS;
+  current_log_path_ = getInput<std::string>("logfile_path").value_or("/tmp/temperature_log.txt");
+  (void)request;
+  RCLCPP_INFO(get_logger(), "LogTemperature → requesting measurement for %s", current_log_path_.c_str());
+  return true;
+}
+
+BT::NodeStatus LogTemperature::onResponseReceived(const Response::SharedPtr & response)
+{
+  RCLCPP_INFO(
+    get_logger(), "LogTemperature → response: success=%d message=%s",
+    response->success, response->message.c_str());
+  return response->success ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+}
+
+BT::NodeStatus LogTemperature::onFailure(BT::ServiceNodeErrorCode error)
+{
+  RCLCPP_ERROR(get_logger(), "LogTemperature → service failure: %s", BT::toStr(error));
+  return BT::NodeStatus::FAILURE;
 }
 
 }  // namespace robot_actions
