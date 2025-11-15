@@ -13,6 +13,7 @@ find_package(behaviortree_ros2 REQUIRED)
 find_package(behaviortree_cpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(gen_bt_interfaces REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 set(dependencies
   rclcpp
@@ -21,11 +22,13 @@ set(dependencies
   behaviortree_cpp
   std_msgs
   gen_bt_interfaces
+  nlohmann_json
 )
 
 add_executable(bt_executor_node
   src/generalist_bt_server.cpp
   src/bt_executor_node.cpp
+  src/executor_utils.cpp
 )
 ament_target_dependencies(bt_executor_node ${dependencies})
 target_include_directories(bt_executor_node PUBLIC

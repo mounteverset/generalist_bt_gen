@@ -1,10 +1,15 @@
 #include "bt_executor/generalist_bt_server.hpp"
 
+#include <ament_index_cpp/get_package_prefix.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <behaviortree_cpp/bt_factory.h>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <vector>
+
 #include <filesystem>
+
+#include "bt_executor/executor_utils.hpp"
 
 namespace bt_executor
 {
@@ -30,10 +35,21 @@ void GeneralistBehaviorTreeServer::onTreeCreated(BT::Tree & tree)
 {
   RCLCPP_INFO(node()->get_logger(), "Tree created with root: %s", tree.rootNode()->name().c_str());
   const auto payload = goalPayload();
-  if (!payload.empty()) {
-    tree.rootBlackboard()->set("user_command", payload);
-    RCLCPP_INFO(node()->get_logger(), "Seeded blackboard with user_command payload.");
+  auto blackboard = tree.rootBlackboard();
+
+  blackboard->set<std::string>("logfile_path", "/tmp/mission_temp_log.txt");
+  blackboard->set("user_command", payload);
+  const auto payload_json = parse_payload_json(payload, node()->get_logger());
+  const auto stats = load_payload_into_blackboard(blackboard, payload_json, node()->get_logger());
+  if (stats.entries_written > 0) {
+    RCLCPP_INFO(
+      node()->get_logger(), "Loaded %zu payload entries into the blackboard (warnings=%zu).",
+      stats.entries_written, stats.warnings);
   }
+
+  const auto waypoint_queue = build_waypoint_queue_from_payload(payload_json, node()->get_logger());
+  blackboard->set("waypoint_queue", waypoint_queue);
+  blackboard->set("waypoint_count", static_cast<int>(waypoint_queue->size()));
 }
 
 std::optional<BT::NodeStatus> GeneralistBehaviorTreeServer::onLoopAfterTick(BT::NodeStatus status)
@@ -111,7 +127,17 @@ void bt_executor::GeneralistBehaviorTreeServer::registerNodesIntoFactory(BT::Beh
     try {
       const auto pkg = entry.substr(0, pos);
       const auto sub = entry.substr(pos + 1);
-      return ament_index_cpp::get_package_share_directory(pkg) + "/" + sub;
+      const auto prefix = std::filesystem::path(ament_index_cpp::get_package_prefix(pkg));
+      const auto candidate = (prefix / sub);
+      if (std::filesystem::exists(candidate)) {
+        return candidate.string();
+      }
+      const auto share_dir = std::filesystem::path(ament_index_cpp::get_package_share_directory(pkg));
+      const auto share_candidate = (share_dir / sub);
+      if (std::filesystem::exists(share_candidate)) {
+        return share_candidate.string();
+      }
+      return candidate.string();
     } catch (const std::exception & e) {
       RCLCPP_WARN(rclcpp::get_logger("bt_executor"), "Failed to resolve plugin path %s: %s", entry.c_str(), e.what());
       return {};

@@ -1,8 +1,13 @@
 <?xml version="1.0"?>
-<root main_tree_to_execute="MainTree">
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
-    <Sequence name="DemoMission">
-      <AlwaysSuccess name="IdleWait"/>
+    <Sequence name="WaypointMission">
+      <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="SUCCESS">
+        <Sequence name="VisitWaypoint">
+          <MoveTo name="DriveToWaypoint" pose="{active_waypoint}" />
+          <LogTemperature name="LogTemperatureAtWaypoint" logfile_path="{logfile_path}" />
+        </Sequence>
+      </LoopString>
     </Sequence>
   </BehaviorTree>
 </root>

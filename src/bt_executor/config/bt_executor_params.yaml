@@ -5,14 +5,13 @@ bt_action_server:
     groot2_port: 1667
     ros_plugins_timeout: 1000
 
-    plugins:
-      - "robot_actions/lib"
+    plugins: []
     behavior_trees:
       - "bt_executor/trees"
 
     # bt_executor custom parameters
     plugin_directories:
-      - "/home/luke/generalist_bt_gen/install/robot_actions/lib"
+      - "robot_actions/lib"
     status_topic: "/mission_coordinator/status_text"
     active_node_topic: "/mission_coordinator/active_subtree"
     auto_restart_on_failure: false
