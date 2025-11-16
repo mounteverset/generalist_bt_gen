@@ -13,8 +13,14 @@ set(action_files
   "action/MissionCommand.action"
 )
 
+set(service_files
+  "srv/PlanSubtree.srv"
+  "srv/SelectBehaviorTree.srv"
+)
+
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${action_files}
+  ${service_files}
 )
 
 ament_export_dependencies(rosidl_default_runtime)

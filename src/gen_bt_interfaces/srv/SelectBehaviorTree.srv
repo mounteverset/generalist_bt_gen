@@ -1,0 +1,10 @@
+string session_id
+string user_command
+string[] available_trees
+string[] tree_descriptions
+string context_snapshot
+---
+uint8 status_code
+string selected_tree
+float32 confidence
+string reason

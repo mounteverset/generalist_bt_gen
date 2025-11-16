@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>llm_interface</name>
+  <version>0.0.0</version>
+  <description>LangChain-powered service node that provides mission-aware behavior tree plans.</description>
+  <maintainer email="Lukas.E@web.de">luke</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>gen_bt_interfaces</depend>
+
+  <exec_depend>python3-requests</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-langchain</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

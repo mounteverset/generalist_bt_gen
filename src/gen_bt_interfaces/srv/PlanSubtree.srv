@@ -1,0 +1,12 @@
+string session_id
+string mission_text
+string context_snapshot
+string blackboard_state
+string failure_report
+string[] requested_capabilities
+---
+uint8 status_code
+string bt_xml
+string summary
+string tool_invocations
+string reason
