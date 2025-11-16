@@ -1,4 +1,4 @@
-bt_action_server:
+bt_executor_node:
   ros__parameters:
     action_name: "/bt_executor/execute_tree"
     tick_frequency: 20

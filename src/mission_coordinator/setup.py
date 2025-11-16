@@ -18,7 +18,6 @@ setup(
     maintainer_email='Lukas.E@web.de',
     description='Mission control node coordinating UI, LLM, and bt_executor.',
     license='TODO: License declaration',
-    #tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'mission_coordinator_node = mission_coordinator.node:main',

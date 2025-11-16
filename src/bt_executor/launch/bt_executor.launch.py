@@ -15,8 +15,7 @@ def generate_launch_description():
         [
             Node(
                 package='bt_executor',
-                executable='bt_executor_node',
-                name='bt_action_server',
+            executable='bt_executor_node',
                 output='screen',
                 parameters=[params_file],
             )
