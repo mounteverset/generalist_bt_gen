@@ -1,7 +1,7 @@
 /**:
   user_interface:
     ros__parameters:
-      ui_title: "Generalist BT Chat"
+      ui_title: "Generalist BTTTTTT Chat"
       mission_coordinator_action: "/mission_coordinator/execute_tree"
       mission_coordinator_namespace: "/mission_coordinator"
       status_service: "/mission_coordinator/status"

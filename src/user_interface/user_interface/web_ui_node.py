@@ -9,6 +9,8 @@ import rclpy
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from gen_bt_interfaces.action import MissionCommand
+from rclpy.action import ActionClient
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -46,7 +48,7 @@ class WebInterfaceNode(Node):
         self.declare_parameter('enable_langchain_proxy', False)
         self.declare_parameter('refresh_period', 0.1)
         self.declare_parameter('timestamp_timezone', 'UTC')
-        self.declare_parameter('demo_mode', True)
+        self.declare_parameter('demo_mode', False)
         self.declare_parameter('web_host', '0.0.0.0')
         self.declare_parameter('web_port', 8080)
 
@@ -61,6 +63,8 @@ class WebInterfaceNode(Node):
         self.subtree_topic = self.get_parameter('subtree_topic').value
         self.transcript_directory = Path(self.get_parameter('transcript_directory').value).expanduser()
         self.demo_mode = bool(self.get_parameter('demo_mode').value)
+        # log demo mode parameter
+        self.get_logger().info(f'Demo mode is set to {self.demo_mode}')
         self.refresh_period = float(self.get_parameter('refresh_period').value)
         self.web_host = self.get_parameter('web_host').value or '0.0.0.0'
         self.web_port = int(self.get_parameter('web_port').value)
@@ -91,6 +95,11 @@ class WebInterfaceNode(Node):
                     )
 
         self._record_message('system', 'Web UI initialized.')
+
+        self._mission_action_client = ActionClient(
+            self, MissionCommand, self.mission_coordinator_action
+        )
+        self._session_counter = 0
 
     # region Utilities
     @property
@@ -141,11 +150,7 @@ class WebInterfaceNode(Node):
             if self.demo_mode:
                 await self._demo_response(stripped)
             else:
-                self._record_message(
-                    'system',
-                    'Ready to send text to mission coordinator action '
-                    f'{self.mission_coordinator_action}',
-                )
+                await self._dispatch_mission(stripped)
 
     async def _handle_command(self, text: str) -> None:
         cmd, *rest = text[1:].split(' ', 1)
@@ -171,6 +176,68 @@ class WebInterfaceNode(Node):
         self._record_message(
             'demo',
             f'Pretend to dispatch "{message}" to {self.mission_coordinator_action} (demo mode).',
+        )
+
+    async def _dispatch_mission(self, command_text: str) -> None:
+        if not await self._wait_for_mission_server():
+            self._record_message(
+                'system',
+                f'Mission coordinator action {self.mission_coordinator_action} unavailable.',
+            )
+            return
+
+        goal_msg = MissionCommand.Goal()
+        goal_msg.command = command_text
+        goal_msg.session_id = self._next_session_id()
+        goal_msg.context_json = json.dumps({}, ensure_ascii=False)
+
+        self._record_message(
+            'system',
+            f'Dispatching mission to {self.mission_coordinator_action} (session={goal_msg.session_id})',
+        )
+        send_future = self._mission_action_client.send_goal_async(
+            goal_msg, feedback_callback=self._mission_feedback
+        )
+        goal_handle = await self._await_rclpy_future(send_future)
+        if goal_handle is None or not goal_handle.accepted:
+            self._record_message('system', 'Mission coordinator rejected the request.')
+            return
+
+        result_future = goal_handle.get_result_async()
+        result = await self._await_rclpy_future(result_future)
+        if result is None:
+            self._record_message('system', 'Mission coordinator result unavailable.')
+            return
+        self._record_message(
+            'system',
+            f"Mission result: accepted={result.result.accepted}, detail='{result.result.outcome_message}'",
+        )
+
+    async def _wait_for_mission_server(self) -> bool:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, self._mission_action_client.wait_for_server, 1.0
+        )
+
+    async def _await_rclpy_future(self, future):
+        while not future.done():
+            await asyncio.sleep(0.05)
+        if future.cancelled():
+            return None
+        if future.exception():
+            self.get_logger().error(f'Action future error: {future.exception()}')
+            return None
+        return future.result()
+
+    def _next_session_id(self) -> str:
+        self._session_counter += 1
+        timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        return f'webui-{timestamp}-{self._session_counter}'
+
+    def _mission_feedback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self._record_message(
+            'feedback', f"{feedback.stage}: {feedback.detail}"
         )
 
     def close(self) -> None:

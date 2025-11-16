@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import rclpy
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from btcpp_ros2_interfaces.action import ExecuteTree
+from btcpp_ros2_interfaces.msg import NodeStatus
+from gen_bt_interfaces.action import MissionCommand
+from gen_bt_interfaces.srv import PlanSubtree, SelectBehaviorTree
+from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
 from std_msgs.msg import String
-
-from gen_bt_interfaces.action import MissionCommand
 
 
 @dataclass
 class CoordinatorParams:
     mission_action_name: str
     llm_plan_service: str
+    llm_select_service: str
     bt_executor_action: str
     context_snapshot_service: str
     status_topic: str
@@ -27,6 +32,7 @@ class CoordinatorParams:
     bt_timeout_sec: float
     spin_period_sec: float
     transcript_directory: Path
+    known_trees: list
     mission_namespace: str = 'mission_coordinator'
 
 
@@ -58,6 +64,17 @@ class MissionCoordinatorNode(Node):
             self.params.spin_period_sec, self._noop_spin_tick
         )
 
+        self._tree_catalog = self._parse_tree_catalog(self.params.known_trees)
+        self._select_tree_client = self.create_client(
+            SelectBehaviorTree, self.params.llm_select_service
+        )
+        self._plan_subtree_client = self.create_client(
+            PlanSubtree, self.params.llm_plan_service
+        )
+        self._bt_executor_client = ActionClient(
+            self, ExecuteTree, self.params.bt_executor_action
+        )
+
     def destroy_node(self) -> None:
         self.get_logger().info('Tearing down MissionCoordinatorNode.')
         if hasattr(self, '_mission_server'):
@@ -74,9 +91,14 @@ class MissionCoordinatorNode(Node):
         ).expanduser()
         transcript_dir.mkdir(parents=True, exist_ok=True)
 
+        known_trees_default = [
+            'demo_tree.xml::Iterates waypoint queue via MoveTo and LogTemperature.'
+        ]
+
         return CoordinatorParams(
             mission_action_name=declare('mission_action_name', '/mission_coordinator/execute_tree'),
             llm_plan_service=declare('llm_plan_service', '/llm_interface/plan_subtree'),
+            llm_select_service=declare('llm_select_service', '/llm_interface/select_behavior_tree'),
             bt_executor_action=declare('bt_executor_action', '/bt_executor/execute_tree'),
             context_snapshot_service=declare(
                 'context_snapshot_service', '/context_gatherer/snapshot'
@@ -92,6 +114,7 @@ class MissionCoordinatorNode(Node):
             bt_timeout_sec=float(declare('bt_timeout_sec', 120.0)),
             spin_period_sec=float(declare('spin_period_sec', 0.1)),
             transcript_directory=transcript_dir,
+            known_trees=declare('known_trees', known_trees_default) or known_trees_default,
         )
 
     # endregion
@@ -120,7 +143,7 @@ class MissionCoordinatorNode(Node):
     # region Action server callbacks
     def _goal_callback(self, goal_request: MissionCommand.Goal) -> GoalResponse:
         self.get_logger().info(
-            'Received mission goal (session=%s)', getattr(goal_request, 'session_id', '')
+            f"Received mission goal (session={getattr(goal_request, 'session_id', '')})"
         )
         return GoalResponse.ACCEPT
 
@@ -131,28 +154,128 @@ class MissionCoordinatorNode(Node):
     async def _execute_mission(self, goal_handle) -> MissionCommand.Result:
         goal: MissionCommand.Goal = goal_handle.request
         feedback = MissionCommand.Feedback()
-        feedback.stage = 'DEMO'
-        feedback.detail = (
-            'MissionCoordinatorNode is running in demo mode; no external calls executed.'
-        )
-        goal_handle.publish_feedback(feedback)
-        self._publish_status(f'Received command: {goal.command}')
-        self._publish_active_subtree('demo_subtree')
+        self._publish_status(f"Received mission: {goal.command}")
+        self._publish_active_subtree('selecting_tree')
 
-        if goal_handle.is_cancel_requested:
-            goal_handle.canceled()
+        if self.params.demo_mode:
+            feedback.stage = 'DEMO'
+            feedback.detail = (
+                'MissionCoordinatorNode is running in demo mode; no external calls executed.'
+            )
+            goal_handle.publish_feedback(feedback)
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+                result = MissionCommand.Result()
+                result.accepted = False
+                result.outcome_message = 'Mission canceled before execution.'
+                return result
+            goal_handle.succeed()
+            result = MissionCommand.Result()
+            result.accepted = True
+            result.outcome_message = 'Demo mission acknowledged.'
+            return result
+
+        selected_tree = await self._select_behavior_tree(goal)
+        if not selected_tree:
+            goal_handle.succeed()
+            self._publish_status('No suitable behavior tree found.')
             result = MissionCommand.Result()
             result.accepted = False
-            result.outcome_message = 'Mission canceled before execution.'
+            result.outcome_message = 'LLM did not provide a valid behavior tree.'
             return result
+
+        self._publish_active_subtree(selected_tree)
+        node_status, executor_message = await self._execute_behavior_tree(selected_tree, goal)
 
         goal_handle.succeed()
         result = MissionCommand.Result()
-        result.accepted = True
-        result.outcome_message = 'Demo mission acknowledged.'
+        success = node_status == NodeStatus.SUCCESS
+        result.accepted = success
+        result.outcome_message = executor_message
+        if success:
+            self._publish_status(f'Behavior tree {selected_tree} completed successfully.')
+        else:
+            self._publish_status(f'Behavior tree {selected_tree} finished with status {node_status}.')
         return result
 
     # endregion
+
+    def _parse_tree_catalog(self, entries) -> list[Tuple[str, str]]:
+        catalog = []
+        if isinstance(entries, list):
+            for entry in entries:
+                if isinstance(entry, str):
+                    if '::' in entry:
+                        tree_id, desc = entry.split('::', 1)
+                    else:
+                        tree_id, desc = entry, ''
+                    tree_id = tree_id.strip()
+                    if tree_id:
+                        catalog.append((tree_id, desc.strip()))
+        if not catalog:
+            catalog = [('demo_tree.xml', 'Fallback demo tree.')]
+        return catalog
+
+    async def _select_behavior_tree(self, goal: MissionCommand.Goal) -> Optional[str]:
+        if not self._tree_catalog:
+            return None
+        if not await self._wait_for_service(self._select_tree_client, self.params.llm_select_service):
+            return None
+        request = SelectBehaviorTree.Request()
+        request.session_id = goal.session_id or 'unknown'
+        request.user_command = goal.command
+        request.available_trees = [tree_id for tree_id, _ in self._tree_catalog]
+        request.tree_descriptions = [desc for _, desc in self._tree_catalog]
+        request.context_snapshot = goal.context_json or ''
+        response = await self._call_service(self._select_tree_client, request)
+        if not response or response.status_code != 0:
+            self.get_logger().warn('SelectBehaviorTree returned no match.')
+            return None
+        return response.selected_tree
+
+    async def _execute_behavior_tree(
+        self, tree_id: str, goal: MissionCommand.Goal
+    ) -> Tuple[int, str]:
+        if not await self._wait_for_bt_executor():
+            return NodeStatus.FAILURE, 'BT executor unavailable.'
+        exec_goal = ExecuteTree.Goal()
+        exec_goal.target_tree = tree_id
+        payload = {'user_command': goal.command, 'session_id': goal.session_id}
+        exec_goal.payload = json.dumps(payload, ensure_ascii=False)
+
+        send_future = self._bt_executor_client.send_goal_async(
+            exec_goal, feedback_callback=self._bt_feedback
+        )
+        goal_handle = await send_future
+        if goal_handle is None or not goal_handle.accepted:
+            return NodeStatus.FAILURE, 'BT executor rejected the goal.'
+        result_future = goal_handle.get_result_async()
+        result = await result_future
+        if result is None:
+            return NodeStatus.FAILURE, 'BT executor result unavailable.'
+        return result.result.node_status.status, result.result.return_message
+
+    def _bt_feedback(self, feedback_msg):
+        self._publish_status(f"BT feedback: {feedback_msg.feedback.message}")
+
+    async def _wait_for_service(self, client, name: str) -> bool:
+        for _ in range(10):
+            if client.wait_for_service(timeout_sec=1.0):
+                return True
+            await asyncio.sleep(0.1)
+        self.get_logger().warn(f'Service {name} unavailable.')
+        return False
+
+    async def _wait_for_bt_executor(self) -> bool:
+        for _ in range(10):
+            if self._bt_executor_client.wait_for_server(timeout_sec=1.0):
+                return True
+            await asyncio.sleep(0.1)
+        self.get_logger().warn('BT executor action server unavailable.')
+        return False
+
+    async def _call_service(self, client, request):
+        return await client.call_async(request)
 
 
 def main(args: Optional[list[str]] = None) -> None:
