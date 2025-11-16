@@ -2,12 +2,9 @@ llm_interface:
   ros__parameters:
     planning_service_name: '/llm_interface/plan_subtree'
     selection_service_name: '/llm_interface/select_behavior_tree'
-    model_provider: 'gemini'
-    model_name: '2.5-pro'
-    temperature: 0.2
-    max_output_tokens: 30000
-    enable_mcp_tools: true
-    cache_directory: '~/.generalist_bt/llm_cache'
+    model_name: 'gemini-2.5-pro'
+    selection_llm_enabled: true
+    selection_temperature: 0.0
     default_bt_template: |
       <root BTCPP_format="4" main_tree_to_execute="MainTree">
         <BehaviorTree ID="MainTree">

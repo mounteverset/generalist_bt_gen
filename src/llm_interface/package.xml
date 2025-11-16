@@ -16,6 +16,7 @@
   <exec_depend>python3-requests</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-langchain</exec_depend>
+  <exec_depend>python3-langchain-google-genai</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

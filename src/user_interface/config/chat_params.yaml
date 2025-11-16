@@ -15,6 +15,6 @@
         - "/diagnostics"
       refresh_period: 0.1
       timestamp_timezone: "UTC"
-      demo_mode: true
+      demo_mode: false
       web_port: 8080
       web_host: "0.0.0.0"

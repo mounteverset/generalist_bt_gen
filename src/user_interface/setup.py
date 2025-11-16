@@ -1,7 +1,13 @@
 from glob import glob
 from pathlib import Path
+import sys
 
 from setuptools import find_packages, setup
+
+# Colcon may pass --editable when using --symlink-install; older setuptools commands
+# do not recognize it. Remove to keep setup.py compatible.
+if '--editable' in sys.argv:
+    sys.argv.remove('--editable')
 
 package_name = 'user_interface'
 share_dir = Path('share') / package_name

@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+import json
+import os
 from typing import List, Optional, Tuple
 
 import rclpy
 from gen_bt_interfaces.srv import PlanSubtree, SelectBehaviorTree
+try:
+    from langchain_core.prompts import PromptTemplate
+    from langchain_google_genai import ChatGoogleGenerativeAI
+except ModuleNotFoundError as exc:
+    raise RuntimeError(
+        "langchain-core / langchain-google-genai not found. Install them in the "
+        "ROS Python environment or disable selection_llm_enabled."
+    ) from exc
 from rclpy.node import Node
 
 
@@ -33,8 +43,16 @@ class LLMInterfaceNode(Node):
             "  </BehaviorTree>\n"
             "</root>\n",
         )
-        self.declare_parameter('model_name', 'gpt-4o-mini')
+        self.declare_parameter('model_name', 'gemini-2.5-pro')
+        self.declare_parameter('selection_llm_enabled', True)
+        self.declare_parameter('selection_temperature', 0.0)
         self._model_name = self.get_parameter('model_name').value
+        self._selection_llm_enabled = bool(
+            self.get_parameter('selection_llm_enabled').value
+        )
+        self._selection_temperature = float(
+            self.get_parameter('selection_temperature').value
+        )
 
         planning_topic = self.get_parameter('planning_service_name').value
         selection_topic = self.get_parameter('selection_service_name').value
@@ -47,9 +65,7 @@ class LLMInterfaceNode(Node):
             SelectBehaviorTree, selection_topic, self.handle_selection_request
         )
         self.get_logger().info(
-            'LLMInterfaceNode ready (plan_service=%s, selection_service=%s)',
-            planning_topic,
-            selection_topic,
+            f"LLMInterfaceNode ready (plan_service={planning_topic}, selection_service={selection_topic})"
         )
 
     # region Selection
@@ -92,45 +108,104 @@ class LLMInterfaceNode(Node):
     def _select_tree_via_llm(
         self, user_command: str, tree_ids: List[str], descriptions: List[str]
     ) -> Optional[Tuple[int, float, str]]:
-        """Builds a prompt for the LLM, currently simulated with heuristics."""
         if not tree_ids:
             return None
 
-        prompt_lines = [
-            f"User command: {user_command}",
-            "Available behavior trees:",
-        ]
-        for idx, (tree_id, description) in enumerate(zip(tree_ids, descriptions)):
-            prompt_lines.append(f"{idx}. {tree_id} :: {description}")
-        prompt = "\n".join(prompt_lines)
+        if not self._selection_llm_enabled:
+            return self._fallback_selection(tree_ids)
 
-        choice, rationale = self._mock_llm_selection(prompt, tree_ids, descriptions)
-        if choice is None:
-            return None
         try:
-            index = tree_ids.index(choice)
-        except ValueError:
-            index = 0
-        confidence = 0.9 if rationale and 'confident' in rationale.lower() else 0.6
+            chain = self._get_selection_chain()
+        except RuntimeError as exc:
+            self.get_logger().error(str(exc))
+            return self._fallback_selection(tree_ids)
+
+        payload = [
+            {"id": tree_id, "description": desc}
+            for tree_id, desc in zip(tree_ids, descriptions)
+        ]
+
+        try:
+            llm_result = chain.invoke(
+                {
+                    "user_command": user_command,
+                    "trees_json": json.dumps(payload, ensure_ascii=False),
+                }
+            )
+        except Exception as exc:
+            self.get_logger().error(f"Gemini selection failed: {exc}")
+            return self._fallback_selection(tree_ids)
+
+        raw_content = getattr(llm_result, 'content', llm_result)
+        cleaned_content = self._strip_code_fence(str(raw_content))
+        try:
+            parsed = json.loads(cleaned_content)
+        except Exception as exc:
+            self.get_logger().warning(
+                f"Unable to parse Gemini response '{raw_content}': {exc}"
+            )
+            return self._fallback_selection(tree_ids)
+
+        selected_id = parsed.get('tree_id')
+        if selected_id not in tree_ids:
+            self.get_logger().warning(
+                f"Gemini returned unknown tree '{selected_id}'; falling back."
+            )
+            return self._fallback_selection(tree_ids)
+
+        confidence = float(parsed.get('confidence', 0.6))
+        rationale = parsed.get('rationale', '')
+        idx = tree_ids.index(selected_id)
         reason = (
-            f"[{self._model_name}] Selected tree '{tree_ids[index]}' "
+            f"[{self._model_name}] Selected tree '{selected_id}' "
             f"because {rationale or 'it best matched the mission context'}."
         )
-        return index, confidence, reason
+        return idx, max(0.0, min(confidence, 1.0)), reason
 
-    def _mock_llm_selection(
-        self, prompt: str, tree_ids: List[str], descriptions: List[str]
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """Temporary heuristic that simulates an LLM decision."""
-        self.get_logger().debug("LLM selection prompt:\\n%s", prompt)
-        keywords = [token.lower() for token in prompt.split() if len(token) > 2]
-        for tree_id, description in zip(tree_ids, descriptions):
-            text = description.lower()
-            if any(keyword in text for keyword in keywords):
-                return tree_id, "it directly mentions the requested capability, high confident"
-        if tree_ids:
-            return tree_ids[0], "no explicit match found; defaulting to first entry"
-        return None, None
+    def _strip_code_fence(self, text: str) -> str:
+        stripped = text.strip()
+        if stripped.startswith("```"):
+            stripped = stripped.lstrip('`')
+            # remove leading language tag if present
+            parts = stripped.split('\n', 1)
+            stripped = parts[1] if len(parts) > 1 else ''
+            if stripped.endswith("```"):
+                stripped = stripped.rsplit("```", 1)[0]
+        return stripped.strip()
+
+    def _get_selection_chain(self):
+        if not hasattr(self, '_selection_chain'):
+            api_key = os.environ.get('GEMINI_API_KEY')
+            if not api_key:
+                raise RuntimeError(
+                    'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
+                )
+            llm = ChatGoogleGenerativeAI(
+                model=self._model_name,
+                temperature=self._selection_temperature,
+                api_key=api_key,
+            )
+            template = PromptTemplate.from_template(
+                """
+You are a mission planner for a field robot. Given USER_COMMAND and a JSON array of
+behavior trees (each with id + description), choose the best tree or return NONE.
+tree_id MUST be exactly one of the string IDs in TREES_JSON (e.g., "demo_tree.xml").
+Do NOT answer with numeric indexes.
+Respond strictly as JSON: {{"tree_id": "<id or NONE>", "confidence": 0-1, "rationale": "..."}}
+USER_COMMAND: {user_command}
+TREES_JSON: {trees_json}
+"""
+            )
+            self._selection_chain = template | llm
+        return self._selection_chain
+
+    def _fallback_selection(
+        self, tree_ids: List[str]
+    ) -> Optional[Tuple[int, float, str]]:
+        if not tree_ids:
+            return None
+        tree_id = tree_ids[0]
+        return 0, 0.5, f"[heuristic] defaulted to '{tree_id}'"
 
     # endregion
 

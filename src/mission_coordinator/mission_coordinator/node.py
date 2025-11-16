@@ -98,9 +98,7 @@ class MissionCoordinatorNode(Node):
 
     def _announce_startup(self) -> None:
         self.get_logger().info(
-            'MissionCoordinatorNode ready (demo_mode=%s, mission action: %s)',
-            self.params.demo_mode,
-            self.params.mission_action_name,
+            f"MissionCoordinatorNode ready (demo_mode={self.params.demo_mode}, mission action: {self.params.mission_action_name})"
         )
         self._publish_status('Mission coordinator initialized.')
         self._publish_active_subtree('idle')

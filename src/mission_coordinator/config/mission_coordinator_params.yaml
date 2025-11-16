@@ -12,7 +12,7 @@
       # Behavior flags
       enable_context_snapshot: true
       require_operator_accept: false
-      demo_mode: true  # When true, skip ROS calls and emit mock status.
+      demo_mode: false  # When true, skip ROS calls and emit mock status.
 
       # Timing
       llm_timeout_sec: 45.0

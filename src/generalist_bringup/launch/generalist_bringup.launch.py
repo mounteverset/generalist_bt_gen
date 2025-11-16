@@ -4,7 +4,7 @@ from pathlib import Path
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, NotSubstitution
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
@@ -36,10 +36,10 @@ def generate_launch_description():
         default_value=str(llm_params),
         description='Path to the llm_interface parameter file.'
     )
-    launch_ui_arg = DeclareLaunchArgument(
-        'launch_user_interface',
-        default_value='true',
-        description='Whether to launch the chat UI node.'
+    use_cli_arg = DeclareLaunchArgument(
+        'use_cli_ui',
+        default_value='false',
+        description='Launch CLI chat node if true, otherwise launch the web UI node.'
     )
 
     bt_executor_node = Node(
@@ -66,11 +66,20 @@ def generate_launch_description():
         parameters=[LaunchConfiguration('mission_coordinator_params')]
     )
 
-    chat_ui_node = Node(
-        condition=IfCondition(LaunchConfiguration('launch_user_interface')),
+    cli_chat_node = Node(
+        condition=IfCondition(LaunchConfiguration('use_cli_ui')),
         package='user_interface',
         executable='chat_node',
-        name='chat_ui',
+        name='chat_ui_cli',
+        output='screen',
+        parameters=[LaunchConfiguration('user_interface_params')]
+    )
+
+    web_ui_node = Node(
+        condition=IfCondition(NotSubstitution(LaunchConfiguration('use_cli_ui'))),
+        package='user_interface',
+        executable='web_ui_node',
+        name='chat_ui_web',
         output='screen',
         parameters=[LaunchConfiguration('user_interface_params')]
     )
@@ -80,9 +89,10 @@ def generate_launch_description():
         mission_params_arg,
         ui_params_arg,
         llm_params_arg,
-        launch_ui_arg,
+        use_cli_arg,
         bt_executor_node,
         llm_interface_node,
         mission_coordinator_node,
-        chat_ui_node,
+        cli_chat_node,
+        web_ui_node,
     ])

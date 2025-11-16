@@ -1,4 +1,13 @@
 <?xml version="1.0"?>
+<!--
+Tree Name: demo_tree.xml
+Description: Simple mission that iterates through parsed waypoint strings, sends each
+             to MoveTo, and logs the temperature at every waypoint. Intended for
+             navigation + telemetry demos where the payload supplies waypoints JSON.
+Usage Instructions:
+  - Payload must include a "waypoints" field understood by ParseWaypoints.
+  - Blackboard requires "logfile_path" for LogTemperature.
+-->
 <root BTCPP_format="4" main_tree_to_execute="MainTree">
     <BehaviorTree ID="MainTree">
       <Sequence name="WaypointMission">
