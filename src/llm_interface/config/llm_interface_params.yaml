@@ -2,7 +2,7 @@ llm_interface:
   ros__parameters:
     planning_service_name: '/llm_interface/plan_subtree'
     selection_service_name: '/llm_interface/select_behavior_tree'
-    model_name: 'gemini-2.5-pro'
+    model_name: 'gemini-2.5-flash'
     selection_llm_enabled: true
     selection_temperature: 0.0
     default_bt_template: |

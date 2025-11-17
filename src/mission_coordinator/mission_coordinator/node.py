@@ -258,7 +258,7 @@ class MissionCoordinatorNode(Node):
         exec_goal.target_tree = tree_id
         payload = {'user_command': goal.command, 
                    'session_id': goal.session_id,
-                   'waypoints': '[0.0, 0.0, 0.0]; [1.0, 1.0, 0.0]; [2.0, 2.0, 0.0]'}  # Example payload
+                   'waypoints': '[1.0,0.0,0.0];[1.0,1.0,0.0];[2.0,2.0,0.0]'}  # Example payload
         exec_goal.payload = json.dumps(payload, ensure_ascii=False)
 
         send_future = self._bt_executor_client.send_goal_async(

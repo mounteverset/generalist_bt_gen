@@ -3,7 +3,7 @@ bt_action_server:
     action_name: "/bt_executor/execute_tree"
     tick_frequency: 20
     groot2_port: 1667
-    ros_plugins_timeout: 1000
+    ros_plugins_timeout: 10000
     behavior_trees:
       - "bt_executor/trees"
 

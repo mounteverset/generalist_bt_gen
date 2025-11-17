@@ -14,6 +14,8 @@ find_package(behaviortree_cpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(gen_bt_interfaces REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(nav2_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 set(dependencies
   rclcpp
@@ -23,6 +25,8 @@ set(dependencies
   std_msgs
   gen_bt_interfaces
   nlohmann_json
+  nav2_msgs
+  std_srvs
 )
 
 add_executable(bt_executor_node

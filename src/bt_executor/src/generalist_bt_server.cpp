@@ -83,9 +83,9 @@ void GeneralistBehaviorTreeServer::onTreeCreated(BT::Tree & tree)
   const auto waypoint_it = payload_json.find("waypoints");
   if (waypoint_it != payload_json.end()) {
     if (waypoint_it->is_string()) {
-      blackboard->set("waypoints_raw", waypoint_it->get<std::string>());
+      blackboard->set("waypoints", waypoint_it->get<std::string>());
     } else {
-      blackboard->set("waypoints_raw", waypoint_it->dump());
+      blackboard->set("waypoints", waypoint_it->dump());
     }
   }
 }

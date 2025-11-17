@@ -43,7 +43,7 @@ class LLMInterfaceNode(Node):
             "  </BehaviorTree>\n"
             "</root>\n",
         )
-        self.declare_parameter('model_name', 'gemini-2.5-pro')
+        self.declare_parameter('model_name', 'gemini-2.5-flash')
         self.declare_parameter('selection_llm_enabled', True)
         self.declare_parameter('selection_temperature', 0.0)
         self._model_name = self.get_parameter('model_name').value
