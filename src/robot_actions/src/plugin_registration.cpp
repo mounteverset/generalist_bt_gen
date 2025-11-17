@@ -11,7 +11,12 @@ BT_REGISTER_ROS_NODES(factory, params)
   auto make_params = [&](const std::string & param_name, const std::string & default_value) {
     auto custom_params = params;
     if (auto node = params.nh.lock()) {
-      const auto value = node->declare_parameter<std::string>(param_name, default_value);
+      std::string value;
+      if (node->has_parameter(param_name)) {
+        value = node->get_parameter(param_name).as_string();
+      } else {
+        value = node->declare_parameter<std::string>(param_name, default_value);
+      }
       custom_params.default_port_value = value;
     }
     return custom_params;

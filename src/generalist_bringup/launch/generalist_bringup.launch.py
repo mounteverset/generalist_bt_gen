@@ -10,15 +10,15 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    bringup_share = Path(get_package_share_directory('generalist_bringup'))
-    default_params = bringup_share / 'config' / 'bt_executor_params.yaml'
+    #t_executor_share = Path(get_package_share_directory('bt_executor'))
+    bt_executor_params = Path(get_package_share_directory('bt_executor')) / 'config' / 'bt_executor_params.yaml'
     mission_params = Path(get_package_share_directory('mission_coordinator')) / 'config' / 'mission_coordinator_params.yaml'
     ui_params = Path(get_package_share_directory('user_interface')) / 'config' / 'chat_params.yaml'
     llm_params = Path(get_package_share_directory('llm_interface')) / 'config' / 'llm_interface_params.yaml'
 
     params_file_arg = DeclareLaunchArgument(
         'bt_executor_params',
-        default_value=str(default_params),
+        default_value=str(bt_executor_params),
         description='Path to the bt_executor parameter file.'
     )
     mission_params_arg = DeclareLaunchArgument(
@@ -45,7 +45,7 @@ def generate_launch_description():
     bt_executor_node = Node(
         package='bt_executor',
         executable='bt_executor_node',
-        name='bt_action_server',
+        #name='bt_action_server',
         output='screen',
         parameters=[LaunchConfiguration('bt_executor_params')]
     )
@@ -84,6 +84,13 @@ def generate_launch_description():
         parameters=[LaunchConfiguration('user_interface_params')]
     )
 
+    dummy_log_temperature_node = Node(
+        package='generalist_bringup',
+        executable='dummy_log_temperature_node',
+        name='dummy_log_temperature',
+        output='screen',
+    )
+
     return LaunchDescription([
         params_file_arg,
         mission_params_arg,
@@ -95,4 +102,5 @@ def generate_launch_description():
         mission_coordinator_node,
         cli_chat_node,
         web_ui_node,
+        dummy_log_temperature_node,
     ])

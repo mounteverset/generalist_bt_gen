@@ -2,6 +2,9 @@
     - Who keeps the library of available subtrees? 
     - Are they generated on the fly each time a new request comes? Are they periodically updated?
     - How do we manage to get the description into the parsed XML
+    - Also we need an up to date catalogue with very specific details for the available nodes
+        - how does the node exepect input strings
+        - what is the desired behavior, condition for failures etc. 
 
 - For creating subtrees we need a XML -> JSON parser which is a more LLM friendly format
 

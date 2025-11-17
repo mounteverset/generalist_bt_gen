@@ -8,10 +8,10 @@ Usage Instructions:
   - Payload must include a "waypoints" field understood by ParseWaypoints.
   - Blackboard requires "logfile_path" for LogTemperature.
 -->
-<root BTCPP_format="4" main_tree_to_execute="MainTree">
-    <BehaviorTree ID="MainTree">
+<root BTCPP_format="4" main_tree_to_execute="demo_tree.xml">
+    <BehaviorTree ID="demo_tree.xml">
       <Sequence name="WaypointMission">
-        <ParseWaypoints raw_waypoints="{waypoints_raw}" waypoint_queue="{waypoint_queue}" />
+        <ParseWaypoints raw_waypoints="{waypoints}" waypoint_queue="{waypoint_queue}" />
         <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="SUCCESS">
           <Sequence name="VisitWaypoint">
             <MoveTo name="DriveToWaypoint" pose="{active_waypoint}" />

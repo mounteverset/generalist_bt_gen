@@ -10,6 +10,7 @@
 #include <filesystem>
 
 #include "bt_executor/executor_utils.hpp"
+#include "behaviortree_ros2/bt_utils.hpp"
 
 namespace bt_executor
 {
@@ -18,12 +19,43 @@ GeneralistBehaviorTreeServer::GeneralistBehaviorTreeServer(const rclcpp::NodeOpt
 : BT::TreeExecutionServer(options)
 {
   auto node_handle = node();
-  status_topic_ = node_handle->declare_parameter<std::string>("status_topic", "/mission_coordinator/status_text");
-  active_node_topic_ = node_handle->declare_parameter<std::string>("active_node_topic", "/mission_coordinator/active_subtree");
-  auto_restart_on_failure_ = node_handle->declare_parameter<bool>("auto_restart_on_failure", false);
-  feedback_rate_hz_ = node_handle->declare_parameter<double>("feedback_rate_hz", 5.0);
-  plugin_directories_ = node_handle->declare_parameter<std::vector<std::string>>(
-    "plugin_directories", std::vector<std::string>{});
+  if (node_handle->has_parameter("status_topic")) {
+    status_topic_ = node_handle->get_parameter("status_topic").as_string();
+  } else {
+    status_topic_ = node_handle->declare_parameter<std::string>(
+      "status_topic", "/mission_coordinator/status_text");
+  }
+
+  if (node_handle->has_parameter("active_node_topic")) {
+    active_node_topic_ = node_handle->get_parameter("active_node_topic").as_string();
+  } else {
+    active_node_topic_ = node_handle->declare_parameter<std::string>(
+      "active_node_topic", "/mission_coordinator/active_subtree");
+  }
+
+  if (node_handle->has_parameter("auto_restart_on_failure")) {
+    auto_restart_on_failure_ =
+      node_handle->get_parameter("auto_restart_on_failure").as_bool();
+  } else {
+    auto_restart_on_failure_ = node_handle->declare_parameter<bool>(
+      "auto_restart_on_failure", false);
+  }
+
+  if (node_handle->has_parameter("feedback_rate_hz")) {
+    feedback_rate_hz_ =
+      node_handle->get_parameter("feedback_rate_hz").as_double();
+  } else {
+    feedback_rate_hz_ = node_handle->declare_parameter<double>(
+      "feedback_rate_hz", 5.0);
+  }
+
+  if (node_handle->has_parameter("plugin_directories")) {
+    plugin_directories_ =
+      node_handle->get_parameter("plugin_directories").as_string_array();
+  } else {
+    plugin_directories_ = node_handle->declare_parameter<std::vector<std::string>>(
+      "plugin_directories", std::vector<std::string>{});
+  }
 
   status_publisher_ = node_handle->create_publisher<std_msgs::msg::String>(status_topic_, 10);
   active_node_publisher_ = node_handle->create_publisher<std_msgs::msg::String>(active_node_topic_, 10);
@@ -120,6 +152,7 @@ void GeneralistBehaviorTreeServer::publish_active_node(const std::string & node_
 }
 
 }  // namespace bt_executor
+
 void bt_executor::GeneralistBehaviorTreeServer::registerNodesIntoFactory(BT::BehaviorTreeFactory & factory)
 {
   auto resolve_directory = [](const std::string & entry) -> std::string {
@@ -156,10 +189,21 @@ void bt_executor::GeneralistBehaviorTreeServer::registerNodesIntoFactory(BT::Beh
       continue;
     }
     RCLCPP_INFO(node()->get_logger(), "Searching plugins in: %s", directory.c_str());
+
+    BT::RosNodeParams ros_params;
+    ros_params.nh = node();
+
+    int timeout_ms = 1000;
+    if (node()->has_parameter("ros_plugins_timeout")) {
+      timeout_ms = node()->get_parameter("ros_plugins_timeout").as_int();
+    }
+    ros_params.server_timeout = std::chrono::milliseconds(timeout_ms);
+    ros_params.wait_for_server_timeout = ros_params.server_timeout;
+
     for (const auto & entry : std::filesystem::directory_iterator(directory)) {
       if (entry.path().extension() == ".so") {
         try {
-          factory.registerFromPlugin(entry.path().string());
+          BT::LoadPlugin(factory, entry.path(), ros_params);
           RCLCPP_INFO(node()->get_logger(), "Registered plugin: %s", entry.path().filename().c_str());
         } catch (const std::exception & e) {
           RCLCPP_WARN(

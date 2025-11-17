@@ -14,8 +14,12 @@ void assign_string(
   BlackboardLoadStats & stats, const rclcpp::Logger & logger)
 {
   try {
+    const auto value_copy = value;
     blackboard->set(key, std::move(value));
     ++stats.entries_written;
+    RCLCPP_INFO(
+      logger, "Loaded blackboard key '%s' = '%s'",
+      key.c_str(), value_copy.c_str());
   } catch (const std::exception & e) {
     ++stats.warnings;
     RCLCPP_WARN(logger, "Failed to set blackboard key '%s': %s", key.c_str(), e.what());
