@@ -13,5 +13,5 @@ which has a longer runtime but may produce better results because it is able to 
 - The XML generator prompt for a new tree should be specifically tasked to NOT create new action nodes and then build the package to get new actions into the tree because in a sense we want to control the actions to makethem be as safe as normally written nodes.
 - The payload generator prompt must include to not have nested JSON inside it. Just one key value level.
 - Ability to describe parameters and set them via the first user command. Like "just do it dont ask me again" gets interpreted as autorunning the bt. or exploration without asking the user if he is satisfied
-
-
+- Feedback directly before selecting a subtree to run, if the confidence score is too low to better understand the user mission if the intent is unclear.
+- regularly create up to date catalogues of actions/trees

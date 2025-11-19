@@ -12,6 +12,8 @@ Needed packages:
 - `mission_coordinator` - ROS node that handles LLM planning, context capture, and calls into `bt_executor`.
 - `robot_actions` - Robot action nodes to execute 
 
+
+
 # v0.8
 
 the tree can expand itself with the failure context but not environment or ros-context
