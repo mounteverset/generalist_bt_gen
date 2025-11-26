@@ -10,10 +10,12 @@ find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 set(action_files
+  "action/GatherContext.action"
   "action/MissionCommand.action"
 )
 
 set(service_files
+  "srv/CreatePayload.srv"
   "srv/PlanSubtree.srv"
   "srv/SelectBehaviorTree.srv"
 )

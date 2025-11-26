@@ -1,0 +1,22 @@
+#
+# Action used by mission_coordinator to request a structured context snapshot
+# before planning or regenerating a subtree. The context_requirements entries
+# are treated as an enum-like list (e.g., "ROBOT_POSE", "RGB_IMAGE",
+# "POINTCLOUD", "SATELLITE_TILE").
+
+# Goal
+string session_id
+string subtree_id
+string[] context_requirements
+float64 timeout_sec
+string geo_hint
+---
+# Result
+bool success
+string context_json
+string[] attachment_uris
+string message
+---
+# Feedback
+string stage
+string detail

@@ -10,8 +10,8 @@ from typing import Optional, Tuple
 import rclpy
 from btcpp_ros2_interfaces.action import ExecuteTree
 from btcpp_ros2_interfaces.msg import NodeStatus
-from gen_bt_interfaces.action import MissionCommand
-from gen_bt_interfaces.srv import PlanSubtree, SelectBehaviorTree
+from gen_bt_interfaces.action import MissionCommand, GatherContext
+from gen_bt_interfaces.srv import CreatePayload, PlanSubtree, SelectBehaviorTree
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -23,6 +23,8 @@ class CoordinatorParams:
     llm_plan_service: str
     llm_select_service: str
     bt_executor_action: str
+    context_gather_action: str
+    create_payload_service: str
     context_snapshot_service: str
     status_topic: str
     active_subtree_topic: str
@@ -30,6 +32,8 @@ class CoordinatorParams:
     require_operator_accept: bool
     demo_mode: bool
     llm_timeout_sec: float
+    gather_timeout_sec: float
+    payload_timeout_sec: float
     bt_timeout_sec: float
     spin_period_sec: float
     transcript_directory: Path
@@ -74,6 +78,12 @@ class MissionCoordinatorNode(Node):
         self._plan_subtree_client = self.create_client(
             PlanSubtree, self.params.llm_plan_service
         )
+        self._context_gather_client = ActionClient(
+            self, GatherContext, self.params.context_gather_action
+        )
+        self._create_payload_client = self.create_client(
+            CreatePayload, self.params.create_payload_service
+        )
         self._bt_executor_client = ActionClient(
             self, ExecuteTree, self.params.bt_executor_action
         )
@@ -103,6 +113,10 @@ class MissionCoordinatorNode(Node):
             llm_plan_service=declare('llm_plan_service', '/llm_interface/plan_subtree'),
             llm_select_service=declare('llm_select_service', '/llm_interface/select_behavior_tree'),
             bt_executor_action=declare('bt_executor_action', '/bt_executor/execute_tree'),
+            context_gather_action=declare('context_gather_action', '/context_gatherer/gather'),
+            create_payload_service=declare(
+                'create_payload_service', '/llm_interface/create_payload'
+            ),
             context_snapshot_service=declare(
                 'context_snapshot_service', '/context_gatherer/snapshot'
             ),
@@ -114,6 +128,8 @@ class MissionCoordinatorNode(Node):
             require_operator_accept=bool(declare('require_operator_accept', False)),
             demo_mode=bool(declare('demo_mode', True)),
             llm_timeout_sec=float(declare('llm_timeout_sec', 45.0)),
+            gather_timeout_sec=float(declare('gather_timeout_sec', 15.0)),
+            payload_timeout_sec=float(declare('payload_timeout_sec', 20.0)),
             bt_timeout_sec=float(declare('bt_timeout_sec', 120.0)),
             spin_period_sec=float(declare('spin_period_sec', 0.1)),
             transcript_directory=transcript_dir,
@@ -190,8 +206,33 @@ class MissionCoordinatorNode(Node):
             return result
 
         self._publish_active_subtree(selected_tree)
+        self._publish_status(f'Gathering context for {selected_tree}.')
+        gather_result = await self._gather_context(selected_tree, goal)
+        if not gather_result or not gather_result.success:
+            goal_handle.succeed()
+            result = MissionCommand.Result()
+            result.accepted = False
+            result.outcome_message = (
+                gather_result.message if gather_result else 'Context gather failed.'
+            )
+            self._publish_status(result.outcome_message)
+            return result
+
+        self._publish_status(f'Building payload for {selected_tree}.')
+        payload_json = await self._create_payload(selected_tree, goal, gather_result)
+        if payload_json is None:
+            goal_handle.succeed()
+            result = MissionCommand.Result()
+            result.accepted = False
+            result.outcome_message = 'CreatePayload failed.'
+            self._publish_status(result.outcome_message)
+            return result
+
+        self._publish_active_subtree(selected_tree)
         self._log_debug(f'Selected tree {selected_tree}, dispatching to BT executor.')
-        node_status, executor_message = await self._execute_behavior_tree(selected_tree, goal)
+        node_status, executor_message = await self._execute_behavior_tree(
+            selected_tree, goal, payload_json
+        )
 
         goal_handle.succeed()
         result = MissionCommand.Result()
@@ -248,18 +289,82 @@ class MissionCoordinatorNode(Node):
         )
         return response.selected_tree
 
+    def _context_requirements_for_tree(self, tree_id: str) -> list[str]:
+        # Placeholder: pull from catalog/metadata when available.
+        return []
+
+    def _subtree_contract_for_tree(self, tree_id: str) -> str:
+        # Placeholder: this should be populated from tree metadata.
+        return '{}'
+
+    async def _gather_context(self, tree_id: str, goal: MissionCommand.Goal):
+        if not self._wait_for_action(
+            self._context_gather_client, self.params.context_gather_action
+        ):
+            return None
+        gather_goal = GatherContext.Goal()
+        gather_goal.session_id = goal.session_id or 'unknown'
+        gather_goal.subtree_id = tree_id
+        gather_goal.context_requirements = self._context_requirements_for_tree(tree_id)
+        gather_goal.timeout_sec = float(self.params.gather_timeout_sec)
+        gather_goal.geo_hint = goal.context_json or ''
+
+        send_future = self._context_gather_client.send_goal_async(
+            gather_goal, feedback_callback=self._gather_feedback
+        )
+        goal_handle = await send_future
+        if goal_handle is None or not goal_handle.accepted:
+            self._publish_status('Context gatherer rejected the goal.')
+            return None
+        result_future = goal_handle.get_result_async()
+        result = await result_future
+        if result is None:
+            self._publish_status('Context gatherer result unavailable.')
+            return None
+        if result.result.success:
+            self._log_debug('Context gather success.')
+        else:
+            self._publish_status(f'Context gather failed: {result.result.message}')
+        return result.result
+
+    def _gather_feedback(self, feedback_msg):
+        feedback = feedback_msg.feedback
+        self._publish_status(f'Context gather: {feedback.stage} {feedback.detail}')
+        self._log_debug(f'Context gather feedback: {feedback.stage} {feedback.detail}')
+
+    async def _create_payload(
+        self, tree_id: str, goal: MissionCommand.Goal, gather_result
+    ) -> Optional[str]:
+        if not self._wait_for_service(
+            self._create_payload_client, self.params.create_payload_service
+        ):
+            return None
+        request = CreatePayload.Request()
+        request.session_id = goal.session_id or 'unknown'
+        request.subtree_id = tree_id
+        request.subtree_contract_json = self._subtree_contract_for_tree(tree_id)
+        request.context_snapshot_json = gather_result.context_json
+        request.attachment_uris = list(gather_result.attachment_uris)
+        self._log_debug('Calling CreatePayload service.')
+        response = await self._call_service(self._create_payload_client, request)
+        if response is None:
+            self._publish_status('CreatePayload returned no response.')
+            return None
+        if response.status_code != response.SUCCESS:
+            self._publish_status(f'CreatePayload failed: {response.reason}')
+            return None
+        self._log_debug(f'CreatePayload succeeded: {response.reasoning}')
+        return response.payload_json
+
     async def _execute_behavior_tree(
-        self, tree_id: str, goal: MissionCommand.Goal
+        self, tree_id: str, goal: MissionCommand.Goal, payload_json: str
     ) -> Tuple[int, str]:
         self._log_debug('Waiting for bt_executor action server...')
         if not self._wait_for_bt_executor():
             return NodeStatus.FAILURE, 'BT executor unavailable.'
         exec_goal = ExecuteTree.Goal()
         exec_goal.target_tree = tree_id
-        payload = {'user_command': goal.command, 
-                   'session_id': goal.session_id,
-                   'waypoints': '[1.0,0.0,0.0];[1.0,1.0,0.0];[2.0,2.0,0.0]'}  # Example payload
-        exec_goal.payload = json.dumps(payload, ensure_ascii=False)
+        exec_goal.payload = payload_json or '{}'
 
         send_future = self._bt_executor_client.send_goal_async(
             exec_goal, feedback_callback=self._bt_feedback
@@ -286,6 +391,14 @@ class MissionCoordinatorNode(Node):
                 return True
             time.sleep(0.1)
         self.get_logger().warn(f'Service {name} unavailable.')
+        return False
+
+    def _wait_for_action(self, client, name: str) -> bool:
+        for _ in range(10):
+            if client.wait_for_server(timeout_sec=1.0):
+                return True
+            time.sleep(0.1)
+        self.get_logger().warn(f'Action server {name} unavailable.')
         return False
 
     def _wait_for_bt_executor(self) -> bool:

@@ -1,0 +1,19 @@
+# Service to transform gathered context into a blackboard payload tailored to
+# a specific subtree. Served by llm_interface.
+
+# Request
+string session_id
+string subtree_id
+string subtree_contract_json     # Declares required blackboard keys/types/defaults.
+string context_snapshot_json     # From GatherContext.result
+string[] attachment_uris         # Image/PCD/file refs associated with the snapshot.
+---
+# Response
+uint8 SUCCESS=0
+uint8 RETRY=1
+uint8 ERROR=2
+
+uint8 status_code
+string payload_json              # Blackboard entries as JSON object.
+string reasoning                 # Short LLM explanation.
+string tool_trace_json           # MCP/tool call trace for auditing.

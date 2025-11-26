@@ -1,0 +1,32 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/luke/generalist_bt_gen/install/robot_actions/include/**",
+        "/home/luke/generalist_bt_gen/install/bt_executor/include/**",
+        "/home/luke/generalist_bt_gen/install/gen_bt_interfaces/include/**",
+        "/home/luke/generalist_bt_gen/install/behaviortree_ros2/include/**",
+        "/home/luke/generalist_bt_gen/install/btcpp_ros2_interfaces/include/**",
+        "/home/luke/generalist_bt_gen/install/behaviortree_cpp/include/**",
+        "/opt/ros/jazzy/include/**",
+        "/home/luke/generalist_bt_gen/src/behaviortree_cpp/include/**",
+        "/home/luke/generalist_bt_gen/src/behaviortree_ros2/behaviortree_ros2/include/**",
+        "/home/luke/generalist_bt_gen/src/bt_executor/include/**",
+        "/home/luke/generalist_bt_gen/src/gen_bt_interfaces/include/**",
+        "/home/luke/generalist_bt_gen/src/robot_actions/include/**",
+        "include/**",
+        "/usr/include/**"
+      ],
+      "name": "ros2",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++17"
+    }
+  ],
+  "version": 4
+}

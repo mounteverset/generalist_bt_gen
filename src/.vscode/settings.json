@@ -1,0 +1,24 @@
+{
+    "python.autoComplete.extraPaths": [
+        "/home/luke/generalist_bt_gen/build/user_interface",
+        "/home/luke/generalist_bt_gen/install/user_interface/lib/python3.12/site-packages",
+        "/home/luke/generalist_bt_gen/build/mission_coordinator",
+        "/home/luke/generalist_bt_gen/install/mission_coordinator/lib/python3.12/site-packages",
+        "/home/luke/generalist_bt_gen/build/llm_interface",
+        "/home/luke/generalist_bt_gen/install/llm_interface/lib/python3.12/site-packages",
+        "/home/luke/generalist_bt_gen/install/gen_bt_interfaces/lib/python3.12/site-packages",
+        "/home/luke/generalist_bt_gen/install/btcpp_ros2_interfaces/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/luke/generalist_bt_gen/build/user_interface",
+        "/home/luke/generalist_bt_gen/install/user_interface/lib/python3.12/site-packages",
+        "/home/luke/generalist_bt_gen/build/mission_coordinator",
+        "/home/luke/generalist_bt_gen/install/mission_coordinator/lib/python3.12/site-packages",
+        "/home/luke/generalist_bt_gen/build/llm_interface",
+        "/home/luke/generalist_bt_gen/install/llm_interface/lib/python3.12/site-packages",
+        "/home/luke/generalist_bt_gen/install/gen_bt_interfaces/lib/python3.12/site-packages",
+        "/home/luke/generalist_bt_gen/install/btcpp_ros2_interfaces/lib/python3.12/site-packages",
+        "/opt/ros/jazzy/lib/python3.12/site-packages"
+    ]
+}

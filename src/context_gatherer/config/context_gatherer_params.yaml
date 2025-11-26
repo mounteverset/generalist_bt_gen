@@ -1,0 +1,9 @@
+/**:
+  context_gatherer:
+    ros__parameters:
+      action_name: "/context_gatherer/gather"
+      output_directory: "/tmp/context_gatherer"
+      default_timeout_sec: 10.0
+      enable_debug_logging: true
+      # Comma-separated fallback requirements when none are provided in the goal.
+      default_requirements: "ROBOT_POSE,RGB_IMAGE"

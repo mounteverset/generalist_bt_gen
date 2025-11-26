@@ -6,6 +6,8 @@
       llm_plan_service: "/llm_interface/plan_subtree"
       llm_select_service: "/llm_interface/select_behavior_tree"
       bt_executor_action: "/bt_executor/execute_tree"
+      context_gather_action: "/context_gatherer/gather"
+      create_payload_service: "/llm_interface/create_payload"
       context_snapshot_service: "/context_gatherer/snapshot"
       status_topic: "/mission_coordinator/status_text"
       active_subtree_topic: "/mission_coordinator/active_subtree"
@@ -18,6 +20,8 @@
 
       # Timing
       llm_timeout_sec: 45.0
+      gather_timeout_sec: 15.0
+      payload_timeout_sec: 20.0
       bt_timeout_sec: 120.0
       spin_period_sec: 0.1
 
