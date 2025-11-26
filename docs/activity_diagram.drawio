@@ -1,0 +1,155 @@
+<mxfile host="65bd71144e">
+    <diagram id="activity_diagram" name="Activity Diagram">
+        <mxGraphModel dx="1357" dy="925" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="lane_ui" value="User Interface" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="40" width="160" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="start" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#000000;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="65" y="40" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="input_cmd" value="User Inputs Command" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="20" y="100" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="send_mission" value="Send MissionCommand&#xa;Action Goal" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="20" y="170" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="show_res" value="Display Outcome" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="20" y="740" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="end" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#000000;strokeColor=#000000;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="65" y="810" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" parent="lane_ui" source="start" target="input_cmd" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" parent="lane_ui" source="input_cmd" target="send_mission" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e16" parent="lane_ui" source="show_res" target="end" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_mc" value="Mission Coordinator" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="40" width="200" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="recv_mission" value="Receive Goal" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="40" y="170" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="call_select" value="Call SelectBehaviorTree" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="40" y="240" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="dec_found" value="Tree Found?" style="rhombus;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="60" y="310" width="80" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="fail_select" value="Report Failure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="130" y="370" width="60" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="call_gather" value="Call GatherContext" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="40" y="420" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="dec_gather" value="Gather Success?" style="rhombus;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="60" y="490" width="80" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="call_payload" value="Call CreatePayload" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="40" y="600" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="call_exec" value="Call ExecuteTree" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="40" y="670" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="return_res" value="Return Result" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="40" y="740" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7_yes" value="Yes" parent="lane_mc" source="dec_found" target="call_gather" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7_no" value="No" parent="lane_mc" source="dec_found" target="fail_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10_yes" value="Yes" parent="lane_mc" source="dec_gather" target="call_payload" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_fail_join" parent="lane_mc" source="fail_select" target="return_res" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="190" y="350"/>
+                            <mxPoint x="190" y="760"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="lane_llm" value="LLM Interface" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="40" width="160" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="process_select" value="Select Best Tree&#xa;(LLM/Rules)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
+                    <mxGeometry x="20" y="240" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="exec_payload" value="Generate Payload&#xa;(JSON)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
+                    <mxGeometry x="20" y="600" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_ctx" value="Context Gatherer" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="40" width="160" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="exec_gather" value="Collect Sensor Data" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ctx" vertex="1">
+                    <mxGeometry x="20" y="420" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_bt" value="BT Executor" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="720" y="40" width="160" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="run_bt" value="Execute BT" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_bt" vertex="1">
+                    <mxGeometry x="20" y="670" width="120" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" parent="1" source="send_mission" target="recv_mission" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" parent="1" source="recv_mission" target="call_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" parent="1" source="call_select" target="process_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" parent="1" source="process_select" target="dec_found" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="480" y="350" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="480" y="350"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e8" parent="1" source="call_gather" target="exec_gather" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" parent="1" source="exec_gather" target="dec_gather" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="640" y="530"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e11" parent="1" source="call_payload" target="exec_payload" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12" parent="1" source="exec_payload" target="call_exec" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="480" y="690"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e13" parent="1" source="call_exec" target="run_bt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e14" parent="1" source="run_bt" target="return_res" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="800" y="760"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e15" parent="1" source="return_res" target="show_res" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

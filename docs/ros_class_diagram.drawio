@@ -1,0 +1,79 @@
+<mxfile host="65bd71144e">
+    <diagram id="ros-class" name="ROS Interactions">
+        <mxGraphModel dx="2457" dy="925" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="ui" value="user_interface&#xa;(chat_node / web_ui)&#xa;- Action client: MissionCommand&#xa;- Subscribes: /mission_coordinator/status_text, /mission_coordinator/active_subtree" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="-260" y="305" width="200" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc" value="mission_coordinator&#xa;- Action server: MissionCommand (/mission_coordinator/execute_tree)&#xa;- Publishes: status_text, active_subtree topics&#xa;- Clients: SelectBehaviorTree, PlanSubtree, CreatePayload; GatherContext action; ExecuteTree action" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="295" width="260" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="llm" value="llm_interface&#xa;- Services: SelectBehaviorTree (/llm_interface/select_behavior_tree), PlanSubtree (/llm_interface/plan_subtree)&#xa;- TODO server: CreatePayload (not yet implemented)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="20" width="220" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="ctx" value="context_gatherer&#xa;- Action server: GatherContext (/context_gatherer/gather)&#xa;- Produces context_json + attachments" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="580" width="240" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="bt" value="bt_executor (GeneralistBehaviorTreeServer)&#xa;- Action server: ExecuteTree (/bt_executor/execute_tree)&#xa;- Publishes: status_text, active_subtree topics&#xa;- Loads robot_actions plugins" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
+                    <mxGeometry x="-20" y="600" width="230" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="plugins" value="robot_actions BT plugins&#xa;- MoveTo (NavigateToPose action client)&#xa;- LogTemperature (Trigger srv client)&#xa;- TakePicture (Trigger srv client)&#xa;- RestartNode (SetBool srv client)&#xa;- ParseWaypoints" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="220" width="220" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="nav2" value="Nav2 /a200_0000/navigate_to_pose&#xa;(action server)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="1160" y="100" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="logtemp" value="/log_temperature&#xa;(Trigger service server, dummy in generalist_bringup)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="1160" y="180" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="takepic" value="/take_picture&#xa;(Trigger service server)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="1160" y="260" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="restart" value="Node supervisor&#xa;/set_bool (SetBool service)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="1160" y="340" width="160" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_ui_mc" value="MissionCommand action client → server&#xa;/mission_coordinator/execute_tree" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="ui" target="mc" edge="1">
+                    <mxGeometry x="-0.1078" y="23" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge_mc_llm" value="Service clients → servers&#xa;SelectBehaviorTree /llm_interface/select_behavior_tree&#xa;PlanSubtree /llm_interface/plan_subtree&#xa;CreatePayload /llm_interface/create_payload (planned)" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="mc" target="llm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_mc_ctx" value="GatherContext action client → server&#xa;/context_gatherer/gather" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="mc" target="ctx" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_mc_bt" value="ExecuteTree action client → server&#xa;/bt_executor/execute_tree" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="mc" target="bt" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_mc_ui" value="Publishes status_text &amp; active_subtree topics&#xa;/mission_coordinator/status_text, /mission_coordinator/active_subtree" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="mc" target="ui" edge="1">
+                    <mxGeometry x="0.0993" y="-83" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge_bt_ui" value="Also publishes status_text &amp; active_subtree topics (same names)" style="dashed=1;endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="bt" target="ui" edge="1">
+                    <mxGeometry x="0.4938" y="25" relative="1" as="geometry">
+                        <mxPoint as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge_bt_plugins" value="Loads BT plugins" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="bt" target="plugins" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_plugins_nav2" value="MoveTo → NavigateToPose action client&#xa;/a200_0000/navigate_to_pose" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="plugins" target="nav2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_plugins_logtemp" value="LogTemperature → Trigger service client&#xa;/log_temperature" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="plugins" target="logtemp" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_plugins_takepic" value="TakePicture → Trigger service client&#xa;/take_picture" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="plugins" target="takepic" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_plugins_restart" value="RestartNode → SetBool service client&#xa;/set_bool" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="plugins" target="restart" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

@@ -14,3 +14,5 @@
 
 - Global / local navigation switch implementation on the robot to drive with MAVROS or Nav2
 
+- weighting of different sensor sources -> example: find nearest tree, prefer gps based 
+

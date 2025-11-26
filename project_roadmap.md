@@ -12,14 +12,17 @@ Needed packages:
 - `mission_coordinator` - ROS node that handles LLM planning, context capture, and calls into `bt_executor`.
 - `robot_actions` - Robot action nodes to execute 
 
+# v0.6
 
-
-# v0.8
-
-the tree can expand itself with the failure context but not environment or ros-context
-
+`context_gatherer` node is implemented with the following features:
+- gets called in order to populate the context for payload generation by llm_interface for a chosen subtree
+- the context_gatherer action call should have a list of needed context that should be retrieved
 
 # v1.0
+
+
+
+# v2.0
 Self expanding trees are able active 
 When the robot encounters a unknown situation it can self-repair via the bt_updater after getting context for the behavior tree generation
 

@@ -1,0 +1,169 @@
+<mxfile host="65bd71144e">
+    <diagram id="repo_activity" name="Repo Activity Diagram">
+        <mxGraphModel dx="1357" dy="925" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="lane_ui" value="User Interface&#xa;(chat_node / web_ui)" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="40" width="160" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="start" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#000000;strokeColor=#000000;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="65" y="40" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui_cmd" value="User enters&#xa;mission command" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="20" y="100" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui_send_action" value="Send MissionCommand&#xa;action goal" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="20" y="170" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="ui_display" value="Display outcome,&#xa;update transcript" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="20" y="730" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="end" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#000000;strokeColor=#000000;" parent="lane_ui" vertex="1">
+                    <mxGeometry x="65" y="800" width="30" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" parent="lane_ui" source="start" target="ui_cmd" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" parent="lane_ui" source="ui_cmd" target="ui_send_action" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e21" parent="lane_ui" source="ui_display" target="end" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_mc" value="Mission Coordinator" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="40" width="180" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_recv" value="Receive MissionCommand&#xa;goal" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="30" y="170" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_select_call" value="Call SelectBehaviorTree&#xa;service client" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="30" y="240" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_dec_tree" value="Existing tree found?" style="rhombus;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="50" y="310" width="80" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_plan_call" value="If no tree:&#xa;Call PlanSubtree" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="120" y="320" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_call_gather" value="Call GatherContext&#xa;action client" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="30" y="420" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_dec_gather" value="Context ok?" style="rhombus;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="50" y="490" width="80" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_call_payload" value="Call CreatePayload&#xa;service client" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="30" y="590" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_call_exec" value="Send ExecuteTree&#xa;action goal" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="30" y="660" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mc_return" value="Return MissionCommand&#xa;result to UI" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                    <mxGeometry x="30" y="730" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7_yes" value="Yes" parent="lane_mc" source="mc_dec_tree" target="mc_call_gather" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e7_no" value="No" parent="lane_mc" source="mc_dec_tree" target="mc_plan_call" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12_yes" value="Yes" parent="lane_mc" source="mc_dec_gather" target="mc_call_payload" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e12_no" value="No" parent="lane_mc" source="mc_dec_gather" target="mc_return" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_llm" value="LLM Interface" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="380" y="40" width="180" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="llm_select" value="Rank candidate trees&#xa;(SelectBehaviorTree)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
+                    <mxGeometry x="30" y="240" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="llm_plan" value="Generate BT XML&#xa;(PlanSubtree)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
+                    <mxGeometry x="30" y="320" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="llm_payload" value="Build blackboard payload&#xa;(CreatePayload)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
+                    <mxGeometry x="30" y="590" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_ctx" value="Context Gatherer" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="560" y="40" width="180" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="ctx_collect" value="Collect sensor data, pose,&#xa;images (stubbed)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ctx" vertex="1">
+                    <mxGeometry x="30" y="420" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_bt" value="BT Executor" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="740" y="40" width="180" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="bt_prepare" value="Create BT tree from XML&#xa;and payload" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_bt" vertex="1">
+                    <mxGeometry x="30" y="650" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="bt_tick" value="Tick tree, publish feedback&#xa;/ status topics" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_bt" vertex="1">
+                    <mxGeometry x="30" y="750" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="e16" parent="lane_bt" source="bt_prepare" target="bt_tick" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_robot" value="Robot Actions / Platform" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
+                    <mxGeometry x="920" y="40" width="180" height="800" as="geometry">
+                        <mxRectangle x="920" y="40" width="170" height="30" as="alternateBounds"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="robot_nav" value="MoveTo → NavigateToPose&#xa;action server" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_robot" vertex="1">
+                    <mxGeometry x="30" y="670" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="robot_sensors" value="LogTemperature / TakePicture&#xa;Trigger services" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_robot" vertex="1">
+                    <mxGeometry x="30" y="730" width="120" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" parent="1" source="ui_send_action" target="mc_recv" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" parent="1" source="mc_recv" target="mc_select_call" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" parent="1" source="mc_select_call" target="llm_select" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" parent="1" source="llm_select" target="mc_dec_tree" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" parent="1" source="mc_plan_call" target="llm_plan" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e9" parent="1" source="llm_plan" target="mc_call_gather" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e10" parent="1" source="mc_call_gather" target="ctx_collect" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e11" parent="1" source="ctx_collect" target="mc_dec_gather" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e13" parent="1" source="mc_call_payload" target="llm_payload" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e14" parent="1" source="llm_payload" target="mc_call_exec" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e15" parent="1" source="mc_call_exec" target="bt_prepare" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e17_nav" parent="1" source="bt_tick" target="robot_nav" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e18_sens" parent="1" source="bt_tick" target="robot_sensors" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="830" y="740"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e19" parent="1" source="bt_tick" target="mc_return" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e20" parent="1" source="mc_return" target="ui_display" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
