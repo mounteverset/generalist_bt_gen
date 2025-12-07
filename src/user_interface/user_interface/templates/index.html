@@ -155,6 +155,14 @@
           id="pending-plan"
           style="max-height: 30vh; overflow-y: auto; background: #0f172a; padding: 0.5rem; border-radius: 0.5rem; font-size: 0.8rem;"
         ></pre>
+        <label style="display: block; margin-top: 0.5rem; font-size: 0.85rem;">
+          Operator feedback (used on reject):
+          <textarea
+            id="feedback"
+            rows="3"
+            style="width: 100%; margin-top: 0.25rem; background: #0f172a; color: #e2e8f0; border-radius: 0.5rem; border: none; padding: 0.5rem; font-size: 0.85rem;"
+          ></textarea>
+        </label>
         <div class="plan-controls">
           <button type="button" id="approve-btn">Run plan</button>
           <button type="button" id="cancel-btn">Cancel plan</button>
@@ -179,6 +187,7 @@
       const pendingPlanEl = document.getElementById("pending-plan");
       const approveBtn = document.getElementById("approve-btn");
       const cancelBtn = document.getElementById("cancel-btn");
+      const feedbackEl = document.getElementById("feedback");
 
       async function fetchState() {
         const res = await fetch("/state");
@@ -262,7 +271,11 @@
         approveBtn.disabled = true;
         cancelBtn.disabled = true;
         try {
-          const res = await fetch("/approve", { method: "POST" });
+          const res = await fetch("/approve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ feedback: feedbackEl.value || "" }),
+          });
           if (!res.ok) {
             const detail = await res.json();
             alert(detail.detail || "Failed to approve plan");
@@ -276,7 +289,11 @@
         approveBtn.disabled = true;
         cancelBtn.disabled = true;
         try {
-          const res = await fetch("/cancel", { method: "POST" });
+          const res = await fetch("/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ feedback: feedbackEl.value || "" }),
+          });
           if (!res.ok) {
             const detail = await res.json();
             alert(detail.detail || "Failed to cancel plan");

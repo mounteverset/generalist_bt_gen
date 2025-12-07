@@ -98,6 +98,7 @@ class MissionCoordinatorNode(Node):
             self, ExecuteTree, self.params.bt_executor_action
         )
         self._pending_decisions: Dict[str, asyncio.Future[bool]] = {}
+        self._operator_feedback: Dict[str, str] = {}
         self._operator_service = self.create_service(
             OperatorDecision,
             self.params.operator_decision_service,
@@ -269,6 +270,7 @@ class MissionCoordinatorNode(Node):
             result.accepted = False
             result.outcome_message = 'Mission canceled by operator.'
             self._publish_status(result.outcome_message)
+            await self._handle_rejected_plan(selected_tree, goal, payload_response)
             return result
 
         self._log_debug(f'Selected tree {selected_tree}, dispatching to BT executor.')
@@ -435,6 +437,48 @@ class MissionCoordinatorNode(Node):
             self._pending_decisions.pop(session_id, None)
         return bool(decision)
 
+    async def _handle_rejected_plan(
+        self, tree_id: str, goal: MissionCommand.Goal, payload: CreatePayload.Response
+    ) -> None:
+        session_id = goal.session_id or 'unknown'
+        feedback_text = self._operator_feedback.get(session_id, '')
+        if not feedback_text:
+            return
+        if not self._wait_for_service(self._plan_subtree_client, self.params.llm_plan_service):
+            self._publish_status('PlanSubtree service unavailable; skipping LLM replan.')
+            return
+        request = PlanSubtree.Request()
+        request.session_id = session_id
+        request.mission_text = goal.command
+        request.context_snapshot = goal.context_json or ''
+        request.blackboard_state = payload.payload_json
+        prior_plan_info = {
+            'prior_tree_id': tree_id,
+            'prior_reasoning': payload.reasoning,
+            'prior_payload_json': payload.payload_json,
+            'operator_feedback': feedback_text,
+        }
+        request.failure_report = json.dumps(prior_plan_info, ensure_ascii=False)
+        request.requested_capabilities = []
+        self._log_debug(
+            f'Calling PlanSubtree for session={session_id} with operator feedback.'
+        )
+        response = await self._call_service(self._plan_subtree_client, request)
+        if response is None:
+            self._publish_status('PlanSubtree returned no response for rejected plan.')
+            return
+        if response.status_code != 0:
+            self._publish_status(
+                f'PlanSubtree could not refine plan (status={response.status_code}).'
+            )
+            return
+        self._publish_status(
+            'LLM generated an updated plan after operator feedback; see logs for details.'
+        )
+        self._log_debug(
+            f'Updated plan summary: {response.summary} (bt_xml length={len(response.bt_xml)})'
+        )
+
     async def _execute_behavior_tree(
         self, tree_id: str, goal: MissionCommand.Goal, payload_json: str
     ) -> Tuple[int, str]:
@@ -468,6 +512,8 @@ class MissionCoordinatorNode(Node):
         self, request: OperatorDecision.Request, response: OperatorDecision.Response
     ) -> OperatorDecision.Response:
         session_id = request.session_id or 'unknown'
+        if request.feedback:
+            self._operator_feedback[session_id] = request.feedback
         future = self._pending_decisions.get(session_id)
         if future is None or future.done():
             response.accepted = False

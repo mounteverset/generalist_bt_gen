@@ -1,6 +1,6 @@
 string session_id
 bool approve
+string feedback
 ---
 bool accepted
 string message
-

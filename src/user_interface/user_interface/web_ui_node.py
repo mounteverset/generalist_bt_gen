@@ -240,7 +240,7 @@ class WebInterfaceNode(Node):
         )
 
     async def _send_operator_decision(
-        self, session_id: str, approve: bool
+        self, session_id: str, approve: bool, feedback: str = ''
     ) -> tuple[bool, str]:
         if not session_id:
             message = 'No session_id provided for operator decision.'
@@ -261,6 +261,7 @@ class WebInterfaceNode(Node):
         request = OperatorDecision.Request()
         request.session_id = session_id
         request.approve = bool(approve)
+        request.feedback = feedback or ''
         future = self._operator_decision_client.call_async(request)
         result = await self._await_rclpy_future(future)
         if result is None:
@@ -361,24 +362,26 @@ class WebInterfaceNode(Node):
             return {'ok': True}
 
         @app.post('/approve')
-        async def approve():
+        async def approve(payload: Dict[str, str]):
             plan = self.pending_plan
             if not isinstance(plan, dict) or not plan.get('session_id'):
                 raise HTTPException(status_code=400, detail='No pending plan to approve')
+            feedback = (payload or {}).get('feedback', '')
             ok, message = await self._send_operator_decision(
-                str(plan.get('session_id')), True
+                str(plan.get('session_id')), True, feedback
             )
             if not ok:
                 raise HTTPException(status_code=400, detail=message)
             return {'ok': True, 'message': message}
 
         @app.post('/cancel')
-        async def cancel():
+        async def cancel(payload: Dict[str, str]):
             plan = self.pending_plan
             if not isinstance(plan, dict) or not plan.get('session_id'):
                 raise HTTPException(status_code=400, detail='No pending plan to cancel')
+            feedback = (payload or {}).get('feedback', '')
             ok, message = await self._send_operator_decision(
-                str(plan.get('session_id')), False
+                str(plan.get('session_id')), False, feedback
             )
             if not ok:
                 raise HTTPException(status_code=400, detail=message)
