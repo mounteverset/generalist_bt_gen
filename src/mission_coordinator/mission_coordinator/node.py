@@ -5,13 +5,18 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import rclpy
 from btcpp_ros2_interfaces.action import ExecuteTree
 from btcpp_ros2_interfaces.msg import NodeStatus
 from gen_bt_interfaces.action import MissionCommand, GatherContext
-from gen_bt_interfaces.srv import CreatePayload, PlanSubtree, SelectBehaviorTree
+from gen_bt_interfaces.srv import (
+    CreatePayload,
+    OperatorDecision,
+    PlanSubtree,
+    SelectBehaviorTree,
+)
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -28,6 +33,8 @@ class CoordinatorParams:
     context_snapshot_service: str
     status_topic: str
     active_subtree_topic: str
+    pending_plan_topic: str
+    operator_decision_service: str
     enable_context_snapshot: bool
     require_operator_accept: bool
     demo_mode: bool
@@ -52,6 +59,9 @@ class MissionCoordinatorNode(Node):
         # Publishers that UI clients subscribe to.
         self.status_pub = self.create_publisher(String, self.params.status_topic, 10)
         self.subtree_pub = self.create_publisher(String, self.params.active_subtree_topic, 10)
+        self.pending_plan_pub = self.create_publisher(
+            String, self.params.pending_plan_topic, 10
+        )
 
         # Action server exposed to UI/mission clients.
         self._mission_server = ActionServer(
@@ -86,6 +96,12 @@ class MissionCoordinatorNode(Node):
         )
         self._bt_executor_client = ActionClient(
             self, ExecuteTree, self.params.bt_executor_action
+        )
+        self._pending_decisions: Dict[str, asyncio.Future[bool]] = {}
+        self._operator_service = self.create_service(
+            OperatorDecision,
+            self.params.operator_decision_service,
+            self._handle_operator_decision,
         )
 
     def destroy_node(self) -> None:
@@ -124,6 +140,12 @@ class MissionCoordinatorNode(Node):
             active_subtree_topic=declare(
                 'active_subtree_topic', '/mission_coordinator/active_subtree'
             ),
+            pending_plan_topic=declare(
+                'pending_plan_topic', '/mission_coordinator/pending_plan'
+            ),
+            operator_decision_service=declare(
+                'operator_decision_service', '/mission_coordinator/operator_decision'
+            ),
             enable_context_snapshot=bool(declare('enable_context_snapshot', True)),
             require_operator_accept=bool(declare('require_operator_accept', False)),
             demo_mode=bool(declare('demo_mode', True)),
@@ -155,6 +177,12 @@ class MissionCoordinatorNode(Node):
         msg = String()
         msg.data = subtree
         self.subtree_pub.publish(msg)
+
+    def _publish_pending_plan(self, plan: dict) -> None:
+        msg = String()
+        msg.data = json.dumps(plan, ensure_ascii=False)
+        self.pending_plan_pub.publish(msg)
+        self._log_debug(f'Published pending plan for session={plan.get("session_id", "")}')
 
     def _noop_spin_tick(self) -> None:
         """Placeholder timer callback to keep executor ticking."""
@@ -219,8 +247,8 @@ class MissionCoordinatorNode(Node):
             return result
 
         self._publish_status(f'Building payload for {selected_tree}.')
-        payload_json = await self._create_payload(selected_tree, goal, gather_result)
-        if payload_json is None:
+        payload_response = await self._create_payload(selected_tree, goal, gather_result)
+        if payload_response is None:
             goal_handle.succeed()
             result = MissionCommand.Result()
             result.accepted = False
@@ -229,9 +257,23 @@ class MissionCoordinatorNode(Node):
             return result
 
         self._publish_active_subtree(selected_tree)
+        should_execute = True
+        if self._requires_operator_accept(goal):
+            should_execute = await self._await_operator_decision(
+                selected_tree, goal, payload_response
+            )
+
+        if not should_execute:
+            goal_handle.succeed()
+            result = MissionCommand.Result()
+            result.accepted = False
+            result.outcome_message = 'Mission canceled by operator.'
+            self._publish_status(result.outcome_message)
+            return result
+
         self._log_debug(f'Selected tree {selected_tree}, dispatching to BT executor.')
         node_status, executor_message = await self._execute_behavior_tree(
-            selected_tree, goal, payload_json
+            selected_tree, goal, payload_response.payload_json
         )
 
         goal_handle.succeed()
@@ -334,7 +376,7 @@ class MissionCoordinatorNode(Node):
 
     async def _create_payload(
         self, tree_id: str, goal: MissionCommand.Goal, gather_result
-    ) -> Optional[str]:
+    ) -> Optional[CreatePayload.Response]:
         if not self._wait_for_service(
             self._create_payload_client, self.params.create_payload_service
         ):
@@ -354,7 +396,44 @@ class MissionCoordinatorNode(Node):
             self._publish_status(f'CreatePayload failed: {response.reason}')
             return None
         self._log_debug(f'CreatePayload succeeded: {response.reasoning}')
-        return response.payload_json
+        return response
+
+    def _requires_operator_accept(self, goal: MissionCommand.Goal) -> bool:
+        if not self.params.require_operator_accept:
+            return False
+        auto_execute = False
+        if goal.context_json:
+            try:
+                context = json.loads(goal.context_json)
+                auto_execute = bool(context.get('auto_execute', False))
+            except Exception:
+                self._log_debug('Failed to parse context_json for auto_execute flag.')
+        return not auto_execute
+
+    async def _await_operator_decision(
+        self, tree_id: str, goal: MissionCommand.Goal, payload: CreatePayload.Response
+    ) -> bool:
+        session_id = goal.session_id or 'unknown'
+        plan = {
+            'session_id': session_id,
+            'tree_id': tree_id,
+            'mission': goal.command,
+            'summary': payload.reasoning,
+            'payload_json': payload.payload_json,
+            'tool_trace_json': payload.tool_trace_json,
+        }
+        self._publish_pending_plan(plan)
+        self._publish_status(
+            f'Awaiting operator confirmation for session={session_id} (tree={tree_id}).'
+        )
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+        self._pending_decisions[session_id] = future
+        try:
+            decision = await future
+        finally:
+            self._pending_decisions.pop(session_id, None)
+        return bool(decision)
 
     async def _execute_behavior_tree(
         self, tree_id: str, goal: MissionCommand.Goal, payload_json: str
@@ -384,6 +463,26 @@ class MissionCoordinatorNode(Node):
     def _bt_feedback(self, feedback_msg):
         self._publish_status(f"BT feedback: {feedback_msg.feedback.message}")
         self._log_debug(f'BT feedback: {feedback_msg.feedback.message}')
+
+    def _handle_operator_decision(
+        self, request: OperatorDecision.Request, response: OperatorDecision.Response
+    ) -> OperatorDecision.Response:
+        session_id = request.session_id or 'unknown'
+        future = self._pending_decisions.get(session_id)
+        if future is None or future.done():
+            response.accepted = False
+            response.message = f'No pending plan for session {session_id}.'
+            self._log_debug(response.message)
+            return response
+        future.set_result(bool(request.approve))
+        response.accepted = True
+        response.message = (
+            'Execution approved by operator.'
+            if request.approve
+            else 'Execution rejected by operator.'
+        )
+        self._publish_status(f'{response.message} (session={session_id}).')
+        return response
 
     def _wait_for_service(self, client, name: str) -> bool:
         for _ in range(10):

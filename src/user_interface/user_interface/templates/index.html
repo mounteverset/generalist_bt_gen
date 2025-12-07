@@ -97,6 +97,11 @@
         margin: 0 0 0.5rem 0;
         color: #94a3b8;
       }
+      .plan-controls {
+        margin-top: 0.5rem;
+        display: flex;
+        gap: 0.5rem;
+      }
       footer {
         font-size: 0.85rem;
         color: #94a3b8;
@@ -133,6 +138,10 @@
             placeholder="Type command or /status, /regen, /llm ..."
             autocomplete="off"
           />
+          <label style="display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem;">
+            <input type="checkbox" id="auto-run" />
+            Auto-run plan
+          </label>
           <button type="submit" id="chat-submit">Send</button>
         </form>
       </section>
@@ -141,6 +150,15 @@
         <p id="status-text">{{ status }}</p>
         <h3>Diagnostics</h3>
         <dl class="diag-grid" id="diag-grid"></dl>
+        <h3>Pending Plan</h3>
+        <pre
+          id="pending-plan"
+          style="max-height: 30vh; overflow-y: auto; background: #0f172a; padding: 0.5rem; border-radius: 0.5rem; font-size: 0.8rem;"
+        ></pre>
+        <div class="plan-controls">
+          <button type="button" id="approve-btn">Run plan</button>
+          <button type="button" id="cancel-btn">Cancel plan</button>
+        </div>
       </section>
     </main>
 
@@ -157,6 +175,10 @@
       const form = document.getElementById("chat-form");
       const input = document.getElementById("chat-input");
       const submitBtn = document.getElementById("chat-submit");
+      const autoRunEl = document.getElementById("auto-run");
+      const pendingPlanEl = document.getElementById("pending-plan");
+      const approveBtn = document.getElementById("approve-btn");
+      const cancelBtn = document.getElementById("cancel-btn");
 
       async function fetchState() {
         const res = await fetch("/state");
@@ -166,6 +188,7 @@
         statusEl.textContent = data.status || "unknown";
         renderMessages(data.messages || []);
         renderDiagnostics(data.diagnostics || {});
+        renderPendingPlan(data.pending_plan || null);
       }
 
       function renderMessages(messages) {
@@ -192,6 +215,19 @@
         });
       }
 
+      function renderPendingPlan(plan) {
+        if (!plan) {
+          pendingPlanEl.textContent = "No pending plan.";
+          approveBtn.disabled = true;
+          cancelBtn.disabled = true;
+          return;
+        }
+        pendingPlanEl.textContent = JSON.stringify(plan, null, 2);
+        const hasSession = !!plan.session_id;
+        approveBtn.disabled = !hasSession;
+        cancelBtn.disabled = !hasSession;
+      }
+
       function escapeHtml(str) {
         const div = document.createElement("div");
         div.innerText = str;
@@ -207,7 +243,7 @@
           const res = await fetch("/command", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text }),
+            body: JSON.stringify({ text, auto_execute: !!autoRunEl.checked }),
           });
           if (res.ok) {
             input.value = "";
@@ -219,6 +255,34 @@
         } finally {
           submitBtn.disabled = false;
           input.focus();
+        }
+      });
+
+      approveBtn.addEventListener("click", async () => {
+        approveBtn.disabled = true;
+        cancelBtn.disabled = true;
+        try {
+          const res = await fetch("/approve", { method: "POST" });
+          if (!res.ok) {
+            const detail = await res.json();
+            alert(detail.detail || "Failed to approve plan");
+          }
+        } finally {
+          await fetchState();
+        }
+      });
+
+      cancelBtn.addEventListener("click", async () => {
+        approveBtn.disabled = true;
+        cancelBtn.disabled = true;
+        try {
+          const res = await fetch("/cancel", { method: "POST" });
+          if (!res.ok) {
+            const detail = await res.json();
+            alert(detail.detail || "Failed to cancel plan");
+          }
+        } finally {
+          await fetchState();
         }
       });
 

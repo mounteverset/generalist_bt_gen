@@ -1,0 +1,6 @@
+string session_id
+bool approve
+---
+bool accepted
+string message
+

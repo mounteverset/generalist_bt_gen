@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from gen_bt_interfaces.action import MissionCommand
+from gen_bt_interfaces.srv import OperatorDecision
 from rclpy.action import ActionClient
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
@@ -43,6 +44,7 @@ class WebInterfaceNode(Node):
         self.declare_parameter('llm_prompt_service', '/llm_interface/chat_complete')
         self.declare_parameter('status_topic', '/mission_coordinator/status_text')
         self.declare_parameter('subtree_topic', '/mission_coordinator/active_subtree')
+        self.declare_parameter('pending_plan_topic', '/mission_coordinator/pending_plan')
         self.declare_parameter('diagnostics_topics', [])
         self.declare_parameter('transcript_directory', '~/.generalist_bt/chat_logs')
         self.declare_parameter('enable_langchain_proxy', False)
@@ -51,6 +53,9 @@ class WebInterfaceNode(Node):
         self.declare_parameter('demo_mode', False)
         self.declare_parameter('web_host', '0.0.0.0')
         self.declare_parameter('web_port', 8080)
+        self.declare_parameter(
+            'operator_decision_service', '/mission_coordinator/operator_decision'
+        )
 
         self.ui_title = self.get_parameter('ui_title').value
         self.mission_coordinator_action = self.get_parameter(
@@ -61,6 +66,7 @@ class WebInterfaceNode(Node):
         self.llm_prompt_service = self.get_parameter('llm_prompt_service').value
         self.status_topic = self.get_parameter('status_topic').value
         self.subtree_topic = self.get_parameter('subtree_topic').value
+        self.pending_plan_topic = self.get_parameter('pending_plan_topic').value
         self.transcript_directory = Path(self.get_parameter('transcript_directory').value).expanduser()
         self.demo_mode = bool(self.get_parameter('demo_mode').value)
         # log demo mode parameter
@@ -68,6 +74,9 @@ class WebInterfaceNode(Node):
         self.refresh_period = float(self.get_parameter('refresh_period').value)
         self.web_host = self.get_parameter('web_host').value or '0.0.0.0'
         self.web_port = int(self.get_parameter('web_port').value)
+        self.operator_decision_service = self.get_parameter(
+            'operator_decision_service'
+        ).value
 
         tz_name = self.get_parameter('timestamp_timezone').value or 'UTC'
         self._tzinfo = self._resolve_timezone(tz_name)
@@ -78,10 +87,15 @@ class WebInterfaceNode(Node):
         self.active_subtree = 'unknown'
         self.diagnostics: Dict[str, str] = {}
         self.messages: Deque[Dict[str, str]] = deque(maxlen=200)
+        self.pending_plan: Optional[Dict] = None
 
         self.create_subscription(String, self.status_topic, self._status_callback, 10)
         if self.subtree_topic:
             self.create_subscription(String, self.subtree_topic, self._subtree_callback, 10)
+        if self.pending_plan_topic:
+            self.create_subscription(
+                String, self.pending_plan_topic, self._pending_plan_callback, 10
+            )
 
         diagnostics_topics = self.get_parameter('diagnostics_topics').value
         if isinstance(diagnostics_topics, list):
@@ -100,6 +114,9 @@ class WebInterfaceNode(Node):
             self, MissionCommand, self.mission_coordinator_action
         )
         self._session_counter = 0
+        self._operator_decision_client = self.create_client(
+            OperatorDecision, self.operator_decision_service
+        )
 
     # region Utilities
     @property
@@ -139,7 +156,7 @@ class WebInterfaceNode(Node):
         self.messages.append({'role': role, 'content': content, 'ts': ts})
         self._write_transcript(role, content)
 
-    async def handle_user_input(self, text: str) -> None:
+    async def handle_user_input(self, text: str, auto_execute: bool = False) -> None:
         stripped = text.strip()
         if not stripped:
             return
@@ -150,7 +167,7 @@ class WebInterfaceNode(Node):
             if self.demo_mode:
                 await self._demo_response(stripped)
             else:
-                await self._dispatch_mission(stripped)
+                await self._dispatch_mission(stripped, auto_execute=auto_execute)
 
     async def _handle_command(self, text: str) -> None:
         cmd, *rest = text[1:].split(' ', 1)
@@ -178,7 +195,7 @@ class WebInterfaceNode(Node):
             f'Pretend to dispatch "{message}" to {self.mission_coordinator_action} (demo mode).',
         )
 
-    async def _dispatch_mission(self, command_text: str) -> None:
+    async def _dispatch_mission(self, command_text: str, auto_execute: bool = False) -> None:
         if not await self._wait_for_mission_server():
             self._record_message(
                 'system',
@@ -189,7 +206,10 @@ class WebInterfaceNode(Node):
         goal_msg = MissionCommand.Goal()
         goal_msg.command = command_text
         goal_msg.session_id = self._next_session_id()
-        goal_msg.context_json = json.dumps({}, ensure_ascii=False)
+        context = {}
+        if auto_execute:
+            context['auto_execute'] = True
+        goal_msg.context_json = json.dumps(context, ensure_ascii=False)
 
         self._record_message(
             'system',
@@ -218,6 +238,46 @@ class WebInterfaceNode(Node):
         return await loop.run_in_executor(
             None, self._mission_action_client.wait_for_server, 1.0
         )
+
+    async def _send_operator_decision(
+        self, session_id: str, approve: bool
+    ) -> tuple[bool, str]:
+        if not session_id:
+            message = 'No session_id provided for operator decision.'
+            self._record_message('system', message)
+            return False, message
+
+        loop = asyncio.get_running_loop()
+        available = await loop.run_in_executor(
+            None, self._operator_decision_client.wait_for_service, 1.0
+        )
+        if not available:
+            message = (
+                f'Operator decision service {self.operator_decision_service} unavailable.'
+            )
+            self._record_message('system', message)
+            return False, message
+
+        request = OperatorDecision.Request()
+        request.session_id = session_id
+        request.approve = bool(approve)
+        future = self._operator_decision_client.call_async(request)
+        result = await self._await_rclpy_future(future)
+        if result is None:
+            message = 'Operator decision result unavailable.'
+            self._record_message('system', message)
+            return False, message
+
+        if not result.accepted:
+            message = result.message or 'Operator decision not accepted.'
+            self._record_message('system', message)
+            return False, message
+
+        message = result.message or 'Operator decision applied.'
+        self._record_message('system', message)
+        # Clear cached pending plan once a decision has been applied.
+        self.pending_plan = None
+        return True, message
 
     async def _await_rclpy_future(self, future):
         while not future.done():
@@ -257,6 +317,12 @@ class WebInterfaceNode(Node):
     def _diagnostics_callback(self, topic: str, msg: String) -> None:
         self.diagnostics[topic] = msg.data
 
+    def _pending_plan_callback(self, msg: String) -> None:
+        try:
+            self.pending_plan = json.loads(msg.data)
+        except Exception:
+            self.pending_plan = {'raw': msg.data}
+
     # endregion
 
     def build_app(self) -> FastAPI:
@@ -281,6 +347,7 @@ class WebInterfaceNode(Node):
                     'active_subtree': self.active_subtree,
                     'messages': list(self.messages),
                     'diagnostics': self.diagnostics,
+                    'pending_plan': self.pending_plan,
                 }
             )
 
@@ -289,8 +356,33 @@ class WebInterfaceNode(Node):
             text = payload.get('text', '')
             if not text.strip():
                 raise HTTPException(status_code=400, detail='Command text cannot be empty')
-            await self.handle_user_input(text)
+            auto_execute = bool(payload.get('auto_execute', False))
+            await self.handle_user_input(text, auto_execute=auto_execute)
             return {'ok': True}
+
+        @app.post('/approve')
+        async def approve():
+            plan = self.pending_plan
+            if not isinstance(plan, dict) or not plan.get('session_id'):
+                raise HTTPException(status_code=400, detail='No pending plan to approve')
+            ok, message = await self._send_operator_decision(
+                str(plan.get('session_id')), True
+            )
+            if not ok:
+                raise HTTPException(status_code=400, detail=message)
+            return {'ok': True, 'message': message}
+
+        @app.post('/cancel')
+        async def cancel():
+            plan = self.pending_plan
+            if not isinstance(plan, dict) or not plan.get('session_id'):
+                raise HTTPException(status_code=400, detail='No pending plan to cancel')
+            ok, message = await self._send_operator_decision(
+                str(plan.get('session_id')), False
+            )
+            if not ok:
+                raise HTTPException(status_code=400, detail=message)
+            return {'ok': True, 'message': message}
 
         app.state.ros_node = self
         return app
