@@ -335,7 +335,6 @@ Parametrizes:
 ## Next Steps (This Week)
 
 1. Start literature review: 5 key papers on BT + LLM integration
-2. Plan first supervisor meeting with Dr. Trösken
-3. Define JSON schemas for mission and context formats
-4. Test current implementation with mock GPS data
-5. Set up LaTeX thesis template
+2. Define JSON schemas for mission and context formats
+3. Test current implementation with mock GPS data
+4. Set up LaTeX thesis template
