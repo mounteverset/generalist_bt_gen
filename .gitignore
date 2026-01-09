@@ -13,3 +13,4 @@ install/
 *.pdf
 *.gv
 __pycache__/
+src/.vscode/browse.vc.db

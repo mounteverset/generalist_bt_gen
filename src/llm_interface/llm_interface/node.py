@@ -5,7 +5,7 @@ import os
 from typing import List, Optional, Tuple
 
 import rclpy
-from gen_bt_interfaces.srv import PlanSubtree, SelectBehaviorTree
+from gen_bt_interfaces.srv import CreatePayload, PlanSubtree, SelectBehaviorTree
 try:
     from langchain_core.prompts import PromptTemplate
     from langchain_google_genai import ChatGoogleGenerativeAI
@@ -33,6 +33,7 @@ class LLMInterfaceNode(Node):
 
         self.declare_parameter('planning_service_name', '/llm_interface/plan_subtree')
         self.declare_parameter('selection_service_name', '/llm_interface/select_behavior_tree')
+        self.declare_parameter('create_payload_service_name', '/llm_interface/create_payload')
         self.declare_parameter(
             'default_bt_template',
             "<root BTCPP_format=\"4\" main_tree_to_execute=\"MainTree\">\n"
@@ -56,6 +57,7 @@ class LLMInterfaceNode(Node):
 
         planning_topic = self.get_parameter('planning_service_name').value
         selection_topic = self.get_parameter('selection_service_name').value
+        payload_topic = self.get_parameter('create_payload_service_name').value
         self._plan_template = self.get_parameter('default_bt_template').value
 
         self._plan_service = self.create_service(
@@ -64,8 +66,11 @@ class LLMInterfaceNode(Node):
         self._selection_service = self.create_service(
             SelectBehaviorTree, selection_topic, self.handle_selection_request
         )
+        self._payload_service = self.create_service(
+            CreatePayload, payload_topic, self.handle_create_payload
+        )
         self.get_logger().info(
-            f"LLMInterfaceNode ready (plan_service={planning_topic}, selection_service={selection_topic})"
+            f"LLMInterfaceNode ready (plan={planning_topic}, select={selection_topic}, payload={payload_topic})"
         )
 
     # region Selection
@@ -186,15 +191,15 @@ class LLMInterfaceNode(Node):
                 api_key=api_key,
             )
             template = PromptTemplate.from_template(
-                """
-You are a mission planner for a field robot. Given USER_COMMAND and a JSON array of
-behavior trees (each with id + description), choose the best tree or return NONE.
-tree_id MUST be exactly one of the string IDs in TREES_JSON (e.g., "demo_tree.xml").
-Do NOT answer with numeric indexes.
-Respond strictly as JSON: {{"tree_id": "<id or NONE>", "confidence": 0-1, "rationale": "..."}}
-USER_COMMAND: {user_command}
-TREES_JSON: {trees_json}
-"""
+            """
+                You are a mission planner for a field robot. Given USER_COMMAND and a JSON array of
+                behavior trees (each with id + description), choose the best tree or return NONE.
+                tree_id MUST be exactly one of the string IDs in TREES_JSON (e.g., "demo_tree.xml").
+                Do NOT answer with numeric indexes.
+                Respond strictly as JSON: {{"tree_id": "<id or NONE>", "confidence": 0-1, "rationale": "..."}}
+                USER_COMMAND: {user_command}
+                TREES_JSON: {trees_json}
+            """
             )
             self._selection_chain = template | llm
         return self._selection_chain
@@ -206,6 +211,142 @@ TREES_JSON: {trees_json}
             return None
         tree_id = tree_ids[0]
         return 0, 0.5, f"[heuristic] defaulted to '{tree_id}'"
+
+    # endregion
+
+    # region Payload Generation
+    def handle_create_payload(
+        self, request: CreatePayload.Request, response: CreatePayload.Response
+    ) -> CreatePayload.Response:
+        """Transform context snapshot into blackboard payload using LLM."""
+        try:
+            # Parse inputs
+            context = json.loads(request.context_snapshot_json) if request.context_snapshot_json else {}
+            contract = json.loads(request.subtree_contract_json) if request.subtree_contract_json else {}
+            
+            self.get_logger().info(
+                f"CreatePayload request for subtree='{request.subtree_id}' (session={request.session_id})"
+            )
+            
+            # Generate payload via LLM
+            payload_dict = self._generate_payload_via_llm(
+                context=context,
+                contract=contract,
+                subtree_id=request.subtree_id,
+                attachment_uris=list(request.attachment_uris)
+            )
+            
+            response.status_code = response.SUCCESS
+            response.payload_json = json.dumps(payload_dict, ensure_ascii=False)
+            response.reasoning = f"Generated {len(payload_dict)} blackboard entries from context"
+            response.tool_trace_json = "[]"  # TODO: Add MCP tool traces when available
+            
+        except json.JSONDecodeError as e:
+            response.status_code = response.ERROR
+            response.payload_json = "{}"
+            response.reasoning = f"Invalid JSON in request: {e}"
+            self.get_logger().error(response.reasoning)
+            
+        except Exception as e:
+            self.get_logger().error(f"CreatePayload failed: {e}")
+            response.status_code = response.RETRY
+            response.payload_json = "{}"
+            response.reasoning = str(e)
+        
+        return response
+
+    def _generate_payload_via_llm(
+        self, context: dict, contract: dict, subtree_id: str, attachment_uris: list
+    ) -> dict:
+        """Use LangChain to map context to blackboard entries."""
+        
+        # If LLM is disabled, use heuristic fallback
+        if not self._selection_llm_enabled:
+            return self._fallback_payload(context, contract)
+        
+        try:
+            chain = self._get_payload_chain()
+            
+            # Build prompt inputs
+            prompt_data = {
+                "subtree_id": subtree_id,
+                "context_json": json.dumps(context, indent=2),
+                "contract_json": json.dumps(contract, indent=2),
+                "attachment_uris": ", ".join(attachment_uris) if attachment_uris else "none"
+            }
+            
+            llm_result = chain.invoke(prompt_data)
+            raw_content = getattr(llm_result, 'content', llm_result)
+            cleaned = self._strip_code_fence(str(raw_content))
+            
+            payload = json.loads(cleaned)
+            self.get_logger().info(f"LLM generated payload with {len(payload)} keys")
+            return payload
+            
+        except Exception as e:
+            self.get_logger().warning(f"LLM payload generation failed: {e}, using fallback")
+            return self._fallback_payload(context, contract)
+
+    def _fallback_payload(self, context: dict, contract: dict) -> dict:
+        """Heuristic payload when LLM is unavailable."""
+        payload = {}
+        
+        # Apply contract defaults
+        for key, spec in contract.items():
+            if isinstance(spec, dict) and 'default' in spec:
+                payload[key] = spec['default']
+        
+        # Direct context passthrough for common keys
+        if 'ROBOT_POSE' in context:
+            payload['current_pose'] = context['ROBOT_POSE']
+        if 'GPS_FIX' in context:
+            payload['gps_location'] = context['GPS_FIX']
+        
+        self.get_logger().info(f"Fallback payload generated with {len(payload)} keys")
+        return payload
+
+    def _get_payload_chain(self):
+        """Lazy-load the payload generation chain."""
+        if not hasattr(self, '_payload_chain'):
+            api_key = os.environ.get('GEMINI_API_KEY')
+            if not api_key:
+                raise RuntimeError(
+                    'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
+                )
+            
+            llm = ChatGoogleGenerativeAI(
+                model=self._model_name,
+                temperature=0.0,  # Deterministic for payload generation
+                api_key=api_key,
+            )
+            
+            template = PromptTemplate.from_template("""
+You are a robot mission planner. Given CONTEXT (sensor data) and CONTRACT (required blackboard keys),
+generate a JSON payload for the behavior tree.
+
+SUBTREE_ID: {subtree_id}
+
+CONTEXT (raw sensor data):
+{context_json}
+
+CONTRACT (required blackboard keys with types/defaults):
+{contract_json}
+
+ATTACHMENT_URIS: {attachment_uris}
+
+INSTRUCTIONS:
+1. Map context data to blackboard keys specified in the contract
+2. Use contract defaults when context is missing
+3. Infer reasonable values from context (e.g., extract waypoints from GPS trail)
+4. Return ONLY valid JSON matching the contract schema
+5. Do NOT include markdown code fences
+
+OUTPUT (JSON only):
+""")
+            
+            self._payload_chain = template | llm
+        
+        return self._payload_chain
 
     # endregion
 

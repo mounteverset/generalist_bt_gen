@@ -14,6 +14,8 @@ find_package(nav_msgs REQUIRED)
 find_package(geographic_msgs REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 add_executable(context_gatherer_node src/context_gatherer_node.cpp)
 ament_target_dependencies(context_gatherer_node
@@ -25,6 +27,11 @@ ament_target_dependencies(context_gatherer_node
   geographic_msgs
   image_transport
   cv_bridge
+)
+
+target_link_libraries(context_gatherer_node
+  ${OpenCV_LIBS}
+  nlohmann_json::nlohmann_json
 )
 
 install(TARGETS context_gatherer_node

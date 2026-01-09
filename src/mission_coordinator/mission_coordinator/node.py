@@ -5,7 +5,9 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
+import yaml
 
 import rclpy
 from btcpp_ros2_interfaces.action import ExecuteTree
@@ -45,6 +47,7 @@ class CoordinatorParams:
     spin_period_sec: float
     transcript_directory: Path
     known_trees: list
+    tree_metadata_file: str
     mission_namespace: str = 'mission_coordinator'
 
 
@@ -104,6 +107,9 @@ class MissionCoordinatorNode(Node):
             self.params.operator_decision_service,
             self._handle_operator_decision,
         )
+        
+        # Load tree metadata
+        self._tree_metadata = self._load_tree_metadata(self.params.tree_metadata_file)
 
     def destroy_node(self) -> None:
         self.get_logger().info('Tearing down MissionCoordinatorNode.')
@@ -157,6 +163,7 @@ class MissionCoordinatorNode(Node):
             spin_period_sec=float(declare('spin_period_sec', 0.1)),
             transcript_directory=transcript_dir,
             known_trees=declare('known_trees', known_trees_default) or known_trees_default,
+            tree_metadata_file=declare('tree_metadata_file', ''),
         )
 
     # endregion
@@ -308,6 +315,40 @@ class MissionCoordinatorNode(Node):
         self._log_debug(f'Parsed tree catalog: {catalog}')
         return catalog
 
+    def _load_tree_metadata(self, metadata_file: str) -> Dict[str, dict]:
+        """Load tree metadata from YAML file."""
+        metadata = {}
+        
+        if not metadata_file:
+            self._log_debug('No tree_metadata_file specified, using empty metadata.')
+            return metadata
+        
+        metadata_path = Path(metadata_file).expanduser()
+        if not metadata_path.exists():
+            self.get_logger().warn(f'Tree metadata file not found: {metadata_path}')
+            return metadata
+        
+        try:
+            with open(metadata_path, 'r') as f:
+                data = yaml.safe_load(f)
+            
+            if data and 'trees' in data:
+                for tree in data['trees']:
+                    tree_id = tree.get('id')
+                    if tree_id:
+                        metadata[tree_id] = {
+                            'description': tree.get('description', ''),
+                            'context_requirements': tree.get('context_requirements', []),
+                            'blackboard_contract': tree.get('blackboard_contract', {})
+                        }
+            
+            self.get_logger().info(f'Loaded metadata for {len(metadata)} trees from {metadata_path}')
+            
+        except Exception as e:
+            self.get_logger().error(f'Failed to load tree metadata: {e}')
+        
+        return metadata
+
     async def _select_behavior_tree(self, goal: MissionCommand.Goal) -> Optional[str]:
         if not self._tree_catalog:
             self._log_debug('Tree catalog empty, cannot select behavior.')
@@ -333,12 +374,17 @@ class MissionCoordinatorNode(Node):
         )
         return response.selected_tree
 
-    def _context_requirements_for_tree(self, tree_id: str) -> list[str]:
-        # Placeholder: pull from catalog/metadata when available.
+    def _context_requirements_for_tree(self, tree_id: str) -> List[str]:
+        """Get context requirements from metadata."""
+        if tree_id in self._tree_metadata:
+            return self._tree_metadata[tree_id].get('context_requirements', [])
         return []
 
     def _subtree_contract_for_tree(self, tree_id: str) -> str:
-        # Placeholder: this should be populated from tree metadata.
+        """Get blackboard contract from metadata as JSON string."""
+        if tree_id in self._tree_metadata:
+            contract = self._tree_metadata[tree_id].get('blackboard_contract', {})
+            return json.dumps(contract, ensure_ascii=False)
         return '{}'
 
     async def _gather_context(self, tree_id: str, goal: MissionCommand.Goal):
