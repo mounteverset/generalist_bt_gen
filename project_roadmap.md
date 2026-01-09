@@ -20,7 +20,15 @@ Needed packages:
 
 # v1.0
 
+Full integration milestone - reliable mission execution with real robot actions and context:
 
+- **Real sensor integration**: `context_gatherer` captures actual sensor data (camera images, GPS/pose, point clouds, semantic maps)
+- **Intelligent payload generation**: `llm_interface` uses gathered context to generate appropriate blackboard payloads via LangChain
+- **Robot actions validated**: All `robot_actions` plugins tested in simulation (Gazebo/Isaac Sim) with Nav2 integration
+- **Operator-in-the-loop**: Operator approval flow (`OperatorDecision` service) works end-to-end with pending plan visualization
+- **Mission logging**: Complete transcript logging for debugging and auditing (JSONL format)
+- **Multi-tree execution**: Mission coordinator can chain multiple subtrees based on LLM planning
+- **Graceful failure handling**: Failed subtrees properly report errors back to coordinator with context
 
 # v2.0
 Self expanding trees are able active 
