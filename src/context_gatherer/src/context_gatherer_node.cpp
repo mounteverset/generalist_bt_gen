@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#include "cv_bridge/cv_bridge.h"
+#include "cv_bridge/cv_bridge.hpp"
 #include "gen_bt_interfaces/action/gather_context.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nlohmann/json.hpp"
