@@ -192,6 +192,12 @@ class MissionCoordinatorNode(Node):
         self.pending_plan_pub.publish(msg)
         self._log_debug(f'Published pending plan for session={plan.get("session_id", "")}')
 
+    def _clear_pending_plan(self) -> None:
+        msg = String()
+        msg.data = '{}'
+        self.pending_plan_pub.publish(msg)
+        self._log_debug('Cleared pending plan.')
+
     def _noop_spin_tick(self) -> None:
         """Placeholder timer callback to keep executor ticking."""
         pass
@@ -267,8 +273,10 @@ class MissionCoordinatorNode(Node):
         self._publish_active_subtree(selected_tree)
         should_execute = True
         if self._requires_operator_accept(goal):
+            plan = self._build_pending_plan(selected_tree, goal, payload_response)
+            self._publish_pending_plan(plan)
             should_execute = await self._await_operator_decision(
-                selected_tree, goal, payload_response
+                str(plan['session_id']), selected_tree
             )
 
         if not should_execute:
@@ -488,29 +496,38 @@ class MissionCoordinatorNode(Node):
                 self._log_debug('Failed to parse context_json for auto_execute flag.')
         return not auto_execute
 
-    async def _await_operator_decision(
+    def _build_pending_plan(
         self, tree_id: str, goal: MissionCommand.Goal, payload: CreatePayload.Response
-    ) -> bool:
-        session_id = goal.session_id or 'unknown'
-        plan = {
-            'session_id': session_id,
+    ) -> dict:
+        return {
+            'session_id': goal.session_id or 'unknown',
             'tree_id': tree_id,
             'mission': goal.command,
             'summary': payload.reasoning,
             'payload_json': payload.payload_json,
             'tool_trace_json': payload.tool_trace_json,
         }
-        self._publish_pending_plan(plan)
+
+    async def _await_operator_decision(self, session_id: str, tree_id: str) -> bool:
+        session_id = session_id or 'unknown'
+        self._operator_feedback.pop(session_id, None)
         self._publish_status(
             f'Awaiting operator confirmation for session={session_id} (tree={tree_id}).'
+        )
+        self.get_logger().info(
+            f'Waiting for operator decision (session={session_id}, tree={tree_id}).'
         )
         loop = asyncio.get_running_loop()
         future: asyncio.Future[bool] = loop.create_future()
         self._pending_decisions[session_id] = future
         try:
             decision = await future
+            self.get_logger().info(
+                f'Operator decision received (session={session_id}, approve={bool(decision)}).'
+            )
         finally:
             self._pending_decisions.pop(session_id, None)
+            self._clear_pending_plan()
         return bool(decision)
 
     async def _handle_rejected_plan(
@@ -588,19 +605,25 @@ class MissionCoordinatorNode(Node):
         self, request: OperatorDecision.Request, response: OperatorDecision.Response
     ) -> OperatorDecision.Response:
         session_id = request.session_id or 'unknown'
-        if request.feedback:
-            self._operator_feedback[session_id] = request.feedback
+        self._operator_feedback[session_id] = (request.feedback or '').strip()
         future = self._pending_decisions.get(session_id)
         if future is None or future.done():
             response.accepted = False
             response.message = f'No pending plan for session {session_id}.'
             self._log_debug(response.message)
             return response
-        future.set_result(bool(request.approve))
+        decision = bool(request.approve)
+        if decision:
+            self._log_debug(f'Operator approved plan for session={session_id}.')
+        else:
+            self._log_debug(
+                f'Operator rejected plan for session={session_id}. feedback="{self._operator_feedback[session_id]}"'
+            )
+        future.set_result(decision)
         response.accepted = True
         response.message = (
             'Execution approved by operator.'
-            if request.approve
+            if decision
             else 'Execution rejected by operator.'
         )
         self._publish_status(f'{response.message} (session={session_id}).')
