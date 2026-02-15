@@ -43,6 +43,20 @@
         padding: 1rem;
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
       }
+      .panel.awaiting-approval {
+        border: 2px solid #f59e0b;
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2),
+          0 10px 25px rgba(0, 0, 0, 0.25);
+      }
+      .pending-note {
+        margin: 0.25rem 0 0.5rem 0;
+        color: #fbbf24;
+        font-size: 0.8rem;
+        display: none;
+      }
+      .panel.awaiting-approval .pending-note {
+        display: block;
+      }
       .messages {
         list-style: none;
         margin: 0;
@@ -102,6 +116,23 @@
         display: flex;
         gap: 0.5rem;
       }
+      .pending-field {
+        margin-bottom: 0.5rem;
+        font-size: 0.85rem;
+      }
+      .pending-field strong {
+        color: #cbd5e1;
+      }
+      .pending-block {
+        max-height: 18vh;
+        overflow-y: auto;
+        background: #0f172a;
+        padding: 0.5rem;
+        border-radius: 0.5rem;
+        font-size: 0.8rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
       footer {
         font-size: 0.85rem;
         color: #94a3b8;
@@ -145,16 +176,27 @@
           <button type="submit" id="chat-submit">Send</button>
         </form>
       </section>
-      <section class="panel">
+      <section class="panel" id="pending-plan-panel">
         <h2>Status</h2>
         <p id="status-text">{{ status }}</p>
         <h3>Diagnostics</h3>
         <dl class="diag-grid" id="diag-grid"></dl>
         <h3>Pending Plan</h3>
-        <pre
-          id="pending-plan"
-          style="max-height: 30vh; overflow-y: auto; background: #0f172a; padding: 0.5rem; border-radius: 0.5rem; font-size: 0.8rem;"
-        ></pre>
+        <p class="pending-note">Awaiting operator approval</p>
+        <div class="pending-field">
+          <strong>Tree:</strong> <span id="pending-tree">No pending plan.</span>
+        </div>
+        <div class="pending-field">
+          <strong>Mission:</strong> <span id="pending-mission">-</span>
+        </div>
+        <div class="pending-field">
+          <strong>Payload:</strong>
+          <pre class="pending-block" id="pending-payload">-</pre>
+        </div>
+        <div class="pending-field">
+          <strong>Summary:</strong>
+          <div class="pending-block" id="pending-summary">-</div>
+        </div>
         <label style="display: block; margin-top: 0.5rem; font-size: 0.85rem;">
           Operator feedback (used on reject):
           <textarea
@@ -164,8 +206,8 @@
           ></textarea>
         </label>
         <div class="plan-controls">
-          <button type="button" id="approve-btn">Run plan</button>
-          <button type="button" id="cancel-btn">Cancel plan</button>
+          <button type="button" id="approve-btn" disabled>Run plan</button>
+          <button type="button" id="cancel-btn" disabled>Cancel plan</button>
         </div>
       </section>
     </main>
@@ -184,10 +226,15 @@
       const input = document.getElementById("chat-input");
       const submitBtn = document.getElementById("chat-submit");
       const autoRunEl = document.getElementById("auto-run");
-      const pendingPlanEl = document.getElementById("pending-plan");
+      const pendingPanelEl = document.getElementById("pending-plan-panel");
+      const pendingTreeEl = document.getElementById("pending-tree");
+      const pendingMissionEl = document.getElementById("pending-mission");
+      const pendingPayloadEl = document.getElementById("pending-payload");
+      const pendingSummaryEl = document.getElementById("pending-summary");
       const approveBtn = document.getElementById("approve-btn");
       const cancelBtn = document.getElementById("cancel-btn");
       const feedbackEl = document.getElementById("feedback");
+      let currentPendingPlan = null;
 
       async function fetchState() {
         const res = await fetch("/state");
@@ -225,16 +272,43 @@
       }
 
       function renderPendingPlan(plan) {
-        if (!plan) {
-          pendingPlanEl.textContent = "No pending plan.";
-          approveBtn.disabled = true;
-          cancelBtn.disabled = true;
+        const validPlan = isValidPendingPlan(plan);
+        currentPendingPlan = validPlan ? plan : null;
+        if (!validPlan) {
+          pendingTreeEl.textContent = "No pending plan.";
+          pendingMissionEl.textContent = "-";
+          pendingPayloadEl.textContent = "-";
+          pendingSummaryEl.textContent = "-";
+          pendingPanelEl.classList.remove("awaiting-approval");
+          setPlanButtonsEnabled(false);
           return;
         }
-        pendingPlanEl.textContent = JSON.stringify(plan, null, 2);
-        const hasSession = !!plan.session_id;
-        approveBtn.disabled = !hasSession;
-        cancelBtn.disabled = !hasSession;
+        pendingTreeEl.textContent = plan.tree_id || "unknown";
+        pendingMissionEl.textContent = plan.mission || "-";
+        pendingPayloadEl.textContent = prettyJson(plan.payload_json);
+        pendingSummaryEl.textContent = plan.summary || plan.reasoning || "-";
+        pendingPanelEl.classList.add("awaiting-approval");
+        setPlanButtonsEnabled(true);
+      }
+
+      function isValidPendingPlan(plan) {
+        return !!(plan && typeof plan === "object" && String(plan.session_id || "").trim());
+      }
+
+      function setPlanButtonsEnabled(enabled) {
+        approveBtn.disabled = !enabled;
+        cancelBtn.disabled = !enabled;
+      }
+
+      function prettyJson(raw) {
+        if (raw === null || raw === undefined || raw === "") return "{}";
+        if (typeof raw === "object") return JSON.stringify(raw, null, 2);
+        if (typeof raw !== "string") return String(raw);
+        try {
+          return JSON.stringify(JSON.parse(raw), null, 2);
+        } catch (_err) {
+          return raw;
+        }
       }
 
       function escapeHtml(str) {
@@ -268,6 +342,10 @@
       });
 
       approveBtn.addEventListener("click", async () => {
+        if (!isValidPendingPlan(currentPendingPlan)) {
+          await fetchState();
+          return;
+        }
         approveBtn.disabled = true;
         cancelBtn.disabled = true;
         try {
@@ -286,6 +364,10 @@
       });
 
       cancelBtn.addEventListener("click", async () => {
+        if (!isValidPendingPlan(currentPendingPlan)) {
+          await fetchState();
+          return;
+        }
         approveBtn.disabled = true;
         cancelBtn.disabled = true;
         try {

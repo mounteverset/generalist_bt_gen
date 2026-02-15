@@ -320,9 +320,22 @@ class WebInterfaceNode(Node):
 
     def _pending_plan_callback(self, msg: String) -> None:
         try:
-            self.pending_plan = json.loads(msg.data)
+            parsed = json.loads(msg.data)
+            self.pending_plan = self._normalize_pending_plan(parsed)
         except Exception:
             self.pending_plan = {'raw': msg.data}
+
+    def _normalize_pending_plan(self, plan: object) -> Optional[Dict]:
+        if not isinstance(plan, dict):
+            return None
+        normalized = dict(plan)
+        if 'reasoning' in normalized and 'summary' not in normalized:
+            normalized['summary'] = normalized['reasoning']
+        return normalized
+
+    def _has_valid_pending_plan(self) -> bool:
+        plan = self.pending_plan
+        return isinstance(plan, dict) and bool(str(plan.get('session_id', '')).strip())
 
     # endregion
 
@@ -364,7 +377,7 @@ class WebInterfaceNode(Node):
         @app.post('/approve')
         async def approve(payload: Dict[str, str]):
             plan = self.pending_plan
-            if not isinstance(plan, dict) or not plan.get('session_id'):
+            if not self._has_valid_pending_plan():
                 raise HTTPException(status_code=400, detail='No pending plan to approve')
             feedback = (payload or {}).get('feedback', '')
             ok, message = await self._send_operator_decision(
@@ -377,7 +390,7 @@ class WebInterfaceNode(Node):
         @app.post('/cancel')
         async def cancel(payload: Dict[str, str]):
             plan = self.pending_plan
-            if not isinstance(plan, dict) or not plan.get('session_id'):
+            if not self._has_valid_pending_plan():
                 raise HTTPException(status_code=400, detail='No pending plan to cancel')
             feedback = (payload or {}).get('feedback', '')
             ok, message = await self._send_operator_decision(
