@@ -72,6 +72,7 @@ bool parse_pose_string(const std::string & raw, double & x, double & y, double &
 bool MoveTo::setGoal(Goal & goal)
 {
   const auto pose_str = getInput<std::string>("pose").value_or("0,0,0");
+  RCLCPP_DEBUG(get_logger(), "MoveTo -> setGoal pose='%s'", pose_str.c_str());
   double x = 0.0;
   double y = 0.0;
   double theta = 0.0;
@@ -92,6 +93,29 @@ bool MoveTo::setGoal(Goal & goal)
   return true;
 }
 
+BT::NodeStatus MoveTo::onFeedback(std::shared_ptr<const Feedback> feedback)
+{
+  if (!feedback) {
+    RCLCPP_DEBUG(get_logger(), "MoveTo -> feedback: <null>");
+    return BT::NodeStatus::RUNNING;
+  }
+
+  const double nav_time =
+    static_cast<double>(feedback->navigation_time.sec) +
+    static_cast<double>(feedback->navigation_time.nanosec) * 1e-9;
+  const double eta =
+    static_cast<double>(feedback->estimated_time_remaining.sec) +
+    static_cast<double>(feedback->estimated_time_remaining.nanosec) * 1e-9;
+  RCLCPP_DEBUG(
+    get_logger(),
+    "MoveTo -> feedback: dist=%.2f recoveries=%d nav_time=%.2f eta=%.2f",
+    feedback->distance_remaining,
+    static_cast<int>(feedback->number_of_recoveries),
+    nav_time,
+    eta);
+  return BT::NodeStatus::RUNNING;
+}
+
 BT::NodeStatus MoveTo::onResultReceived(const WrappedResult & result)
 {
   if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
@@ -106,6 +130,11 @@ BT::NodeStatus MoveTo::onFailure(BT::ActionNodeErrorCode error)
 {
   RCLCPP_ERROR(get_logger(), "MoveTo → action failure: %s", BT::toStr(error));
   return BT::NodeStatus::FAILURE;
+}
+
+void MoveTo::onHalt()
+{
+  RCLCPP_WARN(get_logger(), "MoveTo -> halt requested, canceling goal.");
 }
 
 }  // namespace robot_actions

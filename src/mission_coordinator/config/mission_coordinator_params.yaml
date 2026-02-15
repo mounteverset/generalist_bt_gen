@@ -27,6 +27,7 @@
 
       # Logging
       transcript_directory: "~/.generalist_bt/mission_logs"
+      tree_metadata_file: "/home/luke/generalist_bt_gen/config/tree_metadata.yaml"
 
       # Tree catalog for selection service
       known_trees:

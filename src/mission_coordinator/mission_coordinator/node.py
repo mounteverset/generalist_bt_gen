@@ -398,6 +398,11 @@ class MissionCoordinatorNode(Node):
         gather_goal.context_requirements = self._context_requirements_for_tree(tree_id)
         gather_goal.timeout_sec = float(self.params.gather_timeout_sec)
         gather_goal.geo_hint = goal.context_json or ''
+        req_label = ','.join(gather_goal.context_requirements) or 'none'
+        self.get_logger().info(
+            f'Requesting context gather (session={gather_goal.session_id}, subtree={tree_id}, '
+            f'reqs=[{req_label}], timeout={gather_goal.timeout_sec:.1f}s)'
+        )
 
         send_future = self._context_gather_client.send_goal_async(
             gather_goal, feedback_callback=self._gather_feedback
@@ -412,8 +417,18 @@ class MissionCoordinatorNode(Node):
             self._publish_status('Context gatherer result unavailable.')
             return None
         if result.result.success:
+            context_size = len(result.result.context_json or '')
+            attachments = len(result.result.attachment_uris)
+            self.get_logger().info(
+                f'Context gather result (session={gather_goal.session_id}, subtree={tree_id}, '
+                f'success=True, context_bytes={context_size}, attachments={attachments})'
+            )
             self._log_debug('Context gather success.')
         else:
+            self.get_logger().warn(
+                f'Context gather result (session={gather_goal.session_id}, subtree={tree_id}, '
+                f'success=False, message="{result.result.message}")'
+            )
             self._publish_status(f'Context gather failed: {result.result.message}')
         return result.result
 
@@ -435,14 +450,29 @@ class MissionCoordinatorNode(Node):
         request.subtree_contract_json = self._subtree_contract_for_tree(tree_id)
         request.context_snapshot_json = gather_result.context_json
         request.attachment_uris = list(gather_result.attachment_uris)
+        context_size = len(request.context_snapshot_json or '')
+        self.get_logger().info(
+            f'CreatePayload request (session={request.session_id}, subtree={tree_id}, '
+            f'context_bytes={context_size}, attachments={len(request.attachment_uris)})'
+        )
         self._log_debug('Calling CreatePayload service.')
         response = await self._call_service(self._create_payload_client, request)
         if response is None:
             self._publish_status('CreatePayload returned no response.')
             return None
         if response.status_code != response.SUCCESS:
-            self._publish_status(f'CreatePayload failed: {response.reason}')
+            self.get_logger().warn(
+                f'CreatePayload failed (session={request.session_id}, subtree={tree_id}, '
+                f'status={response.status_code}): {response.reasoning}'
+            )
+            self._publish_status(f'CreatePayload failed: {response.reasoning}')
             return None
+        payload_log = self._truncate_for_log(response.payload_json or '{}')
+        reasoning_log = self._truncate_for_log(response.reasoning or '')
+        self.get_logger().info(
+            f'CreatePayload response (session={request.session_id}, subtree={tree_id}, '
+            f'status={response.status_code}): reasoning="{reasoning_log}", payload={payload_log}'
+        )
         self._log_debug(f'CreatePayload succeeded: {response.reasoning}')
         return response
 
@@ -602,6 +632,12 @@ class MissionCoordinatorNode(Node):
 
     async def _call_service(self, client, request):
         return await client.call_async(request)
+
+    @staticmethod
+    def _truncate_for_log(text: str, limit: int = 1200) -> str:
+        if len(text) <= limit:
+            return text
+        return f'{text[:limit]}...(truncated {len(text) - limit} chars)'
 
     def _log_debug(self, message: str) -> None:
         if self.debug_logging:

@@ -15,6 +15,7 @@ def generate_launch_description():
     mission_params = Path(get_package_share_directory('mission_coordinator')) / 'config' / 'mission_coordinator_params.yaml'
     ui_params = Path(get_package_share_directory('user_interface')) / 'config' / 'chat_params.yaml'
     llm_params = Path(get_package_share_directory('llm_interface')) / 'config' / 'llm_interface_params.yaml'
+    context_params = Path(get_package_share_directory('context_gatherer')) / 'config' / 'context_gatherer_params.yaml'
 
     params_file_arg = DeclareLaunchArgument(
         'bt_executor_params',
@@ -36,6 +37,11 @@ def generate_launch_description():
         default_value=str(llm_params),
         description='Path to the llm_interface parameter file.'
     )
+    context_params_arg = DeclareLaunchArgument(
+        'context_gatherer_params',
+        default_value=str(context_params),
+        description='Path to the context_gatherer parameter file.'
+    )
     use_cli_arg = DeclareLaunchArgument(
         'use_cli_ui',
         default_value='false',
@@ -56,6 +62,19 @@ def generate_launch_description():
         name='llm_interface',
         output='screen',
         parameters=[LaunchConfiguration('llm_interface_params')]
+    )
+
+    context_gatherer_node = Node(
+        package='context_gatherer',
+        executable='context_gatherer_node',
+        name='context_gatherer',
+        output='screen',
+        parameters=[LaunchConfiguration('context_gatherer_params')],
+        remappings=[
+            ('/camera/image_raw', '/a200_0000/sensors/camera_0/color/image'),
+            ('/camera/depth/image_raw', '/a200_0000/sensors/camera_0/depth/image'),
+            ('/map', '/a200_0000/map'),
+        ],
     )
 
     mission_coordinator_node = Node(
@@ -96,9 +115,11 @@ def generate_launch_description():
         mission_params_arg,
         ui_params_arg,
         llm_params_arg,
+        context_params_arg,
         use_cli_arg,
         bt_executor_node,
         llm_interface_node,
+        context_gatherer_node,
         mission_coordinator_node,
         cli_chat_node,
         web_ui_node,

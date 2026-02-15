@@ -3,7 +3,9 @@
     ros__parameters:
       action_name: "/context_gatherer/gather"
       output_directory: "/tmp/context_gatherer"
+      pose_cov_topic: "/a200_0000/pose"
+      slam_map_topic: "/a200_0000/map"
       default_timeout_sec: 10.0
       enable_debug_logging: true
       # Comma-separated fallback requirements when none are provided in the goal.
-      default_requirements: "ROBOT_POSE,RGB_IMAGE"
+      default_requirements: "ROBOT_POSE,RGB_IMAGE,SLAM_MAP_IMAGE"

@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from gen_bt_interfaces.action import MissionCommand
 from gen_bt_interfaces.srv import OperatorDecision
+from pydantic import BaseModel
 from rclpy.action import ActionClient
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
@@ -24,6 +25,11 @@ except ImportError:  # pragma: no cover - Python < 3.9
 
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
+
+
+class CommandPayload(BaseModel):
+    text: str
+    auto_execute: bool = False
 
 
 class WebInterfaceNode(Node):
@@ -353,12 +359,11 @@ class WebInterfaceNode(Node):
             )
 
         @app.post('/command')
-        async def command(payload: Dict[str, str]):
-            text = payload.get('text', '')
+        async def command(payload: CommandPayload):
+            text = payload.text
             if not text.strip():
                 raise HTTPException(status_code=400, detail='Command text cannot be empty')
-            auto_execute = bool(payload.get('auto_execute', False))
-            await self.handle_user_input(text, auto_execute=auto_execute)
+            await self.handle_user_input(text, auto_execute=payload.auto_execute)
             return {'ok': True}
 
         @app.post('/approve')

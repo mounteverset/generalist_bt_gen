@@ -5,6 +5,65 @@ llm_interface:
     model_name: 'gemini-2.5-flash'
     selection_llm_enabled: true
     selection_temperature: 0.0
+    payload_multimodal_enabled: true
+    payload_max_attachment_bytes: 5000000
+    payload_max_attachments: 4
+    payload_attachment_allowlist:
+      - 'image/png'
+      - 'image/jpeg'
+    payload_schema_enforced: true
+    payload_schema_max_retries: 1
+    prompts:
+      selection: |
+        You are a mission planner for a field robot. Given USER_COMMAND and a JSON array of
+        behavior trees (each with id + description), choose the best tree or return NONE.
+        tree_id MUST be exactly one of the string IDs in TREES_JSON (e.g., "demo_tree.xml").
+        Do NOT answer with numeric indexes.
+        Respond strictly as JSON: {{"tree_id": "<id or NONE>", "confidence": 0-1, "rationale": "..."}}
+        USER_COMMAND: {user_command}
+        TREES_JSON: {trees_json}
+      payload:
+        default: |
+          You are a robot mission planner. Given CONTEXT (sensor data) and CONTRACT (required
+          blackboard keys), generate a JSON payload for the behavior tree.
+
+          SUBTREE_ID: {subtree_id}
+
+          CONTEXT (raw sensor data):
+          {context_json}
+
+          CONTRACT (required blackboard keys with types/defaults):
+          {contract_json}
+
+          ATTACHMENT_URIS: {attachment_uris}
+
+          INSTRUCTIONS:
+          1. Map context data to blackboard keys specified in the contract
+          2. Use contract defaults when context is missing
+          3. Infer reasonable values from context (e.g., extract waypoints from GPS trail)
+          4. If images are provided, use them to extract map/goal information
+          5. Return ONLY valid JSON matching the contract schema
+          6. Do NOT include markdown code fences
+
+          OUTPUT (JSON only):
+      payload_normalizer: |
+        You are a strict JSON schema enforcer for robot mission payloads.
+        Compare MODEL_OUTPUT against CONTRACT_SCHEMA and correct/normalize it to strictly match.
+        Use defaults in the contract when values are missing. If a value is missing and no default
+        is provided, infer from the ORIGINAL_PROMPT context when reasonable; otherwise set null.
+        If the MODEL_OUTPUT already matches the schema, return it unchanged.
+        Return ONLY a valid JSON object (no markdown).
+
+        ORIGINAL_PROMPT:
+        {payload_prompt}
+
+        CONTRACT_SCHEMA:
+        {contract_json}
+
+        MODEL_OUTPUT:
+        {raw_payload}
+
+        NORMALIZED_OUTPUT (JSON only):
     default_bt_template: |
       <root BTCPP_format="4" main_tree_to_execute="MainTree">
         <BehaviorTree ID="MainTree">

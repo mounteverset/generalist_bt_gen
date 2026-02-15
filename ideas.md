@@ -14,4 +14,13 @@ which has a longer runtime but may produce better results because it is able to 
 - The payload generator prompt must include to not have nested JSON inside it. Just one key value level.
 - Ability to describe parameters and set them via the first user command. Like "just do it dont ask me again" gets interpreted as autorunning the bt. or exploration without asking the user if he is satisfied
 - Feedback directly before selecting a subtree to run, if the confidence score is too low to better understand the user mission if the intent is unclear.
-- regularly create up to date catalogues of actions/trees
+- Circle back and ask questions if subtree is unclear
+- regularly create up to date catalogues of actions/trees, maybe when starting the whole stack we first run a parser, that updates the catalogue of available trees 
+- context_gatherer checks the available ros topics and matches them to the respective requirement
+- we need to enforce the outcome generated payload to fit the expected formar by the BT
+    - compare llm interface -> to compare the generated payload with the required output format and other requirements, like number of waypoints from the initial prompt
+- pre-trials of outputs with specific input data 
+    - how well does an llm perform with relation to the goal we give it 
+    - can it generate waypoints from gps tile map and gps pose?
+    - if something doesnt work we can relate to these pre-trials to start a discussion
+- save history of past missions to better e.g. byte_rover, memori

@@ -15,8 +15,10 @@ public:
   static BT::PortsList providedPorts();
 
   bool setGoal(Goal & goal) override;
+  BT::NodeStatus onFeedback(std::shared_ptr<const Feedback> feedback) override;
   BT::NodeStatus onResultReceived(const WrappedResult & result) override;
   BT::NodeStatus onFailure(BT::ActionNodeErrorCode error) override;
+  void onHalt() override;
 };
 
 }  // namespace robot_actions

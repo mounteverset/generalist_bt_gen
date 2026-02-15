@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -9,8 +11,10 @@
 #include <thread>
 #include <vector>
 
-#include "cv_bridge/cv_bridge.h"
+#include "cv_bridge/cv_bridge.hpp"
 #include "gen_bt_interfaces/action/gather_context.hpp"
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nlohmann/json.hpp"
 #include "opencv2/opencv.hpp"
@@ -36,10 +40,12 @@ public:
     // Parameters
     action_name_ = this->declare_parameter<std::string>("action_name", "/context_gatherer/gather");
     output_directory_ = this->declare_parameter<std::string>("output_directory", "/tmp/context_gatherer");
+    pose_cov_topic_ = this->declare_parameter<std::string>("pose_cov_topic", "");
+    slam_map_topic_ = this->declare_parameter<std::string>("slam_map_topic", "/map");
     default_timeout_sec_ = this->declare_parameter<double>("default_timeout_sec", 10.0);
     debug_logging_ = this->declare_parameter<bool>("enable_debug_logging", true);
     default_requirements_str_ = this->declare_parameter<std::string>(
-      "default_requirements", "ROBOT_POSE,RGB_IMAGE");
+      "default_requirements", "ROBOT_POSE,RGB_IMAGE,SLAM_MAP_IMAGE");
     default_requirements_ = parse_requirements(default_requirements_str_);
 
     // Create output directory
@@ -61,6 +67,15 @@ public:
         latest_odom_ = msg;
       }
     );
+    if (!pose_cov_topic_.empty()) {
+      pose_cov_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+        pose_cov_topic_, 10,
+        [this](geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
+          std::lock_guard<std::mutex> lock(data_mutex_);
+          latest_pose_cov_ = msg;
+        }
+      );
+    }
 
     rgb_sub_ = create_subscription<sensor_msgs::msg::Image>(
       "/camera/image_raw", 10,
@@ -86,6 +101,14 @@ public:
       }
     );
 
+    slam_map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
+      slam_map_topic_, 1,
+      [this](nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        latest_slam_map_ = msg;
+      }
+    );
+
     // Action server
     action_server_ = rclcpp_action::create_server<GatherContext>(
       this,
@@ -104,6 +127,8 @@ private:
   // Parameters
   std::string action_name_;
   std::string output_directory_;
+  std::string pose_cov_topic_;
+  std::string slam_map_topic_;
   double default_timeout_sec_;
   bool debug_logging_;
   std::string default_requirements_str_;
@@ -111,15 +136,19 @@ private:
 
   // Sensor subscribers
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_cov_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr rgb_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
   rclcpp::Subscription<sensor_msgs::msg::BatteryState>::SharedPtr battery_sub_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr slam_map_sub_;
 
   // Cached sensor data
   nav_msgs::msg::Odometry::SharedPtr latest_odom_;
+  geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr latest_pose_cov_;
   sensor_msgs::msg::Image::SharedPtr latest_rgb_;
   sensor_msgs::msg::Image::SharedPtr latest_depth_;
   sensor_msgs::msg::BatteryState::SharedPtr latest_battery_;
+  nav_msgs::msg::OccupancyGrid::SharedPtr latest_slam_map_;
   std::mutex data_mutex_;
 
   // Requirement handlers
@@ -141,6 +170,14 @@ private:
 
     requirement_handlers_["BATTERY_STATE"] = [this](json& ctx, std::vector<std::string>& uris) {
       handle_battery_state(ctx);
+    };
+
+    requirement_handlers_["SLAM_MAP"] = [this](json& ctx, std::vector<std::string>& uris) {
+      handle_slam_map(ctx, uris);
+    };
+
+    requirement_handlers_["SLAM_MAP_IMAGE"] = [this](json& ctx, std::vector<std::string>& uris) {
+      handle_slam_map_image(ctx, uris);
     };
   }
 
@@ -167,7 +204,28 @@ private:
                     latest_odom_->pose.pose.position.z);
       }
     } else {
-      RCLCPP_WARN(get_logger(), "ROBOT_POSE requested but no odometry data available");
+      if (latest_pose_cov_) {
+        context_json["ROBOT_POSE"] = {
+          {"x", latest_pose_cov_->pose.pose.position.x},
+          {"y", latest_pose_cov_->pose.pose.position.y},
+          {"z", latest_pose_cov_->pose.pose.position.z},
+          {"orientation", {
+            {"x", latest_pose_cov_->pose.pose.orientation.x},
+            {"y", latest_pose_cov_->pose.pose.orientation.y},
+            {"z", latest_pose_cov_->pose.pose.orientation.z},
+            {"w", latest_pose_cov_->pose.pose.orientation.w}
+          }},
+          {"timestamp", latest_pose_cov_->header.stamp.sec}
+        };
+        if (debug_logging_) {
+          RCLCPP_INFO(get_logger(), "Captured ROBOT_POSE (PoseWithCovariance): (%.2f, %.2f, %.2f)",
+                      latest_pose_cov_->pose.pose.position.x,
+                      latest_pose_cov_->pose.pose.position.y,
+                      latest_pose_cov_->pose.pose.position.z);
+        }
+      } else {
+        RCLCPP_WARN(get_logger(), "ROBOT_POSE requested but no pose data available");
+      }
     }
   }
 
@@ -240,6 +298,60 @@ private:
     }
   }
 
+  void handle_slam_map(json& context_json, std::vector<std::string>& uris)
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    if (latest_slam_map_) {
+      std::string uri = save_map_to_disk(latest_slam_map_);
+      if (!uri.empty()) {
+        uris.push_back(uri);
+        context_json["SLAM_MAP"] = {
+          {"uri", uri},
+          {"width", latest_slam_map_->info.width},
+          {"height", latest_slam_map_->info.height},
+          {"resolution", latest_slam_map_->info.resolution},
+          {"frame_id", latest_slam_map_->header.frame_id},
+          {"timestamp", latest_slam_map_->header.stamp.sec}
+        };
+        if (debug_logging_) {
+          RCLCPP_INFO(
+            get_logger(), "Captured SLAM_MAP: %ux%u -> %s",
+            latest_slam_map_->info.width,
+            latest_slam_map_->info.height,
+            uri.c_str());
+        }
+      }
+    } else {
+      RCLCPP_WARN(get_logger(), "SLAM_MAP requested but no map data available");
+    }
+  }
+
+  void handle_slam_map_image(json& context_json, std::vector<std::string>& uris)
+  {
+    std::lock_guard<std::mutex> lock(data_mutex_);
+    if (latest_slam_map_) {
+      std::string uri = save_map_image_to_disk(latest_slam_map_);
+      if (!uri.empty()) {
+        uris.push_back(uri);
+        context_json["SLAM_MAP_IMAGE"] = {
+          {"uri", uri},
+          {"width", latest_slam_map_->info.width},
+          {"height", latest_slam_map_->info.height},
+          {"resolution", latest_slam_map_->info.resolution},
+          {"frame_id", latest_slam_map_->header.frame_id},
+          {"timestamp", latest_slam_map_->header.stamp.sec}
+        };
+        if (debug_logging_) {
+          RCLCPP_INFO(
+            get_logger(), "Captured SLAM_MAP_IMAGE: %ux%u -> %s",
+            latest_slam_map_->info.width, latest_slam_map_->info.height, uri.c_str());
+        }
+      }
+    } else {
+      RCLCPP_WARN(get_logger(), "SLAM_MAP_IMAGE requested but no map data available");
+    }
+  }
+
   std::string save_image_to_disk(const sensor_msgs::msg::Image::SharedPtr& img, const std::string& prefix)
   {
     try {
@@ -266,6 +378,94 @@ private:
       return "";
     } catch (std::exception& e) {
       RCLCPP_ERROR(get_logger(), "Failed to save image: %s", e.what());
+      return "";
+    }
+  }
+
+  std::string save_map_to_disk(const nav_msgs::msg::OccupancyGrid::SharedPtr& map)
+  {
+    try {
+      auto now = this->now();
+      std::string filename = output_directory_ + "/slam_map_" +
+                             std::to_string(now.seconds()) + "_" +
+                             std::to_string(now.nanoseconds()) + ".json";
+
+      json map_json = {
+        {"width", map->info.width},
+        {"height", map->info.height},
+        {"resolution", map->info.resolution},
+        {"frame_id", map->header.frame_id},
+        {"timestamp", map->header.stamp.sec},
+        {"origin", {
+          {"position", {
+            {"x", map->info.origin.position.x},
+            {"y", map->info.origin.position.y},
+            {"z", map->info.origin.position.z}
+          }},
+          {"orientation", {
+            {"x", map->info.origin.orientation.x},
+            {"y", map->info.origin.orientation.y},
+            {"z", map->info.origin.orientation.z},
+            {"w", map->info.origin.orientation.w}
+          }}
+        }},
+        {"data", map->data}
+      };
+
+      std::ofstream out(filename);
+      if (!out) {
+        RCLCPP_ERROR(get_logger(), "Failed to open map file for writing: %s", filename.c_str());
+        return "";
+      }
+      out << map_json.dump();
+      out.close();
+      return "file://" + filename;
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(get_logger(), "Failed to save map: %s", e.what());
+      return "";
+    }
+  }
+
+  std::string save_map_image_to_disk(const nav_msgs::msg::OccupancyGrid::SharedPtr& map)
+  {
+    try {
+      auto now = this->now();
+      std::string filename = output_directory_ + "/slam_map_" +
+                             std::to_string(now.seconds()) + "_" +
+                             std::to_string(now.nanoseconds()) + ".png";
+
+      const auto width = static_cast<int>(map->info.width);
+      const auto height = static_cast<int>(map->info.height);
+      if (width <= 0 || height <= 0) {
+        RCLCPP_WARN(get_logger(), "SLAM map has invalid dimensions (%d x %d)", width, height);
+        return "";
+      }
+
+      cv::Mat image(height, width, CV_8UC1);
+      const auto& data = map->data;
+      const size_t expected = static_cast<size_t>(width) * static_cast<size_t>(height);
+      if (data.size() < expected) {
+        RCLCPP_WARN(get_logger(), "SLAM map data size mismatch (got %zu, expected %zu)",
+                    data.size(), expected);
+      }
+
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(width) + x;
+          const int8_t value = idx < data.size() ? data[idx] : -1;
+          uint8_t pixel = 127;  // unknown
+          if (value >= 0) {
+            const int clamped = std::max(0, std::min(100, static_cast<int>(value)));
+            pixel = static_cast<uint8_t>(255 - (clamped * 255) / 100);
+          }
+          image.at<uint8_t>(y, x) = pixel;
+        }
+      }
+
+      cv::imwrite(filename, image);
+      return "file://" + filename;
+    } catch (const std::exception& e) {
+      RCLCPP_ERROR(get_logger(), "Failed to save map image: %s", e.what());
       return "";
     }
   }
