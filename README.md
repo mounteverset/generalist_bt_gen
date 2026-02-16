@@ -86,11 +86,50 @@ source /opt/ros/jazzy/setup.bash && source install/setup.bash
 python3 -c "import fastapi; import langchain; from langchain_google_genai import ChatGoogleGenerativeAI; print('✅ All dependencies OK')"
 ```
 
+## Simulation Setup (Clearpath Husky A200)
+
+For testing behavior trees without physical hardware, use the Clearpath Husky A200 simulation with Gazebo Harmonic.
+
+### Install Husky Simulation
+
+```bash
+# Install from apt (recommended)
+sudo apt-get update
+sudo apt-get install ros-jazzy-clearpath-simulator
+
+# Or source install (see docs/husky_simulation_setup.md)
+```
+
+### Launch with tmux (Multi-Panel)
+
+We provide a tmux script to manage multiple ROS nodes simultaneously:
+
+```bash
+# Launch all nodes in separate tmux panes
+./scripts/tmux_ros_launch.sh
+
+# Then attach to the session
+./scripts/tmux_ros_launch.sh attach
+
+# When done: ./scripts/tmux_ros_launch.sh kill
+```
+
+This creates a session with 5 windows:
+- **sim** - Husky simulation (Gazebo Harmonic)
+- **bt_stack** - Behavior tree executor + coordinator
+- **web_ui** - Web UI monitor
+- **teleop** - Keyboard control
+- **logs** - ROS topic/node inspection
+
+Learn more: [Using tmux with ROS](./docs/tmux_ros_guide.md)
+
 ## Dependencies / Tech stack
 
 - BehaviorTree.CPP as Behavior Tree framework
 - ROS 2 Jazzy
 - BehaviorTree.ROS2 as behavior tree wrapper
+- **Gazebo Harmonic** - 3D simulator (via ros-jazzy-ros-gz)
+- **Clearpath Husky A200** - Simulated robot platform
 - LangChain to use PromptTemplates and Tool Calls / MCP servers
 - OpenAI API / Gemini API / Claude API / Gemini Robotics 1.5 https://ai.google.dev/gemini-api/docs/robotics-overview
 - MCP Servers:
