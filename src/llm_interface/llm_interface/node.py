@@ -84,11 +84,14 @@ class LLMInterfaceNode(Node):
             automatically_declare_parameters_from_overrides=True,
         )
 
-        self.declare_parameter('planning_service_name', '/llm_interface/plan_subtree')
-        self.declare_parameter('selection_service_name', '/llm_interface/select_behavior_tree')
-        self.declare_parameter('create_payload_service_name', '/llm_interface/create_payload')
-        self.declare_parameter(
-            'default_bt_template',
+        if not self.has_parameter('planning_service_name'):
+            self.declare_parameter('planning_service_name', '/llm_interface/plan_subtree')
+        if not self.has_parameter('selection_service_name'):
+            self.declare_parameter('selection_service_name', '/llm_interface/select_behavior_tree')
+        if not self.has_parameter('create_payload_service_name'):
+            self.declare_parameter('create_payload_service_name', '/llm_interface/create_payload')
+        if not self.has_parameter('default_bt_template'):
+            self.declare_parameter(
             "<root BTCPP_format=\"4\" main_tree_to_execute=\"MainTree\">\n"
             "  <BehaviorTree ID=\"MainTree\">\n"
             "    <Sequence>\n"
@@ -96,18 +99,26 @@ class LLMInterfaceNode(Node):
             "    </Sequence>\n"
             "  </BehaviorTree>\n"
             "</root>\n",
-        )
-        self.declare_parameter('model_name', 'gemini-2.5-flash')
-        self.declare_parameter('selection_llm_enabled', True)
-        self.declare_parameter('selection_temperature', 0.0)
-        self.declare_parameter('payload_multimodal_enabled', True)
-        self.declare_parameter('payload_max_attachment_bytes', 5_000_000)
-        self.declare_parameter('payload_max_attachments', 4)
-        self.declare_parameter(
-            'payload_attachment_allowlist', ['image/png', 'image/jpeg']
-        )
-        self.declare_parameter('payload_schema_enforced', False)
-        self.declare_parameter('payload_schema_max_retries', 1)
+            )
+        if not self.has_parameter('model_name'):
+            self.declare_parameter('model_name', 'gemini-2.5-flash')
+        if not self.has_parameter('selection_llm_enabled'):
+            self.declare_parameter('selection_llm_enabled', True)
+        if not self.has_parameter('selection_temperature'):
+            self.declare_parameter('selection_temperature', 0.0)
+        if not self.has_parameter('payload_multimodal_enabled'):
+            self.declare_parameter('payload_multimodal_enabled', True)
+        if not self.has_parameter('payload_max_attachment_bytes'):
+            self.declare_parameter('payload_max_attachment_bytes', 5_000_000)
+        if not self.has_parameter('payload_max_attachments'):
+            self.declare_parameter('payload_max_attachments', 4)
+        if not self.has_parameter('payload_attachment_allowlist'):
+            self.declare_parameter(
+                )
+        if not self.has_parameter('payload_schema_enforced'):
+            self.declare_parameter('payload_schema_enforced', False)
+        if not self.has_parameter('payload_schema_max_retries'):
+            self.declare_parameter('payload_schema_max_retries', 1)
         if not self.has_parameter('prompts.selection'):
             self.declare_parameter('prompts.selection', DEFAULT_SELECTION_PROMPT)
         if not self.has_parameter('prompts.payload.default'):
