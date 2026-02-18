@@ -8,6 +8,7 @@ Chat-first interfaces for the Field BT mission coordinator. This package current
 - **Configurable ROS contract** – Every action/service/topic name is read from ROS parameters/YAML so the UI can follow mission coordinator rename changes without recompiling.
 - **Terminal chat console (`chat_node`)** – Minimal Rich-based CLI with slash commands (`/status`, `/regen`, `/llm`, `/quit`), per-session JSONL transcript logging, diagnostics subscriptions, and demo-mode stubs for offline testing.
 - **Browser control surface (`web_ui_node`)** – FastAPI + Jinja2 backend serving `/` (dashboard), `/state` (JSON snapshots), and `/command` (POST chat). Includes a responsive layout for active subtree, status, diagnostics, and chat history; front-end polls ROS state regularly.
+- **Plan approval controls** – Web UI and CLI both subscribe to pending plan payloads and can call operator approve/reject before mission execution when `mission_coordinator.require_operator_accept=true`.
 - **Transcript logging** – Both frontends write JSONL logs to `~/.generalist_bt/chat_logs` (path configurable) for auditing / LLM fine-tuning.
 - **Demo mode** – When `demo_mode` is `true` (default), no ROS calls are issued; the UI echoes what would happen. Turn it off once mission coordinator services are available.
 
@@ -51,6 +52,8 @@ Then open `http://<host>:8080` (port/host configurable). The page auto-refreshes
 | `llm_prompt_service` | Service used by `/llm`. | `/llm_interface/chat_complete` |
 | `status_topic` | Topic for textual status updates. | `/mission_coordinator/status_text` |
 | `subtree_topic` | Topic that publishes active subtree label (web UI). | `/mission_coordinator/active_subtree` |
+| `pending_plan_topic` | Topic carrying pre-execution plan/payload pending operator decision. | `/mission_coordinator/pending_plan` |
+| `operator_decision_service` | Fallback service used to approve/reject pending plans when no per-plan endpoint is provided. | `/mission_coordinator/operator_decision` |
 | `diagnostics_topics` | List of extra `std_msgs/String` topics to display. | `[ "/diagnostics" ]` |
 | `transcript_directory` | Directory for JSONL logs (expanded). | `~/.generalist_bt/chat_logs` |
 | `refresh_period` | ROS spin + UI poll period (seconds). | `0.1` |

@@ -14,7 +14,7 @@
 
       # Behavior flags
       enable_context_snapshot: true
-      require_operator_accept: false
+      require_operator_accept: true
       demo_mode: false  # When true, skip ROS calls and emit mock status.
       enable_debug_logging: true
 

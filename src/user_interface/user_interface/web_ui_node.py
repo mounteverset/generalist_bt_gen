@@ -120,9 +120,7 @@ class WebInterfaceNode(Node):
             self, MissionCommand, self.mission_coordinator_action
         )
         self._session_counter = 0
-        self._operator_decision_client = self.create_client(
-            OperatorDecision, self.operator_decision_service
-        )
+        self._operator_decision_clients: Dict[str, object] = {}
 
     # region Utilities
     @property
@@ -234,6 +232,10 @@ class WebInterfaceNode(Node):
         if result is None:
             self._record_message('system', 'Mission coordinator result unavailable.')
             return
+        if self._has_valid_pending_plan():
+            plan = self.pending_plan or {}
+            if str(plan.get('session_id', '')).strip() == goal_msg.session_id:
+                self.pending_plan = None
         self._record_message(
             'system',
             f"Mission result: accepted={result.result.accepted}, detail='{result.result.outcome_message}'",
@@ -246,20 +248,25 @@ class WebInterfaceNode(Node):
         )
 
     async def _send_operator_decision(
-        self, session_id: str, approve: bool, feedback: str = ''
+        self,
+        session_id: str,
+        approve: bool,
+        feedback: str = '',
+        service_name: Optional[str] = None,
     ) -> tuple[bool, str]:
         if not session_id:
             message = 'No session_id provided for operator decision.'
             self._record_message('system', message)
             return False, message
 
+        decision_client, decision_service = self._operator_client_for(service_name)
         loop = asyncio.get_running_loop()
         available = await loop.run_in_executor(
-            None, self._operator_decision_client.wait_for_service, 1.0
+            None, decision_client.wait_for_service, 1.0
         )
         if not available:
             message = (
-                f'Operator decision service {self.operator_decision_service} unavailable.'
+                f'Operator decision service {decision_service} unavailable.'
             )
             self._record_message('system', message)
             return False, message
@@ -268,7 +275,7 @@ class WebInterfaceNode(Node):
         request.session_id = session_id
         request.approve = bool(approve)
         request.feedback = feedback or ''
-        future = self._operator_decision_client.call_async(request)
+        future = decision_client.call_async(request)
         result = await self._await_rclpy_future(future)
         if result is None:
             message = 'Operator decision result unavailable.'
@@ -277,6 +284,8 @@ class WebInterfaceNode(Node):
 
         if not result.accepted:
             message = result.message or 'Operator decision not accepted.'
+            if message.startswith('No pending plan for session'):
+                self.pending_plan = None
             self._record_message('system', message)
             return False, message
 
@@ -285,6 +294,16 @@ class WebInterfaceNode(Node):
         # Clear cached pending plan once a decision has been applied.
         self.pending_plan = None
         return True, message
+
+    def _operator_client_for(self, service_name: Optional[str]):
+        target = (service_name or self.operator_decision_service or '').strip()
+        if not target:
+            target = '/mission_coordinator/operator_decision'
+        client = self._operator_decision_clients.get(target)
+        if client is None:
+            client = self.create_client(OperatorDecision, target)
+            self._operator_decision_clients[target] = client
+        return client, target
 
     async def _await_rclpy_future(self, future):
         while not future.done():
@@ -385,8 +404,15 @@ class WebInterfaceNode(Node):
             if not self._has_valid_pending_plan():
                 raise HTTPException(status_code=400, detail='No pending plan to approve')
             feedback = (payload or {}).get('feedback', '')
+            decision_service = str(
+                (plan or {}).get('operator_decision_service')
+                or self.operator_decision_service
+            )
             ok, message = await self._send_operator_decision(
-                str(plan.get('session_id')), True, feedback
+                str(plan.get('session_id')),
+                True,
+                feedback,
+                service_name=decision_service,
             )
             if not ok:
                 raise HTTPException(status_code=400, detail=message)
@@ -398,8 +424,15 @@ class WebInterfaceNode(Node):
             if not self._has_valid_pending_plan():
                 raise HTTPException(status_code=400, detail='No pending plan to cancel')
             feedback = (payload or {}).get('feedback', '')
+            decision_service = str(
+                (plan or {}).get('operator_decision_service')
+                or self.operator_decision_service
+            )
             ok, message = await self._send_operator_decision(
-                str(plan.get('session_id')), False, feedback
+                str(plan.get('session_id')),
+                False,
+                feedback,
+                service_name=decision_service,
             )
             if not ok:
                 raise HTTPException(status_code=400, detail=message)

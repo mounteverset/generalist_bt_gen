@@ -1,6 +1,6 @@
 - inside of the user interface you have a checkmark which lets you decide if you
 want to how to play the subtree, did it generate it or let it let the user
-confirm the execution
+confirm the execution -> circling back with the user feedback when rejection happened
 - We need a sort of feedback analyzer/completion checker that is constantly
 checking the feedback,or maybe sometimes checking the feedback from the
 action server which the tree is executed in which then decides when the mission

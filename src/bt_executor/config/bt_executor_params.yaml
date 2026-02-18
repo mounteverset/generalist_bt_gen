@@ -11,6 +11,7 @@ bt_action_server:
     plugin_directories:
       - "robot_actions/lib"
     nav2_action_name: "/a200_0000/navigate_to_pose"
+    nav2_goal_frame_id: "map"
     log_temperature_service_name: "/log_temperature"
     take_picture_service_name: "/take_picture"
     status_topic: "/mission_coordinator/status_text"

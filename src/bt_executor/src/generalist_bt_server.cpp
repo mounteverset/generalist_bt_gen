@@ -112,12 +112,15 @@ std::optional<std::string> GeneralistBehaviorTreeServer::onTreeExecutionComplete
   BT::NodeStatus status, bool was_cancelled)
 {
   std::string message;
-  if (was_cancelled) {
-    message = "Mission cancelled by client.";
-  } else if (status == BT::NodeStatus::SUCCESS) {
+  // TreeExecutionServer may call this callback with was_cancelled=true for
+  // both client-cancel and server-abort paths. Prefer terminal BT status first
+  // so execution failures are not mislabeled as user cancellations.
+  if (status == BT::NodeStatus::SUCCESS) {
     message = "Mission completed successfully.";
   } else if (status == BT::NodeStatus::FAILURE) {
     message = "Mission failed. Awaiting mission coordinator instructions.";
+  } else if (was_cancelled) {
+    message = "Mission cancelled by client.";
   } else {
     message = "Mission finished with status: " + BT::toStr(status, true);
   }

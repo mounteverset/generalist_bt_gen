@@ -98,9 +98,7 @@ class ChatInterfaceNode(Node):
         self._mission_action_client = ActionClient(
             self, MissionCommand, self.mission_coordinator_action
         )
-        self._operator_decision_client = self.create_client(
-            OperatorDecision, self.operator_decision_service
-        )
+        self._operator_decision_clients: Dict[str, Any] = {}
         self._parameter_client = AsyncParameterClient(
             self, self.mission_coordinator_namespace
         )
@@ -246,6 +244,10 @@ class ChatInterfaceNode(Node):
             'message': result.result.outcome_message,
             'session_id': goal_msg.session_id,
         }
+        if self._has_valid_pending_plan():
+            pending = self.pending_plan or {}
+            if str(pending.get('session_id', '')).strip() == goal_msg.session_id:
+                self.pending_plan = None
         self._last_result = outcome
         self._emit_system_line(
             f"Mission result: accepted={outcome['accepted']}, detail='{outcome['message']}'"
@@ -259,7 +261,11 @@ class ChatInterfaceNode(Node):
         )
 
     async def _send_operator_decision(
-        self, session_id: str, approve: bool, feedback: str = ''
+        self,
+        session_id: str,
+        approve: bool,
+        feedback: str = '',
+        service_name: Optional[str] = None,
     ) -> tuple[bool, str]:
         if not session_id:
             message = 'No session_id provided for operator decision.'
@@ -267,13 +273,14 @@ class ChatInterfaceNode(Node):
             self._write_transcript('system', message)
             return False, message
 
+        decision_client, decision_service = self._operator_client_for(service_name)
         loop = asyncio.get_running_loop()
         available = await loop.run_in_executor(
-            None, self._operator_decision_client.wait_for_service, 1.0
+            None, decision_client.wait_for_service, 1.0
         )
         if not available:
             message = (
-                f'Operator decision service {self.operator_decision_service} unavailable.'
+                f'Operator decision service {decision_service} unavailable.'
             )
             self._emit_system_line(message)
             self._write_transcript('system', message)
@@ -284,7 +291,7 @@ class ChatInterfaceNode(Node):
         request.approve = bool(approve)
         request.feedback = feedback or ''
 
-        future = self._operator_decision_client.call_async(request)
+        future = decision_client.call_async(request)
         result = await self._await_rclpy_future(future, 'operator decision')
         if result is None:
             message = 'Operator decision result unavailable.'
@@ -294,6 +301,8 @@ class ChatInterfaceNode(Node):
 
         message = result.message or 'Operator decision applied.'
         if not result.accepted:
+            if message.startswith('No pending plan for session'):
+                self.pending_plan = None
             self._emit_system_line(message)
             self._write_transcript('system', message, {'accepted': False})
             return False, message
@@ -302,6 +311,16 @@ class ChatInterfaceNode(Node):
         self._emit_system_line(message)
         self._write_transcript('system', message, {'accepted': True})
         return True, message
+
+    def _operator_client_for(self, service_name: Optional[str]):
+        target = (service_name or self.operator_decision_service or '').strip()
+        if not target:
+            target = '/mission_coordinator/operator_decision'
+        client = self._operator_decision_clients.get(target)
+        if client is None:
+            client = self.create_client(OperatorDecision, target)
+            self._operator_decision_clients[target] = client
+        return client, target
 
     async def _list_available_trees(self) -> list[tuple[str, str]]:
         loop = asyncio.get_running_loop()
@@ -441,6 +460,9 @@ class ChatInterfaceNode(Node):
             str(plan.get('session_id', '')),
             True,
             payload.strip(),
+            service_name=str(
+                plan.get('operator_decision_service') or self.operator_decision_service
+            ),
         )
         self._last_result = {'ok': ok, 'message': message}
 
@@ -455,6 +477,9 @@ class ChatInterfaceNode(Node):
             str(plan.get('session_id', '')),
             False,
             payload.strip(),
+            service_name=str(
+                plan.get('operator_decision_service') or self.operator_decision_service
+            ),
         )
         self._last_result = {'ok': ok, 'message': message}
 

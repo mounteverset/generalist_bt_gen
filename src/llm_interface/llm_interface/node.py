@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import mimetypes
 import os
+import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
@@ -92,13 +94,14 @@ class LLMInterfaceNode(Node):
             self.declare_parameter('create_payload_service_name', '/llm_interface/create_payload')
         if not self.has_parameter('default_bt_template'):
             self.declare_parameter(
-            "<root BTCPP_format=\"4\" main_tree_to_execute=\"MainTree\">\n"
-            "  <BehaviorTree ID=\"MainTree\">\n"
-            "    <Sequence>\n"
-            "      <AlwaysSuccess name=\"Acknowledge\" />\n"
-            "    </Sequence>\n"
-            "  </BehaviorTree>\n"
-            "</root>\n",
+                'default_bt_template',
+                "<root BTCPP_format=\"4\" main_tree_to_execute=\"MainTree\">\n"
+                "  <BehaviorTree ID=\"MainTree\">\n"
+                "    <Sequence>\n"
+                "      <AlwaysSuccess name=\"Acknowledge\" />\n"
+                "    </Sequence>\n"
+                "  </BehaviorTree>\n"
+                "</root>\n",
             )
         if not self.has_parameter('model_name'):
             self.declare_parameter('model_name', 'gemini-2.5-flash')
@@ -114,6 +117,8 @@ class LLMInterfaceNode(Node):
             self.declare_parameter('payload_max_attachments', 4)
         if not self.has_parameter('payload_attachment_allowlist'):
             self.declare_parameter(
+                'payload_attachment_allowlist',
+                ['image/png', 'image/jpeg']
                 )
         if not self.has_parameter('payload_schema_enforced'):
             self.declare_parameter('payload_schema_enforced', False)
@@ -391,13 +396,14 @@ class LLMInterfaceNode(Node):
                     )
                 if payload is None:
                     raise ValueError("Payload was not valid JSON.")
+            payload = self._coerce_payload_to_contract(payload, contract)
 
             if self._payload_schema_enforced:
                 matches, errors = self._payload_matches_contract(payload, contract)
                 if not matches:
+                    schema_errors = "; ".join(errors) or "unknown issues"
                     self.get_logger().warning(
-                        "Payload failed schema check (%s). Running normalizer.",
-                        "; ".join(errors) or "unknown issues",
+                        f"Payload failed schema check ({schema_errors}). Running normalizer."
                     )
                     normalized = self._normalize_payload_with_llm(
                         prompt_text, contract, cleaned
@@ -407,7 +413,15 @@ class LLMInterfaceNode(Node):
                             "Payload normalizer failed; falling back to defaults."
                         )
                         return self._fallback_payload(context, contract)
-                    payload = normalized
+                    payload = self._coerce_payload_to_contract(normalized, contract)
+                    matches, errors = self._payload_matches_contract(payload, contract)
+                    if not matches:
+                        schema_errors = "; ".join(errors) or "unknown issues"
+                        self.get_logger().warning(
+                            f"Normalized payload still mismatched contract ({schema_errors}); "
+                            "falling back to defaults."
+                        )
+                        return self._fallback_payload(context, contract)
 
             self.get_logger().info(f"LLM generated payload with {len(payload)} keys")
             return payload
@@ -430,9 +444,141 @@ class LLMInterfaceNode(Node):
             payload['current_pose'] = context['ROBOT_POSE']
         if 'GPS_FIX' in context:
             payload['gps_location'] = context['GPS_FIX']
+        payload = self._coerce_payload_to_contract(payload, contract)
         
         self.get_logger().info(f"Fallback payload generated with {len(payload)} keys")
         return payload
+
+    def _coerce_payload_to_contract(self, payload: dict, contract: dict) -> dict:
+        if not isinstance(payload, dict) or not isinstance(contract, dict):
+            return payload
+        coerced = dict(payload)
+        waypoints_spec = contract.get('waypoints')
+        if isinstance(waypoints_spec, dict):
+            converted = self._coerce_waypoints_field(coerced)
+            if converted is not None:
+                coerced['waypoints'] = converted
+        return coerced
+
+    def _coerce_waypoints_field(self, payload: dict) -> Optional[str]:
+        if not isinstance(payload, dict):
+            return None
+        # Preferred key first, then common LLM variants.
+        source = payload.get('waypoints')
+        if source is None:
+            for alt_key in ('route', 'points', 'targets', 'goal_points'):
+                if alt_key in payload:
+                    source = payload.get(alt_key)
+                    break
+        return self._coerce_waypoints_value(source)
+
+    def _coerce_waypoints_value(self, value) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            # Already close to contract: normalize separators.
+            normalized = text.replace('\n', ';').replace('|', ';')
+            matches = re.findall(
+                r'(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)',
+                normalized,
+            )
+            if matches:
+                return '; '.join(f"{x},{y},{yaw}" for x, y, yaw in matches)
+            return None
+        if isinstance(value, dict):
+            nested = (
+                value.get('waypoints')
+                if 'waypoints' in value
+                else value.get('points')
+            )
+            if nested is not None:
+                return self._coerce_waypoints_value(nested)
+            triplet = self._waypoint_triplet_from_item(value)
+            if triplet is None:
+                return None
+            return f"{triplet[0]},{triplet[1]},{triplet[2]}"
+        if isinstance(value, list):
+            triples: List[str] = []
+            for item in value:
+                triplet = self._waypoint_triplet_from_item(item)
+                if triplet is None:
+                    continue
+                triples.append(f"{triplet[0]},{triplet[1]},{triplet[2]}")
+            if triples:
+                return '; '.join(triples)
+        return None
+
+    def _waypoint_triplet_from_item(self, item) -> Optional[Tuple[str, str, str]]:
+        if isinstance(item, str):
+            converted = self._coerce_waypoints_value(item)
+            if not converted:
+                return None
+            first = converted.split(';', 1)[0].strip()
+            parts = [p.strip() for p in first.split(',')]
+            if len(parts) != 3:
+                return None
+            return parts[0], parts[1], parts[2]
+        if isinstance(item, dict):
+            x = item.get('x', item.get('X'))
+            y = item.get('y', item.get('Y'))
+            if x is None or y is None:
+                position = item.get('position')
+                if isinstance(position, dict):
+                    x = position.get('x', position.get('X', x))
+                    y = position.get('y', position.get('Y', y))
+            if x is None or y is None:
+                pose = item.get('pose')
+                if isinstance(pose, dict):
+                    position = pose.get('position')
+                    if isinstance(position, dict):
+                        x = position.get('x', position.get('X', x))
+                        y = position.get('y', position.get('Y', y))
+
+            yaw = item.get('yaw', item.get('theta', item.get('heading')))
+            if yaw is None:
+                orientation = item.get('orientation')
+                if not isinstance(orientation, dict):
+                    pose = item.get('pose')
+                    if isinstance(pose, dict):
+                        orientation = pose.get('orientation')
+                yaw = self._yaw_from_quaternion(orientation)
+            if yaw is None:
+                yaw = 0.0
+            if x is None or y is None:
+                return None
+            return str(self._as_float(x, 0.0)), str(self._as_float(y, 0.0)), str(
+                self._as_float(yaw, 0.0)
+            )
+        if isinstance(item, list) and len(item) >= 2:
+            x = self._as_float(item[0], 0.0)
+            y = self._as_float(item[1], 0.0)
+            yaw = self._as_float(item[2], 0.0) if len(item) >= 3 else 0.0
+            return str(x), str(y), str(yaw)
+        return None
+
+    @staticmethod
+    def _as_float(value, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _yaw_from_quaternion(orientation) -> Optional[float]:
+        if not isinstance(orientation, dict):
+            return None
+        if not all(k in orientation for k in ('x', 'y', 'z', 'w')):
+            return None
+        x = LLMInterfaceNode._as_float(orientation.get('x'), 0.0)
+        y = LLMInterfaceNode._as_float(orientation.get('y'), 0.0)
+        z = LLMInterfaceNode._as_float(orientation.get('z'), 0.0)
+        w = LLMInterfaceNode._as_float(orientation.get('w'), 1.0)
+        siny_cosp = 2.0 * (w * z + x * y)
+        cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+        return math.atan2(siny_cosp, cosy_cosp)
 
     def _get_payload_chain(self):
         """Lazy-load the payload generation chain."""
@@ -535,7 +681,7 @@ class LLMInterfaceNode(Node):
                         errors.append(f"key '{key}' failed pattern match")
                 except re.error as exc:
                     self.get_logger().warning(
-                        "Invalid regex pattern for key '%s': %s", key, exc
+                        f"Invalid regex pattern for key '{key}': {exc}"
                     )
         if schema_type == 'object' and isinstance(value, dict):
             required_keys = schema.get('required')
@@ -607,9 +753,9 @@ class LLMInterfaceNode(Node):
             matches, errors = self._payload_matches_contract(normalized, contract)
             if matches:
                 return normalized
+            schema_errors = "; ".join(errors) or "unknown issues"
             self.get_logger().warning(
-                "Normalizer output still mismatched (%s).",
-                "; ".join(errors) or "unknown issues",
+                f"Normalizer output still mismatched ({schema_errors})."
             )
         return None
 
@@ -628,9 +774,8 @@ class LLMInterfaceNode(Node):
             return template.format(**values)
         except Exception as exc:
             self.get_logger().error(
-                "Invalid payload prompt template for subtree '%s': %s. Falling back to default.",
-                subtree_id,
-                exc,
+                f"Invalid payload prompt template for subtree '{subtree_id}': {exc}. "
+                "Falling back to default."
             )
             return self._payload_prompt_default.format(**values)
 
@@ -642,9 +787,8 @@ class LLMInterfaceNode(Node):
         for uri in attachment_uris:
             if used >= self._payload_max_attachments:
                 self.get_logger().warning(
-                    "Skipping attachment '%s' (payload_max_attachments=%d)",
-                    uri,
-                    self._payload_max_attachments,
+                    f"Skipping attachment '{uri}' "
+                    f"(payload_max_attachments={self._payload_max_attachments})"
                 )
                 continue
             image_part = self._attachment_to_image_part(uri)
@@ -668,19 +812,16 @@ class LLMInterfaceNode(Node):
         mime, _ = mimetypes.guess_type(path.name)
         if mime not in self._payload_attachment_allowlist:
             self.get_logger().warning(
-                "Skipping attachment '%s' (mime '%s' not in allowlist)",
-                uri,
-                mime,
+                f"Skipping attachment '{uri}' "
+                f"(mime '{mime}' not in allowlist)"
             )
             return None
 
         data = path.read_bytes()
         if len(data) > self._payload_max_attachment_bytes:
             self.get_logger().warning(
-                "Skipping attachment '%s' (%d bytes exceeds limit %d)",
-                uri,
-                len(data),
-                self._payload_max_attachment_bytes,
+                f"Skipping attachment '{uri}' "
+                f"({len(data)} bytes exceeds limit {self._payload_max_attachment_bytes})"
             )
             return None
 
@@ -696,11 +837,13 @@ class LLMInterfaceNode(Node):
             if not path.is_absolute():
                 path = (Path.cwd() / path).resolve()
             if not path.exists():
-                self.get_logger().warning("Attachment path not found: %s", path)
+                self.get_logger().warning(f"Attachment path not found: {path}")
                 return None
             return path
 
-        self.get_logger().warning("Unsupported attachment URI scheme '%s'", parsed.scheme)
+        self.get_logger().warning(
+            f"Unsupported attachment URI scheme '{parsed.scheme}'"
+        )
         return None
 
     # endregion
@@ -719,9 +862,8 @@ class LLMInterfaceNode(Node):
         response.tool_invocations = '[]'
         response.reason = ''
         self.get_logger().info(
-            "PlanSubtree handled mission '%s' (context bytes=%d)",
-            request.mission_text,
-            len(request.context_snapshot),
+            f"PlanSubtree handled mission '{request.mission_text}' "
+            f"(context bytes={len(request.context_snapshot)})"
         )
         return response
 

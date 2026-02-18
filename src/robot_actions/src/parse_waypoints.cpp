@@ -53,7 +53,8 @@ BT::PortsList ParseWaypoints::providedPorts()
 {
   return {
     BT::InputPort<std::string>("raw_waypoints", "", "Serialized waypoint list."),
-    BT::OutputPort<BT::SharedQueue<std::string>>("waypoint_queue", "Parsed waypoint queue.")
+    BT::OutputPort<BT::SharedQueue<std::string>>("waypoint_queue", "Parsed waypoint queue."),
+    BT::OutputPort<int>("waypoint_count", "Number of parsed waypoints.")
   };
 }
 
@@ -75,9 +76,9 @@ BT::NodeStatus ParseWaypoints::tick()
     }
   }
 
+  setOutput("waypoint_count", static_cast<int>(queue->size()));
   setOutput("waypoint_queue", queue);
   return BT::NodeStatus::SUCCESS;
 }
 
 }  // namespace robot_actions
-

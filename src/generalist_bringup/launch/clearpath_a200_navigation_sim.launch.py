@@ -19,7 +19,7 @@ def generate_launch_description():
     # Launch arguments
     setup_path_arg = DeclareLaunchArgument(
         'setup_path',
-        default_value='/home/clawdia/clearpath',
+        default_value='/home/luke/clearpath',
         description='Path to the robot.yaml configuration file directory'
     )
 

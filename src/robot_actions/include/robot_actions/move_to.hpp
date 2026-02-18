@@ -2,6 +2,7 @@
 
 #include <behaviortree_ros2/bt_action_node.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
+#include <optional>
 #include <string>
 
 namespace robot_actions
@@ -17,8 +18,18 @@ public:
   bool setGoal(Goal & goal) override;
   BT::NodeStatus onFeedback(std::shared_ptr<const Feedback> feedback) override;
   BT::NodeStatus onResultReceived(const WrappedResult & result) override;
+  BT::NodeStatus onFailure(
+    BT::ActionNodeErrorCode error,
+    const std::optional<WrappedResult> & result) override;
   BT::NodeStatus onFailure(BT::ActionNodeErrorCode error) override;
   void onHalt() override;
+
+private:
+  std::string default_goal_frame_id_{"map"};
+  std::string last_goal_frame_id_{"map"};
+  double last_goal_x_{0.0};
+  double last_goal_y_{0.0};
+  double last_goal_theta_{0.0};
 };
 
 }  // namespace robot_actions

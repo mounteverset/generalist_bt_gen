@@ -9,6 +9,8 @@
       llm_prompt_service: "/llm_interface/chat_complete"
       status_topic: "/mission_coordinator/status_text"
       subtree_topic: "/mission_coordinator/active_subtree"
+      pending_plan_topic: "/mission_coordinator/pending_plan"
+      operator_decision_service: "/mission_coordinator/operator_decision"
       transcript_directory: "~/.generalist_bt/chat_logs"
       enable_langchain_proxy: false
       diagnostics_topics:

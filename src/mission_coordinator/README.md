@@ -17,8 +17,9 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | `context_snapshot_service` | Optional sensor-context capture service. | `/context_gatherer/snapshot` |
 | `status_topic` | Status text published for UI consumption. | `/mission_coordinator/status_text` |
 | `active_subtree_topic` | Current subtree identifier being executed. | `/mission_coordinator/active_subtree` |
+| `operator_decision_service` | Alias service for operator approve/reject; pending plans include a coordinator-specific endpoint to avoid conflicts across duplicate launches. | `/mission_coordinator/operator_decision` |
 | `enable_context_snapshot` | Toggle context gathering before LLM call. | `true` |
-| `require_operator_accept` | If true, wait for UI acknowledgement before running BT. | `false` |
+| `require_operator_accept` | If true, wait for UI acknowledgement before running BT (can be bypassed per mission with `context_json.auto_execute=true`). | `true` |
 | `demo_mode` | Skip ROS calls and emit mock responses (dev aid). | `true` |
 | `llm_timeout_sec` | Timeout for LLM planning service. | `45.0` |
 | `bt_timeout_sec` | Timeout for BT executor action. | `120.0` |

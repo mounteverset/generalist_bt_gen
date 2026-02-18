@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +21,7 @@ from gen_bt_interfaces.srv import (
 )
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.node import Node
+from rclpy.task import Future
 from std_msgs.msg import String
 
 
@@ -76,8 +77,6 @@ class MissionCoordinatorNode(Node):
             cancel_callback=self._cancel_callback,
         )
 
-        self._announce_startup()
-
         # Timer placeholder to keep node alive until action server wiring lands.
         self._spin_timer = self.create_timer(
             self.params.spin_period_sec, self._noop_spin_tick
@@ -100,14 +99,26 @@ class MissionCoordinatorNode(Node):
         self._bt_executor_client = ActionClient(
             self, ExecuteTree, self.params.bt_executor_action
         )
-        self._pending_decisions: Dict[str, asyncio.Future[bool]] = {}
+        self._pending_decisions: Dict[str, Future] = {}
         self._operator_feedback: Dict[str, str] = {}
+        self._operator_service_name = self._build_operator_service_name(
+            self.params.operator_decision_service
+        )
         self._operator_service = self.create_service(
             OperatorDecision,
-            self.params.operator_decision_service,
+            self._operator_service_name,
             self._handle_operator_decision,
         )
+        self._operator_service_alias = None
+        if self._operator_service_name != self.params.operator_decision_service:
+            self._operator_service_alias = self.create_service(
+                OperatorDecision,
+                self.params.operator_decision_service,
+                self._handle_operator_decision,
+            )
         
+        self._announce_startup()
+
         # Load tree metadata
         self._tree_metadata = self._load_tree_metadata(self.params.tree_metadata_file)
 
@@ -154,7 +165,7 @@ class MissionCoordinatorNode(Node):
                 'operator_decision_service', '/mission_coordinator/operator_decision'
             ),
             enable_context_snapshot=bool(declare('enable_context_snapshot', True)),
-            require_operator_accept=bool(declare('require_operator_accept', False)),
+            require_operator_accept=bool(declare('require_operator_accept', True)),
             demo_mode=bool(declare('demo_mode', True)),
             llm_timeout_sec=float(declare('llm_timeout_sec', 45.0)),
             gather_timeout_sec=float(declare('gather_timeout_sec', 15.0)),
@@ -172,8 +183,21 @@ class MissionCoordinatorNode(Node):
         self.get_logger().info(
             f"MissionCoordinatorNode ready (demo_mode={self.params.demo_mode}, mission action: {self.params.mission_action_name})"
         )
+        self._log_debug(
+            f'Operator decision services: primary={self._operator_service_name}, '
+            f'alias={self.params.operator_decision_service}'
+        )
         self._publish_status('Mission coordinator initialized.')
         self._publish_active_subtree('idle')
+        self._clear_pending_plan()
+
+    def _build_operator_service_name(self, base_name: str) -> str:
+        base = (base_name or '/mission_coordinator/operator_decision').strip()
+        if not base:
+            base = '/mission_coordinator/operator_decision'
+        base = base.rstrip('/')
+        # Include PID so duplicate launches don't contend on one operator service endpoint.
+        return f'{base}/{self.get_name()}_{os.getpid()}'
 
     def _publish_status(self, text: str) -> None:
         msg = String()
@@ -506,6 +530,7 @@ class MissionCoordinatorNode(Node):
             'summary': payload.reasoning,
             'payload_json': payload.payload_json,
             'tool_trace_json': payload.tool_trace_json,
+            'operator_decision_service': self._operator_service_name,
         }
 
     async def _await_operator_decision(self, session_id: str, tree_id: str) -> bool:
@@ -517,8 +542,7 @@ class MissionCoordinatorNode(Node):
         self.get_logger().info(
             f'Waiting for operator decision (session={session_id}, tree={tree_id}).'
         )
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[bool] = loop.create_future()
+        future = Future()
         self._pending_decisions[session_id] = future
         try:
             decision = await future
