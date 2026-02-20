@@ -166,7 +166,7 @@
             type="text"
             name="text"
             id="chat-input"
-            placeholder="Type command or /status, /regen, /llm ..."
+            placeholder="Type mission or /status, /approve, /cancel, /abort ..."
             autocomplete="off"
           />
           <label style="display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem;">
@@ -213,8 +213,8 @@
     </main>
 
     <footer>
-      Commands proxy the mission coordinator + llm_interface services configured in
-      your ROS params. Demo mode echoes instead of calling ROS APIs.
+      Commands proxy mission coordinator action/services configured in your ROS params.
+      Demo mode echoes instead of calling ROS APIs.
     </footer>
 
     <script>
@@ -352,7 +352,10 @@
           const res = await fetch("/approve", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ feedback: feedbackEl.value || "" }),
+            body: JSON.stringify({
+              session_id: String(currentPendingPlan.session_id || "").trim(),
+              feedback: feedbackEl.value || "",
+            }),
           });
           if (!res.ok) {
             const detail = await res.json();
@@ -374,7 +377,10 @@
           const res = await fetch("/cancel", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ feedback: feedbackEl.value || "" }),
+            body: JSON.stringify({
+              session_id: String(currentPendingPlan.session_id || "").trim(),
+              feedback: feedbackEl.value || "",
+            }),
           });
           if (!res.ok) {
             const detail = await res.json();

@@ -3,6 +3,8 @@
     ros__parameters:
       # External interface names
       mission_action_name: "/mission_coordinator/execute_tree"
+      status_service: "/mission_coordinator/status"
+      control_service: "/mission_coordinator/control"
       llm_plan_service: "/llm_interface/plan_subtree"
       llm_select_service: "/llm_interface/select_behavior_tree"
       bt_executor_action: "/bt_executor/execute_tree"

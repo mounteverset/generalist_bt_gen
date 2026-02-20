@@ -1,0 +1,10 @@
+uint8 APPROVE=1
+uint8 REJECT=2
+uint8 ABORT=3
+
+string session_id
+uint8 command
+string note
+---
+bool accepted
+string message

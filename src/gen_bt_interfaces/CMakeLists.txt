@@ -16,9 +16,11 @@ set(action_files
 
 set(service_files
   "srv/CreatePayload.srv"
+  "srv/GetMissionState.srv"
+  "srv/MissionControl.srv"
+  "srv/OperatorDecision.srv"
   "srv/PlanSubtree.srv"
   "srv/SelectBehaviorTree.srv"
-  "srv/OperatorDecision.srv"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

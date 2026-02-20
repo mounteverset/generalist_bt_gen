@@ -1,0 +1,9 @@
+string session_id
+---
+bool ok
+string active_session_id
+string lifecycle_state
+string status_text
+string active_subtree
+string pending_plan_json
+string last_result_json

@@ -3,10 +3,8 @@
     ros__parameters:
       ui_title: "Generalist BTTTTTT Chat"
       mission_coordinator_action: "/mission_coordinator/execute_tree"
-      mission_coordinator_namespace: "/mission_coordinator"
       status_service: "/mission_coordinator/status"
-      regen_service: "/mission_coordinator/request_regen"
-      llm_prompt_service: "/llm_interface/chat_complete"
+      control_service: "/mission_coordinator/control"
       status_topic: "/mission_coordinator/status_text"
       subtree_topic: "/mission_coordinator/active_subtree"
       pending_plan_topic: "/mission_coordinator/pending_plan"

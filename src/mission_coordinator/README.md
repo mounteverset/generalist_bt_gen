@@ -12,6 +12,8 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | Parameter | Description | Default |
 | --- | --- | --- |
 | `mission_action_name` | Action name exposed to the UI (`MissionCommand.action`). | `/mission_coordinator/execute_tree` |
+| `status_service` | Service endpoint for mission state snapshots (`GetMissionState.srv`). | `/mission_coordinator/status` |
+| `control_service` | Service endpoint for operator/runtime controls (`MissionControl.srv`). | `/mission_coordinator/control` |
 | `llm_plan_service` | Service to request BT XML/subtree plans from `llm_interface`. | `/llm_interface/plan_subtree` |
 | `bt_executor_action` | Action client target on the BT executor. | `/bt_executor/execute_tree` |
 | `context_snapshot_service` | Optional sensor-context capture service. | `/context_gatherer/snapshot` |
