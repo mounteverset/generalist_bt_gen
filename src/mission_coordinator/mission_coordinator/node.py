@@ -725,6 +725,7 @@ class MissionCoordinatorNode(Node):
         request = CreatePayload.Request()
         request.session_id = goal.session_id or 'unknown'
         request.subtree_id = tree_id
+        request.user_command = goal.command
         request.subtree_contract_json = self._subtree_contract_for_tree(tree_id)
         request.context_snapshot_json = gather_result.context_json
         request.attachment_uris = list(gather_result.attachment_uris)

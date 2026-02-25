@@ -37,6 +37,7 @@ DEFAULT_PAYLOAD_PROMPT = (
     "You are a robot mission planner. Given CONTEXT (sensor data) and CONTRACT "
     "(required blackboard keys), generate a JSON payload for the behavior tree.\n\n"
     "SUBTREE_ID: {subtree_id}\n\n"
+    "USER_COMMAND: {user_command}\n\n"
     "CONTEXT (raw sensor data):\n"
     "{context_json}\n\n"
     "CONTRACT (required blackboard keys with types/defaults):\n"
@@ -341,6 +342,7 @@ class LLMInterfaceNode(Node):
                 context=context,
                 contract=contract,
                 subtree_id=request.subtree_id,
+                user_command=request.user_command,
                 attachment_uris=list(request.attachment_uris)
             )
             
@@ -364,7 +366,12 @@ class LLMInterfaceNode(Node):
         return response
 
     def _generate_payload_via_llm(
-        self, context: dict, contract: dict, subtree_id: str, attachment_uris: list
+        self,
+        context: dict,
+        contract: dict,
+        subtree_id: str,
+        user_command: str,
+        attachment_uris: list,
     ) -> dict:
         """Use LangChain to map context to blackboard entries."""
         
@@ -375,6 +382,7 @@ class LLMInterfaceNode(Node):
         try:
             prompt_text = self._render_payload_prompt(
                 subtree_id=subtree_id,
+                user_command=user_command,
                 context=context,
                 contract=contract,
                 attachment_uris=attachment_uris,
@@ -760,12 +768,18 @@ class LLMInterfaceNode(Node):
         return None
 
     def _render_payload_prompt(
-        self, subtree_id: str, context: dict, contract: dict, attachment_uris: list
+        self,
+        subtree_id: str,
+        user_command: str,
+        context: dict,
+        contract: dict,
+        attachment_uris: list,
     ) -> str:
         attachment_summary = ", ".join(attachment_uris) if attachment_uris else "none"
         template = self._payload_prompts.get(subtree_id, self._payload_prompt_default)
         values = {
             'subtree_id': subtree_id,
+            'user_command': user_command or '',
             'context_json': json.dumps(context, indent=2),
             'contract_json': json.dumps(contract, indent=2),
             'attachment_uris': attachment_summary,

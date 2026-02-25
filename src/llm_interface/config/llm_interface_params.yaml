@@ -24,10 +24,11 @@ llm_interface:
         TREES_JSON: {trees_json}
       payload:
         default: |
-          You are a robot mission planner. Given CONTEXT (sensor data) and CONTRACT (required
+          You are a robot mission planner for a mobile field robot type Husky A200. Given CONTEXT (sensor data) and CONTRACT (required
           blackboard keys), generate a JSON payload for the behavior tree.
 
           SUBTREE_ID: {subtree_id}
+          USER_COMMAND: {user_command}
 
           CONTEXT (raw sensor data):
           {context_json}

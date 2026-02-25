@@ -4,6 +4,7 @@
 # Request
 string session_id
 string subtree_id
+string user_command             # Original operator mission command text.
 string subtree_contract_json     # Declares required blackboard keys/types/defaults.
 string context_snapshot_json     # From GatherContext.result
 string[] attachment_uris         # Image/PCD/file refs associated with the snapshot.
