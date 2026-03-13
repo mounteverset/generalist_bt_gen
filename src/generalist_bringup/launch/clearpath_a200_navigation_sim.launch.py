@@ -8,10 +8,16 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
+    SetEnvironmentVariable,
     TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    EnvironmentVariable,
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    TextSubstitution,
+)
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -67,6 +73,26 @@ def generate_launch_description():
     x = LaunchConfiguration('x')
     y = LaunchConfiguration('y')
     yaw = LaunchConfiguration('yaw')
+
+    # Clearpath generator scripts use /usr/bin/env python3 and require python3-apt.
+    # Force system Python precedence so these scripts don't resolve to conda Python.
+    prefer_system_python = SetEnvironmentVariable(
+        name='PATH',
+        value=[
+            TextSubstitution(text='/usr/bin:'),
+            EnvironmentVariable('PATH', default_value=''),
+        ],
+    )
+
+    # Nav2's bt_navigator must link against the distro BehaviorTree.CPP ABI.
+    # Prefer ROS distro libs over workspace overlays for this launch.
+    prefer_ros_libs = SetEnvironmentVariable(
+        name='LD_LIBRARY_PATH',
+        value=[
+            TextSubstitution(text='/opt/ros/jazzy/lib:'),
+            EnvironmentVariable('LD_LIBRARY_PATH', default_value=''),
+        ],
+    )
 
     # 1. Launch Gazebo Simulation
     simulation_launch = IncludeLaunchDescription(
@@ -155,6 +181,8 @@ def generate_launch_description():
         x_arg,
         y_arg,
         yaw_arg,
+        prefer_system_python,
+        prefer_ros_libs,
         simulation_launch,
         nav2_delayed,
         slam_delayed,

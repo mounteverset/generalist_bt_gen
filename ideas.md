@@ -18,3 +18,11 @@ which has a longer runtime but may produce better results because it is able to 
     - can it generate waypoints from gps tile map and gps pose?
     - if something doesnt work we can relate to these pre-trials to start a discussion
 - [ ] save history of past missions to better e.g. byte_rover, memori
+- [ ] pre-trials: 
+        - comparison of different zoom levels, multiple runs of same scenario, to combat, more times the same area but different types
+        - other tile map sources
+        - pre trials should connect to the later scenarios where we test
+        - concrete scenario definitions for pre-trials and final test -> have to match
+- create list of available data sources that make sense for the robot context to have
+- display planned wapyoints from payload in rviz
+
