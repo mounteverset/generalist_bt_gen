@@ -106,6 +106,18 @@ class LLMInterfaceNode(Node):
             )
         if not self.has_parameter('model_name'):
             self.declare_parameter('model_name', 'gemini-2.5-flash')
+        if not self.has_parameter('selection_model_name'):
+            self.declare_parameter(
+                'selection_model_name', self.get_parameter('model_name').value
+            )
+        if not self.has_parameter('payload_model_name'):
+            self.declare_parameter(
+                'payload_model_name', self.get_parameter('model_name').value
+            )
+        if not self.has_parameter('payload_normalizer_model_name'):
+            self.declare_parameter(
+                'payload_normalizer_model_name', self.get_parameter('model_name').value
+            )
         if not self.has_parameter('selection_llm_enabled'):
             self.declare_parameter('selection_llm_enabled', True)
         if not self.has_parameter('selection_temperature'):
@@ -133,7 +145,16 @@ class LLMInterfaceNode(Node):
             self.declare_parameter(
                 'prompts.payload_normalizer', DEFAULT_PAYLOAD_NORMALIZER_PROMPT
             )
-        self._model_name = self.get_parameter('model_name').value
+        self._model_name = str(self.get_parameter('model_name').value)
+        self._selection_model_name = str(
+            self.get_parameter('selection_model_name').value or self._model_name
+        )
+        self._payload_model_name = str(
+            self.get_parameter('payload_model_name').value or self._model_name
+        )
+        self._payload_normalizer_model_name = str(
+            self.get_parameter('payload_normalizer_model_name').value or self._model_name
+        )
         self._selection_llm_enabled = bool(
             self.get_parameter('selection_llm_enabled').value
         )
@@ -189,7 +210,11 @@ class LLMInterfaceNode(Node):
             CreatePayload, payload_topic, self.handle_create_payload
         )
         self.get_logger().info(
-            f"LLMInterfaceNode ready (plan={planning_topic}, select={selection_topic}, payload={payload_topic})"
+            "LLMInterfaceNode ready "
+            f"(plan={planning_topic}, select={selection_topic}, payload={payload_topic}, "
+            f"selection_model={self._selection_model_name}, "
+            f"payload_model={self._payload_model_name}, "
+            f"payload_normalizer_model={self._payload_normalizer_model_name})"
         )
 
     # region Selection
@@ -281,7 +306,7 @@ class LLMInterfaceNode(Node):
         rationale = parsed.get('rationale', '')
         idx = tree_ids.index(selected_id)
         reason = (
-            f"[{self._model_name}] Selected tree '{selected_id}' "
+            f"[{self._selection_model_name}] Selected tree '{selected_id}' "
             f"because {rationale or 'it best matched the mission context'}."
         )
         return idx, max(0.0, min(confidence, 1.0)), reason
@@ -305,7 +330,7 @@ class LLMInterfaceNode(Node):
                     'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
                 )
             llm = ChatGoogleGenerativeAI(
-                model=self._model_name,
+                model=self._selection_model_name,
                 temperature=self._selection_temperature,
                 api_key=api_key,
             )
@@ -598,7 +623,7 @@ class LLMInterfaceNode(Node):
                 )
             
             llm = ChatGoogleGenerativeAI(
-                model=self._model_name,
+                model=self._payload_model_name,
                 temperature=0.0,  # Deterministic for payload generation
                 api_key=api_key,
             )
@@ -616,7 +641,7 @@ class LLMInterfaceNode(Node):
                     'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
                 )
             llm = ChatGoogleGenerativeAI(
-                model=self._model_name,
+                model=self._payload_normalizer_model_name,
                 temperature=0.0,
                 api_key=api_key,
             )
@@ -632,7 +657,7 @@ class LLMInterfaceNode(Node):
                     'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
                 )
             self._payload_llm = ChatGoogleGenerativeAI(
-                model=self._model_name,
+                model=self._payload_model_name,
                 temperature=0.0,
                 api_key=api_key,
             )
