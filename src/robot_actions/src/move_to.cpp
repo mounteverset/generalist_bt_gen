@@ -20,6 +20,7 @@ MoveTo::MoveTo(const std::string & name, const BT::NodeConfig & config, const BT
   if (!node) {
     return;
   }
+  enable_debug_logging_ = is_debug_logging_enabled(node);
 
   if (node->has_parameter("nav2_goal_frame_id")) {
     default_goal_frame_id_ = node->get_parameter("nav2_goal_frame_id").as_string();
@@ -35,10 +36,12 @@ MoveTo::MoveTo(const std::string & name, const BT::NodeConfig & config, const BT
     default_goal_frame_id_.erase(default_goal_frame_id_.begin());
   }
 
-  RCLCPP_INFO(
-    get_logger(),
-    "MoveTo -> using default goal frame '%s' (action='%s')",
-    default_goal_frame_id_.c_str(), action_name_.c_str());
+  if (enable_debug_logging_) {
+    RCLCPP_INFO(
+      get_logger(),
+      "MoveTo -> using default goal frame '%s' (action='%s')",
+      default_goal_frame_id_.c_str(), action_name_.c_str());
+  }
 }
 
 BT::PortsList MoveTo::providedPorts()
@@ -111,7 +114,9 @@ bool MoveTo::setGoal(Goal & goal)
     frame_id = "map";
   }
 
-  RCLCPP_DEBUG(get_logger(), "MoveTo -> setGoal pose='%s'", pose_str.c_str());
+  if (enable_debug_logging_) {
+    RCLCPP_DEBUG(get_logger(), "MoveTo -> setGoal pose='%s'", pose_str.c_str());
+  }
   double x = 0.0;
   double y = 0.0;
   double theta = 0.0;
@@ -134,32 +139,38 @@ bool MoveTo::setGoal(Goal & goal)
   last_goal_x_ = x;
   last_goal_y_ = y;
   last_goal_theta_ = theta;
-  RCLCPP_INFO(
-    get_logger(), "MoveTo → Sending goal (%.2f, %.2f, %.2f) frame='%s'",
-    x, y, theta, frame_id.c_str());
+  if (enable_debug_logging_) {
+    RCLCPP_INFO(
+      get_logger(), "MoveTo → Sending goal (%.2f, %.2f, %.2f) frame='%s'",
+      x, y, theta, frame_id.c_str());
+  }
   return true;
 }
 
 BT::NodeStatus MoveTo::onFeedback(std::shared_ptr<const Feedback> feedback)
 {
   if (!feedback) {
-    RCLCPP_DEBUG(get_logger(), "MoveTo -> feedback: <null>");
+    if (enable_debug_logging_) {
+      RCLCPP_DEBUG(get_logger(), "MoveTo -> feedback: <null>");
+    }
     return BT::NodeStatus::RUNNING;
   }
 
-  const double nav_time =
-    static_cast<double>(feedback->navigation_time.sec) +
-    static_cast<double>(feedback->navigation_time.nanosec) * 1e-9;
-  const double eta =
-    static_cast<double>(feedback->estimated_time_remaining.sec) +
-    static_cast<double>(feedback->estimated_time_remaining.nanosec) * 1e-9;
-  RCLCPP_DEBUG(
-    get_logger(),
-    "MoveTo -> feedback: dist=%.2f recoveries=%d nav_time=%.2f eta=%.2f",
-    feedback->distance_remaining,
-    static_cast<int>(feedback->number_of_recoveries),
-    nav_time,
-    eta);
+  if (enable_debug_logging_) {
+    const double nav_time =
+      static_cast<double>(feedback->navigation_time.sec) +
+      static_cast<double>(feedback->navigation_time.nanosec) * 1e-9;
+    const double eta =
+      static_cast<double>(feedback->estimated_time_remaining.sec) +
+      static_cast<double>(feedback->estimated_time_remaining.nanosec) * 1e-9;
+    RCLCPP_DEBUG(
+      get_logger(),
+      "MoveTo -> feedback: dist=%.2f recoveries=%d nav_time=%.2f eta=%.2f",
+      feedback->distance_remaining,
+      static_cast<int>(feedback->number_of_recoveries),
+      nav_time,
+      eta);
+  }
   return BT::NodeStatus::RUNNING;
 }
 

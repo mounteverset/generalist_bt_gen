@@ -19,6 +19,7 @@ public:
   BT::NodeStatus onFailure(BT::ServiceNodeErrorCode error) override;
 
 private:
+  bool enable_debug_logging_{false};
   std::string current_log_path_;
 };
 

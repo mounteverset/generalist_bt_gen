@@ -11,4 +11,15 @@ inline rclcpp::Logger get_logger()
   return logger;
 }
 
+inline bool is_debug_logging_enabled(const rclcpp::Node::SharedPtr & node)
+{
+  if (!node) {
+    return false;
+  }
+  if (node->has_parameter("enable_debug_logging")) {
+    return node->get_parameter("enable_debug_logging").as_bool();
+  }
+  return node->declare_parameter<bool>("enable_debug_logging", false);
+}
+
 }

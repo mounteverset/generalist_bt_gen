@@ -21,6 +21,7 @@ nlohmann::json parse_payload_json(const std::string & payload, const rclcpp::Log
 BlackboardLoadStats load_payload_into_blackboard(
   const BT::Blackboard::Ptr & blackboard,
   const nlohmann::json & payload,
-  const rclcpp::Logger & logger);
+  const rclcpp::Logger & logger,
+  bool enable_debug_logging = false);
 
 }  // namespace bt_executor

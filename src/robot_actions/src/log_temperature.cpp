@@ -8,6 +8,7 @@ namespace robot_actions
 LogTemperature::LogTemperature(const std::string & name, const BT::NodeConfig & config, const BT::RosNodeParams & params)
 : BT::RosServiceNode<std_srvs::srv::Trigger>(name, config, params)
 {
+  enable_debug_logging_ = is_debug_logging_enabled(node_.lock());
 }
 
 BT::PortsList LogTemperature::providedPorts()
@@ -19,15 +20,19 @@ bool LogTemperature::setRequest(Request::SharedPtr & request)
 {
   current_log_path_ = getInput<std::string>("logfile_path").value_or("/tmp/temperature_log.txt");
   (void)request;
-  RCLCPP_INFO(get_logger(), "LogTemperature → requesting measurement for %s", current_log_path_.c_str());
+  if (enable_debug_logging_) {
+    RCLCPP_INFO(get_logger(), "LogTemperature → requesting measurement for %s", current_log_path_.c_str());
+  }
   return true;
 }
 
 BT::NodeStatus LogTemperature::onResponseReceived(const Response::SharedPtr & response)
 {
-  RCLCPP_INFO(
-    get_logger(), "LogTemperature → response: success=%d message=%s",
-    response->success, response->message.c_str());
+  if (enable_debug_logging_) {
+    RCLCPP_INFO(
+      get_logger(), "LogTemperature → response: success=%d message=%s",
+      response->success, response->message.c_str());
+  }
   return response->success ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
 }
 

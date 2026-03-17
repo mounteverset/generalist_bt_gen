@@ -16,5 +16,6 @@ bt_action_server:
     take_picture_service_name: "/take_picture"
     status_topic: "/mission_coordinator/status_text"
     active_node_topic: "/mission_coordinator/active_subtree"
+    enable_debug_logging: false
     auto_restart_on_failure: false
     feedback_rate_hz: 5.0

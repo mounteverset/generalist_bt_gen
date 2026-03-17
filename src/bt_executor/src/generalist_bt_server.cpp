@@ -33,6 +33,14 @@ GeneralistBehaviorTreeServer::GeneralistBehaviorTreeServer(const rclcpp::NodeOpt
       "active_node_topic", "/mission_coordinator/active_subtree");
   }
 
+  if (node_handle->has_parameter("enable_debug_logging")) {
+    enable_debug_logging_ =
+      node_handle->get_parameter("enable_debug_logging").as_bool();
+  } else {
+    enable_debug_logging_ = node_handle->declare_parameter<bool>(
+      "enable_debug_logging", false);
+  }
+
   if (node_handle->has_parameter("auto_restart_on_failure")) {
     auto_restart_on_failure_ =
       node_handle->get_parameter("auto_restart_on_failure").as_bool();
@@ -65,7 +73,9 @@ GeneralistBehaviorTreeServer::GeneralistBehaviorTreeServer(const rclcpp::NodeOpt
 
 void GeneralistBehaviorTreeServer::onTreeCreated(BT::Tree & tree)
 {
-  RCLCPP_INFO(node()->get_logger(), "Tree created with root: %s", tree.rootNode()->name().c_str());
+  if (enable_debug_logging_) {
+    RCLCPP_INFO(node()->get_logger(), "Tree created with root: %s", tree.rootNode()->name().c_str());
+  }
   const auto payload = goalPayload();
   auto blackboard = tree.rootBlackboard();
 
@@ -73,8 +83,9 @@ void GeneralistBehaviorTreeServer::onTreeCreated(BT::Tree & tree)
   blackboard->set("user_command", payload);
   blackboard->set<std::string>("waypoints_raw", "");
   const auto payload_json = parse_payload_json(payload, node()->get_logger());
-  const auto stats = load_payload_into_blackboard(blackboard, payload_json, node()->get_logger());
-  if (stats.entries_written > 0) {
+  const auto stats = load_payload_into_blackboard(
+    blackboard, payload_json, node()->get_logger(), enable_debug_logging_);
+  if (enable_debug_logging_ && stats.entries_written > 0) {
     RCLCPP_INFO(
       node()->get_logger(), "Loaded %zu payload entries into the blackboard (warnings=%zu).",
       stats.entries_written, stats.warnings);
@@ -142,7 +153,9 @@ void GeneralistBehaviorTreeServer::publish_executor_status(const std::string & t
     msg.data = text;
     status_publisher_->publish(msg);
   }
-  RCLCPP_DEBUG(node()->get_logger(), "%s", text.c_str());
+  if (enable_debug_logging_) {
+    RCLCPP_DEBUG(node()->get_logger(), "%s", text.c_str());
+  }
 }
 
 void GeneralistBehaviorTreeServer::publish_active_node(const std::string & node_name)

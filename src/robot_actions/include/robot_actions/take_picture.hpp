@@ -17,6 +17,9 @@ public:
   bool setRequest(Request::SharedPtr & request) override;
   BT::NodeStatus onResponseReceived(const Response::SharedPtr & response) override;
   BT::NodeStatus onFailure(BT::ServiceNodeErrorCode error) override;
+
+private:
+  bool enable_debug_logging_{false};
 };
 
 }  // namespace robot_actions

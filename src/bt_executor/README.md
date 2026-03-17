@@ -41,6 +41,7 @@ Key parameters:
 | `log_temperature_service_name` / `take_picture_service_name` | Default service names used by the respective `robot_actions` service nodes (overridable via `service_name` input ports). | `"/log_temperature"`, `"/take_picture"` |
 | `behavior_trees` | List of `package/subfolder` entries that contain BT XML files to pre-register. | `["bt_executor/trees"]` |
 | `status_topic` / `active_node_topic` | Topics publishing textual status + active subtree for UI/mission coordinator. | `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree` |
+| `enable_debug_logging` | Enables verbose BT execution logs (per-tick blackboard dump + robot action debug traces). Keep `false` for normal operation. | `false` |
 | `auto_restart_on_failure` | When `false`, the BT stops on failures so the mission coordinator can react; set `true` for continuous retries. | `false` |
 | `feedback_rate_hz` | Frequency for `onLoopFeedback` publishing. | `5.0` Hz |
 

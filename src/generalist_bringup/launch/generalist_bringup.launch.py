@@ -10,8 +10,7 @@ from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    #t_executor_share = Path(get_package_share_directory('bt_executor'))
-    bt_executor_params = Path(get_package_share_directory('bt_executor')) / 'config' / 'bt_executor_params.yaml'
+    bt_executor_params = Path(get_package_share_directory('generalist_bringup')) / 'config' / 'bt_executor_params.yaml'
     mission_params = Path(get_package_share_directory('mission_coordinator')) / 'config' / 'mission_coordinator_params.yaml'
     ui_params = Path(get_package_share_directory('user_interface')) / 'config' / 'chat_params.yaml'
     llm_params = Path(get_package_share_directory('llm_interface')) / 'config' / 'llm_interface_params.yaml'

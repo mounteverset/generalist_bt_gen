@@ -29,6 +29,7 @@ private:
 
   std::string status_topic_;
   std::string active_node_topic_;
+  bool enable_debug_logging_{false};
   bool auto_restart_on_failure_{false};
   double feedback_rate_hz_{5.0};
   std::vector<std::string> plugin_directories_;

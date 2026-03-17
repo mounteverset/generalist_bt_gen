@@ -12,6 +12,7 @@ namespace robot_actions
 TakePicture::TakePicture(const std::string & name, const BT::NodeConfig & config, const BT::RosNodeParams & params)
 : BT::RosServiceNode<std_srvs::srv::Trigger>(name, config, params)
 {
+  enable_debug_logging_ = is_debug_logging_enabled(node_.lock());
 }
 
 BT::PortsList TakePicture::providedPorts()
@@ -22,7 +23,9 @@ BT::PortsList TakePicture::providedPorts()
 bool TakePicture::setRequest(Request::SharedPtr & request)
 {
   (void)request;
-  RCLCPP_INFO(get_logger(), "TakePicture → requesting camera capture.");
+  if (enable_debug_logging_) {
+    RCLCPP_INFO(get_logger(), "TakePicture → requesting camera capture.");
+  }
   return true;
 }
 
@@ -37,7 +40,9 @@ BT::NodeStatus TakePicture::onResponseReceived(const Response::SharedPtr & respo
     filepath = path.str();
   }
   setOutput("filepath", filepath);
-  RCLCPP_INFO(get_logger(), "TakePicture → received path %s", filepath.c_str());
+  if (enable_debug_logging_) {
+    RCLCPP_INFO(get_logger(), "TakePicture → received path %s", filepath.c_str());
+  }
   return response->success ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
 }
 

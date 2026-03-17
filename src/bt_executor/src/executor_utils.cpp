@@ -11,15 +11,17 @@ namespace
 
 void assign_string(
   const BT::Blackboard::Ptr & blackboard, const std::string & key, std::string value,
-  BlackboardLoadStats & stats, const rclcpp::Logger & logger)
+  BlackboardLoadStats & stats, const rclcpp::Logger & logger, bool enable_debug_logging)
 {
   try {
     const auto value_copy = value;
     blackboard->set(key, std::move(value));
     ++stats.entries_written;
-    RCLCPP_INFO(
-      logger, "Loaded blackboard key '%s' = '%s'",
-      key.c_str(), value_copy.c_str());
+    if (enable_debug_logging) {
+      RCLCPP_INFO(
+        logger, "Loaded blackboard key '%s' = '%s'",
+        key.c_str(), value_copy.c_str());
+    }
   } catch (const std::exception & e) {
     ++stats.warnings;
     RCLCPP_WARN(logger, "Failed to set blackboard key '%s': %s", key.c_str(), e.what());
@@ -36,7 +38,8 @@ std::string json_value_to_string(const nlohmann::json & value)
 
 void populate_recursive(
   const BT::Blackboard::Ptr & blackboard, const std::string & key_path,
-  const nlohmann::json & value, BlackboardLoadStats & stats, const rclcpp::Logger & logger)
+  const nlohmann::json & value, BlackboardLoadStats & stats, const rclcpp::Logger & logger,
+  bool enable_debug_logging)
 {
   if (!value.is_object()) {
     if (value.is_null()) {
@@ -44,14 +47,16 @@ void populate_recursive(
       RCLCPP_WARN(logger, "Blackboard key '%s' skipped (null value).", key_path.c_str());
       return;
     }
-    assign_string(blackboard, key_path, json_value_to_string(value), stats, logger);
+    assign_string(
+      blackboard, key_path, json_value_to_string(value), stats, logger, enable_debug_logging);
     return;
   }
 
-  assign_string(blackboard, key_path, value.dump(), stats, logger);
+  assign_string(blackboard, key_path, value.dump(), stats, logger, enable_debug_logging);
   for (const auto & [child_key, child_value] : value.items()) {
     const auto nested_key = key_path.empty() ? child_key : key_path + "." + child_key;
-    populate_recursive(blackboard, nested_key, child_value, stats, logger);
+    populate_recursive(
+      blackboard, nested_key, child_value, stats, logger, enable_debug_logging);
   }
 }
 
@@ -77,14 +82,14 @@ nlohmann::json parse_payload_json(const std::string & payload, const rclcpp::Log
 
 BlackboardLoadStats load_payload_into_blackboard(
   const BT::Blackboard::Ptr & blackboard, const nlohmann::json & payload,
-  const rclcpp::Logger & logger)
+  const rclcpp::Logger & logger, bool enable_debug_logging)
 {
   BlackboardLoadStats stats;
   if (!payload.is_object()) {
     return stats;
   }
   for (const auto & [key, value] : payload.items()) {
-    populate_recursive(blackboard, key, value, stats, logger);
+    populate_recursive(blackboard, key, value, stats, logger, enable_debug_logging);
   }
   return stats;
 }
