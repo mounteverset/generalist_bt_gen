@@ -1,5 +1,5 @@
-- [ ] UI checkmark for auto accept the subtree
-- feedback analyzer/completion checker that is constantly checking the feedback, 
+- [x] UI checkmark for auto accept the subtree
+- []feedback analyzer/completion checker that is constantly checking the feedback, 
     - checking the feedback from the action server, which the tree is executed in which then decides when the mission is finished. 
     - e.g. open-ended missions like "explore the area around you" may not have a clear cut goal when they are finished but we need to have an instance that is being able to hold the execution of the tree to say when it is finished.
 - [ ] instead of only relying on langchain to be able to make tool calls and generate an answer. If it fails after let's say two tries to generate a suitable tree, let's use an LLM CLI tool
@@ -23,6 +23,10 @@ which has a longer runtime but may produce better results because it is able to 
         - other tile map sources
         - pre trials should connect to the later scenarios where we test
         - concrete scenario definitions for pre-trials and final test -> have to match
-- create list of available data sources that make sense for the robot context to have
-- display planned wapyoints from payload in rviz
+- [ ] create list of available data sources that make sense for the robot context to have
+- [ ] display planned wapyoints from payload in rviz
+- [ ] augmentation to standard map_saver which puts the coordinate system and a proper grid net onto the saved map, and also clearly displays the robot pose inside of this map. 
+- [ ] open ended mission open question
+- [ ] Lastenheft derived from requirements
+
 

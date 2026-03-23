@@ -6,8 +6,9 @@
         - how does the node exepect input strings
         - what is the desired behavior, condition for failures etc. 
         
-
 - Global / local navigation switch implementation on the robot to drive with MAVROS or Nav2
 
-- weighting of different sensor sources -> example: find nearest tree, prefer gps based 
+- open ended mission termination still an open question -> search literature for solutions
+
+
 
