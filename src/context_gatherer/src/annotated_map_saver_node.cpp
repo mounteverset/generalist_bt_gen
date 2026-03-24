@@ -424,6 +424,36 @@ private:
       static_cast<int>(std::round((-local_y / magnitude) * scale_px)));
   }
 
+  static void draw_outlined_text(
+    cv::Mat& image,
+    const std::string& text,
+    const cv::Point& origin,
+    const double font_scale,
+    const cv::Scalar& text_color,
+    const int text_thickness = 1,
+    const cv::Scalar& outline_color = cv::Scalar(255, 255, 255),
+    const int outline_thickness = 3)
+  {
+    cv::putText(
+      image,
+      text,
+      origin,
+      cv::FONT_HERSHEY_SIMPLEX,
+      font_scale,
+      outline_color,
+      outline_thickness,
+      cv::LINE_AA);
+    cv::putText(
+      image,
+      text,
+      origin,
+      cv::FONT_HERSHEY_SIMPLEX,
+      font_scale,
+      text_color,
+      text_thickness,
+      cv::LINE_AA);
+  }
+
   static void draw_axis_widget(
     cv::Mat& image,
     const nav_msgs::msg::OccupancyGrid::SharedPtr& map)
@@ -435,15 +465,12 @@ private:
     cv::circle(image, origin, 4, cv::Scalar(50, 50, 50), cv::FILLED);
     cv::arrowedLine(image, origin, x_arrow, cv::Scalar(0, 0, 255), 2, cv::LINE_AA, 0, 0.15);
     cv::arrowedLine(image, origin, y_arrow, cv::Scalar(0, 180, 0), 2, cv::LINE_AA, 0, 0.15);
-    cv::putText(
-      image, "+X", x_arrow + cv::Point(4, -4), cv::FONT_HERSHEY_SIMPLEX, 0.45,
-      cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
-    cv::putText(
-      image, "+Y", y_arrow + cv::Point(4, -4), cv::FONT_HERSHEY_SIMPLEX, 0.45,
-      cv::Scalar(0, 150, 0), 1, cv::LINE_AA);
-    cv::putText(
-      image, "map frame", origin + cv::Point(-34, 22), cv::FONT_HERSHEY_SIMPLEX, 0.45,
-      cv::Scalar(40, 40, 40), 1, cv::LINE_AA);
+    draw_outlined_text(
+      image, "+X", x_arrow + cv::Point(4, -4), 0.45, cv::Scalar(0, 0, 255));
+    draw_outlined_text(
+      image, "+Y", y_arrow + cv::Point(4, -4), 0.45, cv::Scalar(0, 150, 0));
+    draw_outlined_text(
+      image, "map frame", origin + cv::Point(-34, 22), 0.45, cv::Scalar(40, 40, 40));
   }
 
   static void draw_metric_grid(
@@ -530,15 +557,12 @@ private:
         const cv::Point label_position(
           std::clamp(label_anchor.x + 4, 4, width - 52),
           std::clamp(label_anchor.y - 6, 14, height - 6));
-        cv::putText(
+        draw_outlined_text(
           image,
           format_signed_metric(world_x),
           label_position,
-          cv::FONT_HERSHEY_SIMPLEX,
           0.35,
-          zero_line ? cv::Scalar(60, 80, 140) : cv::Scalar(70, 70, 70),
-          1,
-          cv::LINE_AA);
+          zero_line ? cv::Scalar(60, 80, 140) : cv::Scalar(70, 70, 70));
       }
     }
 
@@ -568,15 +592,12 @@ private:
         const cv::Point label_position(
           std::clamp(label_anchor.x + 4, 4, width - 52),
           std::clamp(label_anchor.y - 4, 14, height - 6));
-        cv::putText(
+        draw_outlined_text(
           image,
           format_signed_metric(world_y),
           label_position,
-          cv::FONT_HERSHEY_SIMPLEX,
           0.35,
-          zero_line ? cv::Scalar(50, 120, 50) : cv::Scalar(70, 70, 70),
-          1,
-          cv::LINE_AA);
+          zero_line ? cv::Scalar(50, 120, 50) : cv::Scalar(70, 70, 70));
       }
     }
   }
@@ -596,15 +617,12 @@ private:
     cv::line(image, start, end, cv::Scalar(35, 35, 35), 3, cv::LINE_AA);
     cv::line(image, start + cv::Point(0, -6), start + cv::Point(0, 6), cv::Scalar(35, 35, 35), 2);
     cv::line(image, end + cv::Point(0, -6), end + cv::Point(0, 6), cv::Scalar(35, 35, 35), 2);
-    cv::putText(
+    draw_outlined_text(
       image,
       format_decimal(scale_bar_m, 1) + " m",
       cv::Point(x, y - 10),
-      cv::FONT_HERSHEY_SIMPLEX,
       0.45,
-      cv::Scalar(30, 30, 30),
-      1,
-      cv::LINE_AA);
+      cv::Scalar(30, 30, 30));
   }
 
   static bool draw_robot_pose(
@@ -632,15 +650,12 @@ private:
     cv::circle(image, center, 6, cv::Scalar(0, 80, 255), cv::FILLED);
     cv::circle(image, center, 9, cv::Scalar(255, 255, 255), 2);
     cv::arrowedLine(image, center, tip, cv::Scalar(0, 0, 180), 2, cv::LINE_AA, 0, 0.25);
-    cv::putText(
+    draw_outlined_text(
       image,
       "robot",
       center + cv::Point(10, -10),
-      cv::FONT_HERSHEY_SIMPLEX,
       0.45,
-      cv::Scalar(10, 10, 120),
-      1,
-      cv::LINE_AA);
+      cv::Scalar(10, 10, 120));
     return true;
   }
 
