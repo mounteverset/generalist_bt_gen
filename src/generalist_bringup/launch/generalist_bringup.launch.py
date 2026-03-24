@@ -76,6 +76,14 @@ def generate_launch_description():
         ],
     )
 
+    annotated_map_saver_node = Node(
+        package='context_gatherer',
+        executable='annotated_map_saver_node',
+        name='annotated_map_saver',
+        output='screen',
+        parameters=[LaunchConfiguration('context_gatherer_params')],
+    )
+
     mission_coordinator_node = Node(
         package='mission_coordinator',
         executable='mission_coordinator_node',
@@ -118,6 +126,7 @@ def generate_launch_description():
         use_cli_arg,
         bt_executor_node,
         llm_interface_node,
+        annotated_map_saver_node,
         context_gatherer_node,
         mission_coordinator_node,
         cli_chat_node,

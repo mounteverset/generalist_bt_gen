@@ -1,11 +1,21 @@
-/**:
-  context_gatherer:
-    ros__parameters:
-      action_name: "/context_gatherer/gather"
-      output_directory: "/tmp/context_gatherer"
-      pose_cov_topic: "/a200_0000/pose"
-      slam_map_topic: "/a200_0000/map"
-      default_timeout_sec: 10.0
-      enable_debug_logging: true
-      # Comma-separated fallback requirements when none are provided in the goal.
-      default_requirements: "ROBOT_POSE,RGB_IMAGE,SLAM_MAP_IMAGE"
+context_gatherer:
+  ros__parameters:
+    action_name: "/context_gatherer/gather"
+    output_directory: "/tmp/context_gatherer"
+    pose_cov_topic: "/a200_0000/pose"
+    slam_map_topic: "/a200_0000/map"
+    annotated_map_service_name: "/annotated_map_saver/save_map"
+    annotated_map_service_timeout_sec: 10.0
+    default_timeout_sec: 10.0
+    enable_debug_logging: true
+    # Comma-separated fallback requirements when none are provided in the goal.
+    default_requirements: "ROBOT_POSE,RGB_IMAGE,ANNOTATED_SLAM_MAP_IMAGE"
+
+annotated_map_saver:
+  ros__parameters:
+    output_directory: "/tmp/context_gatherer"
+    pose_cov_topic: "/a200_0000/pose"
+    slam_map_topic: "/a200_0000/map"
+    annotated_map_service_name: "/annotated_map_saver/save_map"
+    annotated_map_grid_spacing_m: 0.0
+    enable_debug_logging: true

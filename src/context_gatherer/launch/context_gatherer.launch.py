@@ -13,6 +13,13 @@ def generate_launch_description():
                 name='context_gatherer',
                 output='screen',
                 parameters=[str(params_file)],
-            )
+            ),
+            Node(
+                package='context_gatherer',
+                executable='annotated_map_saver_node',
+                name='annotated_map_saver',
+                output='screen',
+                parameters=[str(params_file)],
+            ),
         ]
     )

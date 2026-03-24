@@ -4,7 +4,7 @@
 trees:
   - id: "demo_tree.xml"
     description: "Iterates through waypoints, navigates, and logs temperature."
-    context_requirements: [ROBOT_POSE, SLAM_MAP_IMAGE]
+    context_requirements: [ROBOT_POSE, ANNOTATED_SLAM_MAP_IMAGE]
     blackboard_contract:
       waypoints:
         type: "string"
