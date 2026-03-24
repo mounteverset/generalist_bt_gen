@@ -4,8 +4,6 @@ bt_action_server:
     tick_frequency: 20
     groot2_port: 1667
     ros_plugins_timeout: 1000
-
-    plugins: []
     behavior_trees:
       - "bt_executor/trees"
 
