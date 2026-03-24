@@ -18,7 +18,7 @@
       enable_context_snapshot: true
       require_operator_accept: true
       demo_mode: false  # When true, skip ROS calls and emit mock status.
-      enable_debug_logging: true
+      enable_debug_logging: false
 
       # Timing
       llm_timeout_sec: 45.0

@@ -508,7 +508,9 @@ class MissionCoordinatorNode(Node):
             should_execute = True
             if self._requires_operator_accept(goal):
                 self._set_lifecycle_state(self.STATE_WAITING_APPROVAL)
-                plan = self._build_pending_plan(selected_tree, goal, payload_response)
+                plan = self._build_pending_plan(
+                    selected_tree, goal, gather_result, payload_response
+                )
                 self._publish_pending_plan(plan)
                 should_execute = await self._await_operator_decision(
                     str(plan['session_id']), selected_tree
@@ -768,7 +770,11 @@ class MissionCoordinatorNode(Node):
         return not auto_execute
 
     def _build_pending_plan(
-        self, tree_id: str, goal: MissionCommand.Goal, payload: CreatePayload.Response
+        self,
+        tree_id: str,
+        goal: MissionCommand.Goal,
+        gather_result,
+        payload: CreatePayload.Response,
     ) -> dict:
         return {
             'session_id': goal.session_id or 'unknown',
@@ -777,6 +783,8 @@ class MissionCoordinatorNode(Node):
             'summary': payload.reasoning,
             'payload_json': payload.payload_json,
             'tool_trace_json': payload.tool_trace_json,
+            'context_snapshot_json': getattr(gather_result, 'context_json', ''),
+            'attachment_uris': list(getattr(gather_result, 'attachment_uris', []) or []),
             'operator_decision_service': self._operator_service_name,
         }
 

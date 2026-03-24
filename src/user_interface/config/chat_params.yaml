@@ -18,3 +18,5 @@
       demo_mode: false
       web_port: 8080
       web_host: "0.0.0.0"
+      artifact_roots:
+        - "/tmp/context_gatherer"

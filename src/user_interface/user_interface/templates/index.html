@@ -48,6 +48,11 @@
         box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2),
           0 10px 25px rgba(0, 0, 0, 0.25);
       }
+      .panel.executing-plan {
+        border: 2px solid #38bdf8;
+        box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18),
+          0 10px 25px rgba(0, 0, 0, 0.25);
+      }
       .pending-note {
         margin: 0.25rem 0 0.5rem 0;
         color: #fbbf24;
@@ -56,6 +61,10 @@
       }
       .panel.awaiting-approval .pending-note {
         display: block;
+      }
+      .panel.executing-plan .pending-note {
+        display: block;
+        color: #7dd3fc;
       }
       .messages {
         list-style: none;
@@ -116,6 +125,101 @@
         display: flex;
         gap: 0.5rem;
       }
+      .pending-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+        gap: 1rem;
+        align-items: start;
+      }
+      .preview-panel {
+        background: #0f172a;
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+      }
+      .preview-panel h4 {
+        margin: 0 0 0.75rem 0;
+        font-size: 0.95rem;
+        color: #f8fafc;
+      }
+      .preview-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-bottom: 0.75rem;
+      }
+      .preview-chip {
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        background: #172033;
+        color: #cbd5e1;
+        font-size: 0.75rem;
+      }
+      .map-stage {
+        position: relative;
+        border-radius: 0.6rem;
+        overflow: hidden;
+        background:
+          linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(15, 23, 42, 0.2)),
+          #020617;
+        min-height: 280px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .map-canvas {
+        display: none;
+        width: 100%;
+        height: auto;
+      }
+      .map-stage.has-map .map-canvas {
+        display: block;
+      }
+      .map-empty {
+        padding: 1rem;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 0.85rem;
+        max-width: 20rem;
+      }
+      .waypoint-list {
+        list-style: none;
+        margin: 0.75rem 0 0 0;
+        padding: 0;
+        display: grid;
+        gap: 0.5rem;
+        max-height: 16rem;
+        overflow-y: auto;
+      }
+      .waypoint-item {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.6rem;
+        align-items: start;
+        padding: 0.55rem 0.65rem;
+        border-radius: 0.6rem;
+        background: rgba(15, 23, 42, 0.8);
+      }
+      .waypoint-index {
+        width: 1.6rem;
+        height: 1.6rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #0f172a;
+        background: #fbbf24;
+      }
+      .waypoint-coords {
+        font-size: 0.84rem;
+        color: #e2e8f0;
+      }
+      .waypoint-raw {
+        font-size: 0.75rem;
+        color: #94a3b8;
+      }
       .pending-field {
         margin-bottom: 0.5rem;
         font-size: 0.85rem;
@@ -140,6 +244,9 @@
       }
       @media (max-width: 900px) {
         main {
+          grid-template-columns: 1fr;
+        }
+        .pending-layout {
           grid-template-columns: 1fr;
         }
       }
@@ -182,7 +289,7 @@
         <h3>Diagnostics</h3>
         <dl class="diag-grid" id="diag-grid"></dl>
         <h3>Pending Plan</h3>
-        <p class="pending-note">Awaiting operator approval</p>
+        <p class="pending-note" id="plan-note">Awaiting operator approval</p>
         <div class="pending-field">
           <strong>Tree:</strong> <span id="pending-tree">No pending plan.</span>
         </div>
@@ -190,12 +297,26 @@
           <strong>Mission:</strong> <span id="pending-mission">-</span>
         </div>
         <div class="pending-field">
-          <strong>Payload:</strong>
-          <pre class="pending-block" id="pending-payload">-</pre>
-        </div>
-        <div class="pending-field">
           <strong>Summary:</strong>
           <div class="pending-block" id="pending-summary">-</div>
+        </div>
+        <div class="pending-layout">
+          <div class="preview-panel">
+            <h4>Map Preview</h4>
+            <div class="preview-meta" id="map-meta"></div>
+            <div class="map-stage" id="map-stage">
+              <canvas class="map-canvas" id="map-canvas"></canvas>
+              <div class="map-empty" id="map-empty">
+                Waiting for a pending plan with a SLAM map preview.
+              </div>
+            </div>
+            <ul class="waypoint-list" id="waypoint-list"></ul>
+          </div>
+          <div class="preview-panel">
+            <h4>Execution Payload</h4>
+            <div class="preview-meta" id="payload-meta"></div>
+            <pre class="pending-block" id="pending-payload">-</pre>
+          </div>
         </div>
         <label style="display: block; margin-top: 0.5rem; font-size: 0.85rem;">
           Operator feedback (used on reject):
@@ -231,10 +352,18 @@
       const pendingMissionEl = document.getElementById("pending-mission");
       const pendingPayloadEl = document.getElementById("pending-payload");
       const pendingSummaryEl = document.getElementById("pending-summary");
+      const planNoteEl = document.getElementById("plan-note");
+      const payloadMetaEl = document.getElementById("payload-meta");
+      const mapMetaEl = document.getElementById("map-meta");
+      const mapStageEl = document.getElementById("map-stage");
+      const mapCanvasEl = document.getElementById("map-canvas");
+      const mapEmptyEl = document.getElementById("map-empty");
+      const waypointListEl = document.getElementById("waypoint-list");
       const approveBtn = document.getElementById("approve-btn");
       const cancelBtn = document.getElementById("cancel-btn");
       const feedbackEl = document.getElementById("feedback");
       let currentPendingPlan = null;
+      let currentMapToken = 0;
 
       async function fetchState() {
         const res = await fetch("/state");
@@ -244,7 +373,7 @@
         statusEl.textContent = data.status || "unknown";
         renderMessages(data.messages || []);
         renderDiagnostics(data.diagnostics || {});
-        renderPendingPlan(data.pending_plan || null);
+        renderPendingPlan(data.plan_preview || data.pending_plan || null);
       }
 
       function renderMessages(messages) {
@@ -275,20 +404,34 @@
         const validPlan = isValidPendingPlan(plan);
         currentPendingPlan = validPlan ? plan : null;
         if (!validPlan) {
+          currentPendingPlan = null;
           pendingTreeEl.textContent = "No pending plan.";
           pendingMissionEl.textContent = "-";
           pendingPayloadEl.textContent = "-";
           pendingSummaryEl.textContent = "-";
+          planNoteEl.textContent = "Awaiting operator approval";
+          payloadMetaEl.innerHTML = "";
           pendingPanelEl.classList.remove("awaiting-approval");
+          pendingPanelEl.classList.remove("executing-plan");
+          renderWaypointList([]);
+          renderMapPreview(null, []);
           setPlanButtonsEnabled(false);
           return;
         }
+        const approvalRequired = !!plan.approval_required;
         pendingTreeEl.textContent = plan.tree_id || "unknown";
         pendingMissionEl.textContent = plan.mission || "-";
-        pendingPayloadEl.textContent = prettyJson(plan.payload_json);
+        pendingPayloadEl.textContent = prettyJson(plan.payload_object || plan.payload_json);
         pendingSummaryEl.textContent = plan.summary || plan.reasoning || "-";
-        pendingPanelEl.classList.add("awaiting-approval");
-        setPlanButtonsEnabled(true);
+        planNoteEl.textContent = approvalRequired
+          ? "Awaiting operator approval"
+          : "Plan approved. Preview remains visible during execution.";
+        renderPayloadMeta(plan);
+        renderWaypointList(plan.waypoints || []);
+        renderMapPreview(plan.map_preview || null, plan.waypoints || []);
+        pendingPanelEl.classList.toggle("awaiting-approval", approvalRequired);
+        pendingPanelEl.classList.toggle("executing-plan", !approvalRequired);
+        setPlanButtonsEnabled(approvalRequired);
       }
 
       function isValidPendingPlan(plan) {
@@ -298,6 +441,213 @@
       function setPlanButtonsEnabled(enabled) {
         approveBtn.disabled = !enabled;
         cancelBtn.disabled = !enabled;
+      }
+
+      function renderPayloadMeta(plan) {
+        const chips = [];
+        const waypoints = Array.isArray(plan.waypoints) ? plan.waypoints.length : 0;
+        chips.push(makeChip(`${waypoints} waypoint${waypoints === 1 ? "" : "s"}`));
+        if (plan.tree_id) chips.push(makeChip(plan.tree_id));
+        if (plan.preview_state) chips.push(makeChip(plan.preview_state));
+        if (plan.map_preview && plan.map_preview.frame_id) {
+          chips.push(makeChip(`frame ${plan.map_preview.frame_id}`));
+        }
+        payloadMetaEl.innerHTML = "";
+        chips.forEach((chip) => payloadMetaEl.appendChild(chip));
+      }
+
+      function renderWaypointList(waypoints) {
+        waypointListEl.innerHTML = "";
+        if (!Array.isArray(waypoints) || waypoints.length === 0) {
+          const li = document.createElement("li");
+          li.className = "waypoint-item";
+          li.innerHTML =
+            '<span class="waypoint-index">-</span><div><div class="waypoint-coords">No waypoints detected in the payload.</div></div>';
+          waypointListEl.appendChild(li);
+          return;
+        }
+
+        waypoints.forEach((waypoint, idx) => {
+          const li = document.createElement("li");
+          li.className = "waypoint-item";
+          const yawRad = Number(waypoint.yaw_rad || 0);
+          const yawDeg = Number.isFinite(yawRad) ? (yawRad * 180) / Math.PI : 0;
+          const raw = waypoint.raw ? `<div class="waypoint-raw">${escapeHtml(String(waypoint.raw))}</div>` : "";
+          li.innerHTML = `
+            <span class="waypoint-index">${idx + 1}</span>
+            <div>
+              <div class="waypoint-coords">x=${formatNumber(waypoint.x)}, y=${formatNumber(
+                waypoint.y
+              )}, yaw=${formatNumber(yawDeg)}deg</div>
+              ${raw}
+            </div>
+          `;
+          waypointListEl.appendChild(li);
+        });
+      }
+
+      function renderMapPreview(mapPreview, waypoints) {
+        renderMapMeta(mapPreview, waypoints);
+        if (!mapPreview || !mapPreview.image_url) {
+          setMapEmpty("No SLAM map artifact is attached to this pending plan.");
+          return;
+        }
+
+        const token = ++currentMapToken;
+        const image = new Image();
+        image.onload = () => {
+          if (token !== currentMapToken) return;
+          drawMapPreview(image, mapPreview, waypoints);
+        };
+        image.onerror = () => {
+          if (token !== currentMapToken) return;
+          setMapEmpty("Failed to load the SLAM map preview artifact.");
+        };
+        image.src = mapPreview.image_url;
+      }
+
+      function renderMapMeta(mapPreview, waypoints) {
+        mapMetaEl.innerHTML = "";
+        if (mapPreview && mapPreview.source_key) {
+          mapMetaEl.appendChild(makeChip(mapPreview.source_key.replaceAll("_", " ")));
+        }
+        if (Array.isArray(waypoints) && waypoints.length) {
+          mapMetaEl.appendChild(
+            makeChip(`${waypoints.length} overlay point${waypoints.length === 1 ? "" : "s"}`)
+          );
+        }
+        const resolution =
+          mapPreview &&
+          mapPreview.map_metadata &&
+          Number(mapPreview.map_metadata.resolution_m_per_px || mapPreview.resolution);
+        if (Number.isFinite(resolution) && resolution > 0) {
+          mapMetaEl.appendChild(makeChip(`${resolution.toFixed(3)} m/px`));
+        }
+      }
+
+      function setMapEmpty(message) {
+        mapStageEl.classList.remove("has-map");
+        mapCanvasEl.width = 1;
+        mapCanvasEl.height = 1;
+        const ctx = mapCanvasEl.getContext("2d");
+        ctx.clearRect(0, 0, mapCanvasEl.width, mapCanvasEl.height);
+        mapEmptyEl.textContent = message;
+      }
+
+      function drawMapPreview(image, mapPreview, waypoints) {
+        const width = image.naturalWidth || image.width || 1;
+        const height = image.naturalHeight || image.height || 1;
+        mapCanvasEl.width = width;
+        mapCanvasEl.height = height;
+        const ctx = mapCanvasEl.getContext("2d");
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(image, 0, 0, width, height);
+
+        const drawableWaypoints = Array.isArray(waypoints)
+          ? waypoints
+              .map((waypoint) => worldToPixel(waypoint, mapPreview))
+              .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+          : [];
+
+        if (drawableWaypoints.length > 1) {
+          ctx.save();
+          ctx.strokeStyle = "rgba(56, 189, 248, 0.9)";
+          ctx.lineWidth = Math.max(2, Math.min(width, height) / 220);
+          ctx.beginPath();
+          drawableWaypoints.forEach((point, idx) => {
+            if (idx === 0) ctx.moveTo(point.x, point.y);
+            else ctx.lineTo(point.x, point.y);
+          });
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        drawableWaypoints.forEach((point, idx) => {
+          drawWaypointMarker(ctx, point, idx + 1, width, height);
+        });
+
+        drawRobotMarker(ctx, mapPreview, width, height);
+        mapStageEl.classList.add("has-map");
+        mapEmptyEl.textContent = "";
+      }
+
+      function drawWaypointMarker(ctx, point, index, width, height) {
+        const radius = Math.max(5, Math.min(width, height) / 80);
+        ctx.save();
+        ctx.fillStyle = index === 1 ? "#f97316" : "#fbbf24";
+        ctx.strokeStyle = "#020617";
+        ctx.lineWidth = Math.max(1.5, radius / 3);
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = "#020617";
+        ctx.font = `${Math.max(10, radius * 1.1)}px IBM Plex Sans, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(index), point.x, point.y + 0.5);
+        ctx.restore();
+      }
+
+      function drawRobotMarker(ctx, mapPreview, width, height) {
+        const robotPose =
+          mapPreview &&
+          mapPreview.map_metadata &&
+          mapPreview.map_metadata.robot_pose &&
+          mapPreview.map_metadata.robot_pose.available
+            ? mapPreview.map_metadata.robot_pose
+            : null;
+        if (!robotPose) return;
+        const point = worldToPixel(robotPose, mapPreview);
+        if (!point) return;
+
+        const size = Math.max(7, Math.min(width, height) / 55);
+        const yaw = Number(robotPose.yaw_rad || 0);
+        ctx.save();
+        ctx.translate(point.x, point.y);
+        ctx.rotate(-yaw);
+        ctx.fillStyle = "#22c55e";
+        ctx.strokeStyle = "#020617";
+        ctx.lineWidth = Math.max(1.5, size / 4);
+        ctx.beginPath();
+        ctx.moveTo(size, 0);
+        ctx.lineTo(-size * 0.7, size * 0.55);
+        ctx.lineTo(-size * 0.35, 0);
+        ctx.lineTo(-size * 0.7, -size * 0.55);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function worldToPixel(point, mapPreview) {
+        const metadata = (mapPreview && mapPreview.map_metadata) || {};
+        const origin = metadata.origin || {};
+        const resolution = Number(metadata.resolution_m_per_px || mapPreview.resolution);
+        const height = Number(metadata.height || mapPreview.height);
+        if (!Number.isFinite(resolution) || resolution <= 0 || !Number.isFinite(height) || height <= 0) {
+          return null;
+        }
+
+        const worldX = Number(point.x);
+        const worldY = Number(point.y);
+        if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) {
+          return null;
+        }
+
+        const dx = worldX - Number(origin.x || 0);
+        const dy = worldY - Number(origin.y || 0);
+        const originYaw = Number(origin.yaw_rad || 0);
+        const cosYaw = Math.cos(-originYaw);
+        const sinYaw = Math.sin(-originYaw);
+        const localX = dx * cosYaw - dy * sinYaw;
+        const localY = dx * sinYaw + dy * cosYaw;
+
+        return {
+          x: localX / resolution,
+          y: height - localY / resolution,
+        };
       }
 
       function prettyJson(raw) {
@@ -315,6 +665,19 @@
         const div = document.createElement("div");
         div.innerText = str;
         return div.innerHTML;
+      }
+
+      function formatNumber(value) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) return "-";
+        return parsed.toFixed(2);
+      }
+
+      function makeChip(label) {
+        const chip = document.createElement("span");
+        chip.className = "preview-chip";
+        chip.textContent = label;
+        return chip;
       }
 
       form.addEventListener("submit", async (event) => {

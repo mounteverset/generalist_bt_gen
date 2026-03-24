@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Deque, Dict, Optional
+from urllib.parse import quote, unquote, urlparse
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from gen_bt_interfaces.srv import MissionControl
 from pydantic import BaseModel
@@ -18,6 +19,7 @@ import uvicorn
 
 from .command_router import CommandRouter, parse_session_and_note
 from .mission_gateway import MissionGateway
+from .pending_plan_preview import normalize_pending_plan
 
 try:
     from zoneinfo import ZoneInfo
@@ -58,6 +60,7 @@ class WebInterfaceNode(Node):
         self.declare_parameter('demo_mode', False)
         self.declare_parameter('web_host', '0.0.0.0')
         self.declare_parameter('web_port', 8080)
+        self.declare_parameter('artifact_roots', ['/tmp/context_gatherer'])
         self.declare_parameter(
             'operator_decision_service', '/mission_coordinator/operator_decision'
         )
@@ -77,6 +80,9 @@ class WebInterfaceNode(Node):
         self.web_host = self.get_parameter('web_host').value or '0.0.0.0'
         self.web_port = int(self.get_parameter('web_port').value)
         self.operator_decision_service = self.get_parameter('operator_decision_service').value
+        self.artifact_roots = self._resolve_artifact_roots(
+            self.get_parameter('artifact_roots').value
+        )
 
         tz_name = self.get_parameter('timestamp_timezone').value or 'UTC'
         self._tzinfo = self._resolve_timezone(tz_name)
@@ -87,6 +93,7 @@ class WebInterfaceNode(Node):
         self.diagnostics: Dict[str, str] = {}
         self.messages: Deque[Dict[str, str]] = deque(maxlen=200)
         self.pending_plan: Optional[Dict] = None
+        self.plan_preview: Optional[Dict] = None
 
         self._active_mission_task: Optional[asyncio.Task] = None
         self._active_mission_session_id = ''
@@ -142,6 +149,50 @@ class WebInterfaceNode(Node):
             except Exception:  # pragma: no cover
                 pass
         return timezone.utc
+
+    def _resolve_artifact_roots(self, raw_roots) -> list[Path]:
+        roots = []
+        if isinstance(raw_roots, list):
+            for entry in raw_roots:
+                if not isinstance(entry, str) or not entry.strip():
+                    continue
+                try:
+                    roots.append(Path(entry).expanduser().resolve())
+                except Exception:
+                    self.get_logger().warn(f'Ignoring invalid artifact root: {entry}')
+        return roots
+
+    def _build_artifact_url(self, uri: str) -> str:
+        return f'/artifacts?uri={quote(uri, safe="")}'
+
+    def _resolve_artifact_path(self, uri: str) -> Optional[Path]:
+        parsed = urlparse(uri)
+        if parsed.scheme not in {'', 'file'}:
+            return None
+
+        if parsed.scheme == 'file':
+            raw_path = unquote(parsed.path or '')
+        else:
+            raw_path = uri
+
+        if not raw_path:
+            return None
+
+        try:
+            candidate = Path(raw_path).expanduser().resolve()
+        except Exception:
+            return None
+
+        if not candidate.is_file():
+            return None
+
+        for root in self.artifact_roots:
+            try:
+                candidate.relative_to(root)
+                return candidate
+            except ValueError:
+                continue
+        return None
 
     def _prepare_transcript(self):
         self.transcript_directory.mkdir(parents=True, exist_ok=True)
@@ -245,12 +296,14 @@ class WebInterfaceNode(Node):
         result = await self.gateway.await_mission_result(goal_handle)
         if result is None:
             self._record_message('system', 'Mission coordinator result unavailable.')
+            self._clear_plan_preview(session_id)
             self._active_mission_session_id = ''
             return
         if self._has_valid_pending_plan():
             plan = self.pending_plan or {}
             if str(plan.get('session_id', '')).strip() == session_id:
                 self.pending_plan = None
+        self._clear_plan_preview(session_id)
         self._record_message(
             'system',
             f'Mission result: accepted={result.result.accepted}, '
@@ -271,7 +324,12 @@ class WebInterfaceNode(Node):
         self.active_subtree = response.active_subtree or self.active_subtree
         try:
             parsed_pending = json.loads(response.pending_plan_json or '{}')
-            self.pending_plan = self._normalize_pending_plan(parsed_pending)
+            normalized_pending = self._normalize_pending_plan(parsed_pending)
+            if self._is_valid_plan(normalized_pending):
+                self.pending_plan = self._decorate_plan_preview(normalized_pending, 'pending')
+                self.plan_preview = dict(self.pending_plan)
+            else:
+                self.pending_plan = None
         except Exception:
             pass
         self._record_message(
@@ -310,6 +368,7 @@ class WebInterfaceNode(Node):
             'system', message or ('Execution approved.' if ok else 'Approve failed.')
         )
         if ok:
+            self._promote_plan_preview_to_execution(session_id)
             self.pending_plan = None
 
     async def _cmd_cancel(self, payload: str) -> None:
@@ -329,6 +388,7 @@ class WebInterfaceNode(Node):
         )
         if ok:
             self.pending_plan = None
+            self._clear_plan_preview(session_id)
 
     async def _cmd_abort(self, payload: str) -> None:
         session_id, note = parse_session_and_note(payload)
@@ -353,24 +413,50 @@ class WebInterfaceNode(Node):
     def _pending_plan_callback(self, msg: String) -> None:
         try:
             parsed = json.loads(msg.data)
-            self.pending_plan = self._normalize_pending_plan(parsed)
+            normalized_pending = self._normalize_pending_plan(parsed)
         except Exception:
             self.pending_plan = {'raw': msg.data}
             return
-        if self._has_valid_pending_plan():
+        if self._is_valid_plan(normalized_pending):
+            self.pending_plan = self._decorate_plan_preview(normalized_pending, 'pending')
+            self.plan_preview = dict(self.pending_plan)
             self._record_pending_plan_details()
+        else:
+            self.pending_plan = None
 
     def _normalize_pending_plan(self, plan: object) -> Optional[Dict]:
-        if not isinstance(plan, dict):
-            return None
-        normalized = dict(plan)
-        if 'reasoning' in normalized and 'summary' not in normalized:
-            normalized['summary'] = normalized['reasoning']
-        return normalized
+        return normalize_pending_plan(plan, self._build_artifact_url)
+
+    def _is_valid_plan(self, plan: Optional[Dict]) -> bool:
+        return isinstance(plan, dict) and bool(str(plan.get('session_id', '')).strip())
 
     def _has_valid_pending_plan(self) -> bool:
-        plan = self.pending_plan
-        return isinstance(plan, dict) and bool(str(plan.get('session_id', '')).strip())
+        return self._is_valid_plan(self.pending_plan)
+
+    def _decorate_plan_preview(self, plan: Dict, preview_state: str) -> Dict:
+        preview = dict(plan)
+        preview['preview_state'] = preview_state
+        preview['approval_required'] = preview_state == 'pending'
+        return preview
+
+    def _promote_plan_preview_to_execution(self, session_id: str) -> None:
+        candidate = self.pending_plan if self._has_valid_pending_plan() else self.plan_preview
+        if not self._is_valid_plan(candidate):
+            return
+        if str((candidate or {}).get('session_id', '')).strip() != session_id:
+            return
+        self.plan_preview = self._decorate_plan_preview(candidate or {}, 'executing')
+
+    def _clear_plan_preview(self, session_id: str = '') -> None:
+        if not self._is_valid_plan(self.plan_preview):
+            self.plan_preview = None
+            return
+        if not session_id:
+            self.plan_preview = None
+            return
+        preview_session = str((self.plan_preview or {}).get('session_id', '')).strip()
+        if preview_session == session_id:
+            self.plan_preview = None
 
     def _record_pending_plan_details(self) -> None:
         if not self._has_valid_pending_plan():
@@ -388,7 +474,12 @@ class WebInterfaceNode(Node):
             self._record_message('system', f'Mission: {mission}')
         if summary:
             self._record_message('system', f'Summary: {summary}')
-        payload_preview = self._pretty_payload(plan.get('payload_json', '{}'))
+        waypoint_count = int(plan.get('waypoint_count', 0) or 0)
+        if waypoint_count > 0:
+            self._record_message('system', f'Waypoints detected: {waypoint_count}')
+        payload_preview = self._pretty_payload(
+            plan.get('payload_object', plan.get('payload_json', '{}'))
+        )
         self._record_message('system', f'Payload:\n{payload_preview}')
 
     def _pretty_payload(self, raw_payload: object) -> str:
@@ -429,10 +520,18 @@ class WebInterfaceNode(Node):
                     'active_subtree': self.active_subtree,
                     'messages': list(self.messages),
                     'diagnostics': self.diagnostics,
+                    'plan_preview': self.plan_preview,
                     'pending_plan': self.pending_plan,
                     'active_session_id': self._active_mission_session_id,
                 }
             )
+
+        @app.get('/artifacts')
+        async def artifacts(uri: str):
+            artifact_path = self._resolve_artifact_path(uri)
+            if artifact_path is None:
+                raise HTTPException(status_code=404, detail='Artifact unavailable')
+            return FileResponse(artifact_path)
 
         @app.post('/command')
         async def command(payload: CommandPayload):
@@ -460,6 +559,7 @@ class WebInterfaceNode(Node):
             )
             if not ok:
                 raise HTTPException(status_code=400, detail=message or 'Failed to approve plan')
+            self._promote_plan_preview_to_execution(session_id)
             self.pending_plan = None
             return {'ok': True, 'message': message}
 
@@ -478,6 +578,7 @@ class WebInterfaceNode(Node):
             if not ok:
                 raise HTTPException(status_code=400, detail=message or 'Failed to cancel plan')
             self.pending_plan = None
+            self._clear_plan_preview(session_id)
             return {'ok': True, 'message': message}
 
         @app.post('/abort')
