@@ -307,7 +307,7 @@
             <div class="map-stage" id="map-stage">
               <canvas class="map-canvas" id="map-canvas"></canvas>
               <div class="map-empty" id="map-empty">
-                Waiting for a pending plan with a SLAM map preview.
+                Waiting for a pending plan with a map preview.
               </div>
             </div>
             <ul class="waypoint-list" id="waypoint-list"></ul>
@@ -463,6 +463,9 @@
         if (plan.map_preview && plan.map_preview.frame_id) {
           chips.push(makeChip(`frame ${plan.map_preview.frame_id}`));
         }
+        if (plan.map_preview && plan.map_preview.coordinate_mode === "geographic") {
+          chips.push(makeChip("lat/lon"));
+        }
         payloadMetaEl.innerHTML = "";
         chips.forEach((chip) => payloadMetaEl.appendChild(chip));
       }
@@ -484,12 +487,14 @@
           const yawRad = Number(waypoint.yaw_rad || 0);
           const yawDeg = Number.isFinite(yawRad) ? (yawRad * 180) / Math.PI : 0;
           const raw = waypoint.raw ? `<div class="waypoint-raw">${escapeHtml(String(waypoint.raw))}</div>` : "";
+          const hasGeoCoords = Number.isFinite(Number(waypoint.lat)) && Number.isFinite(Number(waypoint.lon));
+          const coordsText = hasGeoCoords
+            ? `lat=${formatNumber(waypoint.lat, 6)}, lon=${formatNumber(waypoint.lon, 6)}, yaw=${formatNumber(yawDeg)}deg`
+            : `x=${formatNumber(waypoint.x)}, y=${formatNumber(waypoint.y)}, yaw=${formatNumber(yawDeg)}deg`;
           li.innerHTML = `
             <span class="waypoint-index">${idx + 1}</span>
             <div>
-              <div class="waypoint-coords">x=${formatNumber(waypoint.x)}, y=${formatNumber(
-                waypoint.y
-              )}, yaw=${formatNumber(yawDeg)}deg</div>
+              <div class="waypoint-coords">${coordsText}</div>
               ${raw}
             </div>
           `;
@@ -500,7 +505,7 @@
       function renderMapPreview(mapPreview, waypoints) {
         renderMapMeta(mapPreview, waypoints);
         if (!mapPreview || !mapPreview.image_url) {
-          setMapEmpty("No SLAM map artifact is attached to this pending plan.");
+          setMapEmpty("No map artifact is attached to this pending plan.");
           return;
         }
 
@@ -512,7 +517,7 @@
         };
         image.onerror = () => {
           if (token !== currentMapToken) return;
-          setMapEmpty("Failed to load the SLAM map preview artifact.");
+          setMapEmpty("Failed to load the map preview artifact.");
         };
         image.src = mapPreview.image_url;
       }
@@ -527,12 +532,23 @@
             makeChip(`${waypoints.length} overlay point${waypoints.length === 1 ? "" : "s"}`)
           );
         }
+        if (mapPreview && mapPreview.coordinate_mode === "geographic") {
+          mapMetaEl.appendChild(makeChip("geographic"));
+        }
         const resolution =
           mapPreview &&
           mapPreview.map_metadata &&
-          Number(mapPreview.map_metadata.resolution_m_per_px || mapPreview.resolution);
+          Number(
+            mapPreview.map_metadata.meters_per_px ||
+            mapPreview.map_metadata.resolution_m_per_px ||
+            mapPreview.resolution
+          );
         if (Number.isFinite(resolution) && resolution > 0) {
           mapMetaEl.appendChild(makeChip(`${resolution.toFixed(3)} m/px`));
+        }
+        const zoom = Number((mapPreview && (mapPreview.zoom ?? (mapPreview.map_metadata || {}).zoom)) ?? NaN);
+        if (Number.isFinite(zoom)) {
+          mapMetaEl.appendChild(makeChip(`z${zoom}`));
         }
       }
 
@@ -556,7 +572,7 @@
 
         const drawableWaypoints = Array.isArray(waypoints)
           ? waypoints
-              .map((waypoint) => worldToPixel(waypoint, mapPreview))
+              .map((waypoint) => mapPointToPixel(waypoint, mapPreview, width, height))
               .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))
           : [];
 
@@ -602,19 +618,24 @@
       }
 
       function drawRobotMarker(ctx, mapPreview, width, height) {
-        const robotPose =
-          mapPreview &&
-          mapPreview.map_metadata &&
-          mapPreview.map_metadata.robot_pose &&
-          mapPreview.map_metadata.robot_pose.available
-            ? mapPreview.map_metadata.robot_pose
+        const metadata = (mapPreview && mapPreview.map_metadata) || {};
+        const robotPose = getMapCoordinateMode(mapPreview) === "geographic"
+          ? metadata.robot_location || null
+          : metadata.robot_pose && metadata.robot_pose.available
+            ? metadata.robot_pose
             : null;
         if (!robotPose) return;
-        const point = worldToPixel(robotPose, mapPreview);
+        const point = mapPointToPixel(robotPose, mapPreview, width, height);
         if (!point) return;
 
         const size = Math.max(7, Math.min(width, height) / 55);
-        const yaw = Number(robotPose.yaw_rad || 0);
+        const yawCandidate = Number(robotPose.yaw_rad);
+        const headingDeg = Number(robotPose.heading_deg);
+        const yaw = Number.isFinite(yawCandidate)
+          ? yawCandidate
+          : Number.isFinite(headingDeg)
+            ? (headingDeg * Math.PI) / 180
+            : 0;
         ctx.save();
         ctx.translate(point.x, point.y);
         ctx.rotate(-yaw);
@@ -630,6 +651,50 @@
         ctx.fill();
         ctx.stroke();
         ctx.restore();
+      }
+
+      function getMapCoordinateMode(mapPreview) {
+        if (!mapPreview || typeof mapPreview !== "object") return "planar";
+        if (mapPreview.coordinate_mode) return mapPreview.coordinate_mode;
+        const bounds = mapPreview.map_metadata && mapPreview.map_metadata.bounds;
+        if (bounds && Number.isFinite(Number(bounds.north)) && Number.isFinite(Number(bounds.south))) {
+          return "geographic";
+        }
+        return "planar";
+      }
+
+      function mapPointToPixel(point, mapPreview, width, height) {
+        if (getMapCoordinateMode(mapPreview) === "geographic") {
+          return geoToPixel(point, mapPreview, width, height);
+        }
+        return worldToPixel(point, mapPreview);
+      }
+
+      function geoToPixel(point, mapPreview, width, height) {
+        const metadata = (mapPreview && mapPreview.map_metadata) || {};
+        const bounds = metadata.bounds || {};
+        const north = Number(bounds.north);
+        const south = Number(bounds.south);
+        const east = Number(bounds.east);
+        const west = Number(bounds.west);
+        if (
+          !Number.isFinite(north) || !Number.isFinite(south) ||
+          !Number.isFinite(east) || !Number.isFinite(west) ||
+          north <= south || east <= west
+        ) {
+          return null;
+        }
+
+        const lat = Number(point.lat ?? point.latitude ?? point.x);
+        const lon = Number(point.lon ?? point.longitude ?? point.lng ?? point.y);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          return null;
+        }
+
+        return {
+          x: ((lon - west) / (east - west)) * width,
+          y: ((north - lat) / (north - south)) * height,
+        };
       }
 
       function worldToPixel(point, mapPreview) {
@@ -678,10 +743,10 @@
         return div.innerHTML;
       }
 
-      function formatNumber(value) {
+      function formatNumber(value, digits = 2) {
         const parsed = Number(value);
         if (!Number.isFinite(parsed)) return "-";
-        return parsed.toFixed(2);
+        return parsed.toFixed(digits);
       }
 
       function makeChip(label) {

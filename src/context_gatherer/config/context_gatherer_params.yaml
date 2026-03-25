@@ -3,9 +3,18 @@ context_gatherer:
     action_name: "/context_gatherer/gather"
     output_directory: "/tmp/context_gatherer"
     pose_cov_topic: "/a200_0000/pose"
+    gps_fix_topic: "/gps/fix"
     slam_map_topic: "/a200_0000/map"
     annotated_map_service_name: "/annotated_map_saver/save_map"
     annotated_map_service_timeout_sec: 10.0
+    satellite_map_annotator_service_name: "/satellite_map_annotator/annotate"
+    satellite_map_annotator_timeout_sec: 10.0
+    maptiler_api_key: ""
+    maptiler_api_mode: "maps" # tiles or maps
+    maptiler_style_id: "openstreetmap" # openstreetmap or satellite-v2
+    maptiler_tile_zoom: 18
+    maptiler_tile_radius: 1
+    maptiler_request_timeout_sec: 10.0
     default_timeout_sec: 10.0
     enable_debug_logging: true
     # Comma-separated fallback requirements when none are provided in the goal.
@@ -18,4 +27,13 @@ annotated_map_saver:
     slam_map_topic: "/a200_0000/map"
     annotated_map_service_name: "/annotated_map_saver/save_map"
     annotated_map_grid_spacing_m: 0.0
+    enable_debug_logging: true
+
+satellite_map_annotator:
+  ros__parameters:
+    output_directory: "/tmp/context_gatherer"
+    satellite_map_annotator_service_name: "/satellite_map_annotator/annotate"
+    draw_lat_lon_grid: true
+    draw_scale_bar: true
+    draw_labels: true
     enable_debug_logging: true

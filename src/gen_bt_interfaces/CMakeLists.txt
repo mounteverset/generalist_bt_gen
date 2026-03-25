@@ -15,6 +15,7 @@ set(action_files
 )
 
 set(service_files
+  "srv/AnnotateSatelliteMap.srv"
   "srv/CreatePayload.srv"
   "srv/GetMissionState.srv"
   "srv/MissionControl.srv"

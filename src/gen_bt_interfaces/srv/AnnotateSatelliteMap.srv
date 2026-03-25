@@ -1,0 +1,9 @@
+string session_id
+string source_image_uri
+string request_json
+---
+bool success
+string annotated_image_uri
+string metadata_uri
+string metadata_json
+string message

@@ -2,7 +2,8 @@
 # Action used by mission_coordinator to request a structured context snapshot
 # before planning or regenerating a subtree. The context_requirements entries
 # are treated as an enum-like list (e.g., "ROBOT_POSE", "RGB_IMAGE",
-# "POINTCLOUD", "SATELLITE_TILE").
+# "POINTCLOUD", "SATELLITE_MAP"). "SATELLITE_TILE" remains accepted as a
+# backward-compatible alias.
 
 # Goal
 string session_id

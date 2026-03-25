@@ -79,6 +79,7 @@ trees:
 | `RGB_IMAGE` | Latest RGB camera image | `/camera/image_raw` |
 | `DEPTH_IMAGE` | Latest depth image | `/camera/depth/image_raw` |
 | `POINTCLOUD` | 3D point cloud | `/velodyne_points` or similar |
+| `SATELLITE_MAP` | Annotated satellite or aerial image with geo metadata | External tile/image source + `satellite_map_annotator` |
 | `GPS_FIX` | GPS coordinates | `/gps/fix` |
 | `BATTERY_STATE` | Battery percentage and voltage | `/battery_state` |
 | `SEMANTIC_MAP` | Semantic map query result | Custom service |

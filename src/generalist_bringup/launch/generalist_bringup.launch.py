@@ -94,6 +94,14 @@ def generate_launch_description():
         parameters=[LaunchConfiguration('context_gatherer_params')],
     )
 
+    satellite_map_annotator_node = Node(
+        package='context_gatherer',
+        executable='satellite_map_annotator_node',
+        name='satellite_map_annotator',
+        output='screen',
+        parameters=[LaunchConfiguration('context_gatherer_params')],
+    )
+
     mission_coordinator_node = Node(
         package='mission_coordinator',
         executable='mission_coordinator_node',
@@ -146,6 +154,7 @@ def generate_launch_description():
         bt_executor_node,
         llm_interface_node,
         annotated_map_saver_node,
+        satellite_map_annotator_node,
         context_gatherer_node,
         mission_coordinator_node,
         cli_chat_node,

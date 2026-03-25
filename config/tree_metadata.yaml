@@ -4,7 +4,7 @@
 trees:
   - id: "demo_tree.xml"
     description: "Iterates through waypoints, navigates, and logs temperature."
-    context_requirements: [ROBOT_POSE, ANNOTATED_SLAM_MAP_IMAGE]
+    context_requirements: [ROBOT_POSE, SATELLITE_MAP, GPS_FIX] # ANNOTATED_SLAM_MAP_IMAGE
     blackboard_contract:
       waypoints:
         type: "string"
@@ -12,7 +12,7 @@ trees:
         default: ""
         schema:
           type: "string"
-          description: "Semicolon-separated waypoints, each formatted as 'x,y,yaw' (meters, meters, radians)."
+          description: "Semicolon-separated waypoints, each formatted as 'lat,lon,yaw' (latitude, longitude, radians)."
           pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
           examples:
             - "1.0,2.0,0.0; 3.5,4.2,1.57"

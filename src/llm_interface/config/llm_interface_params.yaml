@@ -6,9 +6,9 @@ llm_interface:
     selection_provider: 'openrouter' 
     payload_provider: 'openrouter'  
     payload_normalizer_provider: 'openrouter'  
-    model_name: 'stepfun/step-3.5-flash:free'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini
+    model_name: 'stepfun/step-3.5-flash:free'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
     selection_model_name: 'stepfun/step-3.5-flash:free'
-    payload_model_name: 'openai/gpt-5.4'  
+    payload_model_name: 'google/gemini-3.1-flash-lite-preview'  
     payload_normalizer_model_name: 'stepfun/step-3.5-flash:free' 
     openrouter_app_url: ''  # optional OpenRouter attribution URL
     openrouter_app_title: 'generalist_bt_gen'  # optional OpenRouter attribution title

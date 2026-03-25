@@ -21,9 +21,11 @@ find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(CURL REQUIRED)
 
 add_executable(context_gatherer_node src/context_gatherer_node.cpp)
 add_executable(annotated_map_saver_node src/annotated_map_saver_node.cpp)
+add_executable(satellite_map_annotator_node src/satellite_map_annotator_node.cpp)
 ament_target_dependencies(context_gatherer_node
   geometry_msgs
   nav2_msgs
@@ -42,16 +44,25 @@ ament_target_dependencies(annotated_map_saver_node
   rclcpp
   nav_msgs
 )
+ament_target_dependencies(satellite_map_annotator_node
+  gen_bt_interfaces
+  rclcpp
+)
 
 target_link_libraries(context_gatherer_node
   ${OpenCV_LIBS}
+  CURL::libcurl
   nlohmann_json::nlohmann_json
 )
 target_link_libraries(annotated_map_saver_node
   ${OpenCV_LIBS}
 )
+target_link_libraries(satellite_map_annotator_node
+  ${OpenCV_LIBS}
+  nlohmann_json::nlohmann_json
+)
 
-install(TARGETS context_gatherer_node annotated_map_saver_node
+install(TARGETS context_gatherer_node annotated_map_saver_node satellite_map_annotator_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch config

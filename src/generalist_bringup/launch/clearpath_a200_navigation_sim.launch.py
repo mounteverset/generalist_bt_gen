@@ -19,6 +19,7 @@ from launch.substitutions import (
     TextSubstitution,
 )
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -65,6 +66,42 @@ def generate_launch_description():
         description='Yaw orientation of robot spawn'
     )
 
+    mock_gps_fix_topic_arg = DeclareLaunchArgument(
+        'mock_gps_fix_topic',
+        default_value='/gps/fix',
+        description='Topic for the mock GPS NavSatFix publisher'
+    )
+
+    mock_gps_latitude_arg = DeclareLaunchArgument(
+        'mock_gps_latitude_deg',
+        default_value='48.20286111111111',
+        description='Mock GPS latitude in decimal degrees'
+    )
+
+    mock_gps_longitude_arg = DeclareLaunchArgument(
+        'mock_gps_longitude_deg',
+        default_value='11.64486111111111',
+        description='Mock GPS longitude in decimal degrees'
+    )
+
+    mock_gps_altitude_arg = DeclareLaunchArgument(
+        'mock_gps_altitude_m',
+        default_value='0.0',
+        description='Mock GPS altitude in meters'
+    )
+
+    mock_gps_frame_id_arg = DeclareLaunchArgument(
+        'mock_gps_frame_id',
+        default_value='gps_link',
+        description='Frame id for the mock GPS NavSatFix messages'
+    )
+
+    mock_gps_publish_rate_arg = DeclareLaunchArgument(
+        'mock_gps_publish_rate_hz',
+        default_value='1.0',
+        description='Publish rate for the mock GPS NavSatFix messages'
+    )
+
     # Launch configurations
     setup_path = LaunchConfiguration('setup_path')
     namespace = LaunchConfiguration('namespace')
@@ -73,6 +110,12 @@ def generate_launch_description():
     x = LaunchConfiguration('x')
     y = LaunchConfiguration('y')
     yaw = LaunchConfiguration('yaw')
+    mock_gps_fix_topic = LaunchConfiguration('mock_gps_fix_topic')
+    mock_gps_latitude = LaunchConfiguration('mock_gps_latitude_deg')
+    mock_gps_longitude = LaunchConfiguration('mock_gps_longitude_deg')
+    mock_gps_altitude = LaunchConfiguration('mock_gps_altitude_m')
+    mock_gps_frame_id = LaunchConfiguration('mock_gps_frame_id')
+    mock_gps_publish_rate = LaunchConfiguration('mock_gps_publish_rate_hz')
 
     # Clearpath generator scripts use /usr/bin/env python3 and require python3-apt.
     # Force system Python precedence so these scripts don't resolve to conda Python.
@@ -173,6 +216,22 @@ def generate_launch_description():
         actions=[rviz_launch]
     )
 
+    mock_gps_fix_publisher = Node(
+        package='generalist_bringup',
+        executable='mock_gps_fix_publisher_node',
+        name='mock_gps_fix_publisher',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'topic_name': mock_gps_fix_topic,
+            'frame_id': mock_gps_frame_id,
+            'latitude_deg': mock_gps_latitude,
+            'longitude_deg': mock_gps_longitude,
+            'altitude_m': mock_gps_altitude,
+            'publish_rate_hz': mock_gps_publish_rate,
+        }],
+    )
+
     return LaunchDescription([
         setup_path_arg,
         namespace_arg,
@@ -181,8 +240,15 @@ def generate_launch_description():
         x_arg,
         y_arg,
         yaw_arg,
+        mock_gps_fix_topic_arg,
+        mock_gps_latitude_arg,
+        mock_gps_longitude_arg,
+        mock_gps_altitude_arg,
+        mock_gps_frame_id_arg,
+        mock_gps_publish_rate_arg,
         prefer_system_python,
         prefer_ros_libs,
+        mock_gps_fix_publisher,
         simulation_launch,
         nav2_delayed,
         slam_delayed,

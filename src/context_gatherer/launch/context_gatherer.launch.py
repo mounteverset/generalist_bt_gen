@@ -21,5 +21,12 @@ def generate_launch_description():
                 output='screen',
                 parameters=[str(params_file)],
             ),
+            Node(
+                package='context_gatherer',
+                executable='satellite_map_annotator_node',
+                name='satellite_map_annotator',
+                output='screen',
+                parameters=[str(params_file)],
+            ),
         ]
     )
