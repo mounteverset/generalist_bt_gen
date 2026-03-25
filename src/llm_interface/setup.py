@@ -16,6 +16,8 @@ setup(
         'rclpy',
         'langchain',
         'langchain-google-genai',
+        'langchain-openai',
+        'langchain-openrouter',
     ],
     zip_safe=True,
     maintainer='luke',

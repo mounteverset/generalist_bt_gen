@@ -15,13 +15,26 @@ from gen_bt_interfaces.srv import CreatePayload, PlanSubtree, SelectBehaviorTree
 try:
     from langchain_core.prompts import PromptTemplate
     from langchain_core.messages import HumanMessage
-    from langchain_google_genai import ChatGoogleGenerativeAI
 except ModuleNotFoundError as exc:
     raise RuntimeError(
-        "langchain-core / langchain-google-genai not found. Install them in the "
-        "ROS Python environment or disable selection_llm_enabled."
+        "langchain-core not found. Install it in the ROS Python environment."
     ) from exc
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+except ModuleNotFoundError:
+    ChatGoogleGenerativeAI = None
+try:
+    from langchain_openai import ChatOpenAI
+except ModuleNotFoundError:
+    ChatOpenAI = None
+try:
+    from langchain_openrouter import ChatOpenRouter
+except ModuleNotFoundError:
+    ChatOpenRouter = None
 from rclpy.node import Node
+
+DEFAULT_LLM_PROVIDER = 'gemini'
+SUPPORTED_LLM_PROVIDERS = {'gemini', 'openai', 'openrouter'}
 
 DEFAULT_SELECTION_PROMPT = (
     "You are a mission planner for a field robot. Given USER_COMMAND and a JSON array of\n"
@@ -120,6 +133,24 @@ class LLMInterfaceNode(Node):
             )
         if not self.has_parameter('model_name'):
             self.declare_parameter('model_name', 'gemini-2.5-flash')
+        if not self.has_parameter('provider'):
+            self.declare_parameter('provider', DEFAULT_LLM_PROVIDER)
+        if not self.has_parameter('selection_provider'):
+            self.declare_parameter(
+                'selection_provider', self.get_parameter('provider').value
+            )
+        if not self.has_parameter('payload_provider'):
+            self.declare_parameter(
+                'payload_provider', self.get_parameter('provider').value
+            )
+        if not self.has_parameter('payload_normalizer_provider'):
+            self.declare_parameter(
+                'payload_normalizer_provider', self.get_parameter('provider').value
+            )
+        if not self.has_parameter('openrouter_app_url'):
+            self.declare_parameter('openrouter_app_url', '')
+        if not self.has_parameter('openrouter_app_title'):
+            self.declare_parameter('openrouter_app_title', 'generalist_bt_gen')
         if not self.has_parameter('selection_model_name'):
             self.declare_parameter(
                 'selection_model_name', self.get_parameter('model_name').value
@@ -159,6 +190,20 @@ class LLMInterfaceNode(Node):
             self.declare_parameter(
                 'prompts.payload_normalizer', DEFAULT_PAYLOAD_NORMALIZER_PROMPT
             )
+        self._provider = self._normalize_provider_name(
+            str(self.get_parameter('provider').value)
+        )
+        self._selection_provider = self._normalize_provider_name(
+            str(self.get_parameter('selection_provider').value or self._provider)
+        )
+        self._payload_provider = self._normalize_provider_name(
+            str(self.get_parameter('payload_provider').value or self._provider)
+        )
+        self._payload_normalizer_provider = self._normalize_provider_name(
+            str(
+                self.get_parameter('payload_normalizer_provider').value or self._provider
+            )
+        )
         self._model_name = str(self.get_parameter('model_name').value)
         self._selection_model_name = str(
             self.get_parameter('selection_model_name').value or self._model_name
@@ -202,6 +247,12 @@ class LLMInterfaceNode(Node):
         self._payload_normalizer_prompt = str(
             self.get_parameter('prompts.payload_normalizer').value
         )
+        self._openrouter_app_url = str(
+            self.get_parameter('openrouter_app_url').value or ''
+        ).strip()
+        self._openrouter_app_title = str(
+            self.get_parameter('openrouter_app_title').value or ''
+        ).strip()
         payload_prompts = self.get_parameters_by_prefix('prompts.payload')
         self._payload_prompts = {
             name: param.value
@@ -226,10 +277,86 @@ class LLMInterfaceNode(Node):
         self.get_logger().info(
             "LLMInterfaceNode ready "
             f"(plan={planning_topic}, select={selection_topic}, payload={payload_topic}, "
+            f"selection_provider={self._selection_provider}, "
             f"selection_model={self._selection_model_name}, "
+            f"payload_provider={self._payload_provider}, "
             f"payload_model={self._payload_model_name}, "
+            f"payload_normalizer_provider={self._payload_normalizer_provider}, "
             f"payload_normalizer_model={self._payload_normalizer_model_name})"
         )
+
+    @staticmethod
+    def _normalize_provider_name(provider_name: str) -> str:
+        normalized = (provider_name or DEFAULT_LLM_PROVIDER).strip().lower()
+        normalized = {
+            'google': 'gemini',
+            'google_genai': 'gemini',
+            'google-genai': 'gemini',
+            'open_ai': 'openai',
+            'open_router': 'openrouter',
+        }.get(normalized, normalized)
+        if normalized not in SUPPORTED_LLM_PROVIDERS:
+            supported = ", ".join(sorted(SUPPORTED_LLM_PROVIDERS))
+            raise ValueError(
+                f"Unsupported llm provider '{provider_name}'. Supported providers: {supported}."
+            )
+        return normalized
+
+    def _provider_display_name(self, provider_name: str, model_name: str) -> str:
+        return f"{provider_name}:{model_name}"
+
+    def _create_chat_llm(
+        self, provider_name: str, model_name: str, temperature: float, purpose: str
+    ):
+        provider_name = self._normalize_provider_name(provider_name)
+
+        if provider_name == 'gemini':
+            if ChatGoogleGenerativeAI is None:
+                raise RuntimeError(
+                    "langchain-google-genai not found. Install it to use the gemini provider."
+                )
+            api_key = os.environ.get('GEMINI_API_KEY')
+            if not api_key:
+                raise RuntimeError(
+                    f"GEMINI_API_KEY not set; export it to use the {purpose} gemini model."
+                )
+            return ChatGoogleGenerativeAI(
+                model=model_name,
+                temperature=temperature,
+                api_key=api_key,
+            )
+
+        if provider_name == 'openai':
+            if ChatOpenAI is None:
+                raise RuntimeError(
+                    "langchain-openai not found. Install it to use the openai provider."
+                )
+            if not os.environ.get('OPENAI_API_KEY'):
+                raise RuntimeError(
+                    f"OPENAI_API_KEY not set; export it to use the {purpose} openai model."
+                )
+            return ChatOpenAI(
+                model=model_name,
+                temperature=temperature,
+            )
+
+        if ChatOpenRouter is None:
+            raise RuntimeError(
+                "langchain-openrouter not found. Install it to use the openrouter provider."
+            )
+        if not os.environ.get('OPENROUTER_API_KEY'):
+            raise RuntimeError(
+                f"OPENROUTER_API_KEY not set; export it to use the {purpose} openrouter model."
+            )
+        kwargs = {
+            'model': model_name,
+            'temperature': temperature,
+        }
+        if self._openrouter_app_url:
+            kwargs['app_url'] = self._openrouter_app_url
+        if self._openrouter_app_title:
+            kwargs['app_title'] = self._openrouter_app_title
+        return ChatOpenRouter(**kwargs)
 
     # region Selection
     def handle_selection_request(
@@ -296,7 +423,10 @@ class LLMInterfaceNode(Node):
                 }
             )
         except Exception as exc:
-            self.get_logger().error(f"Gemini selection failed: {exc}")
+            self.get_logger().error(
+                f"{self._provider_display_name(self._selection_provider, self._selection_model_name)} "
+                f"selection failed: {exc}"
+            )
             return self._fallback_selection(tree_ids)
 
         raw_content = getattr(llm_result, 'content', llm_result)
@@ -305,14 +435,17 @@ class LLMInterfaceNode(Node):
             parsed = json.loads(cleaned_content)
         except Exception as exc:
             self.get_logger().warning(
-                f"Unable to parse Gemini response '{raw_content}': {exc}"
+                "Unable to parse "
+                f"{self._provider_display_name(self._selection_provider, self._selection_model_name)} "
+                f"response '{raw_content}': {exc}"
             )
             return self._fallback_selection(tree_ids)
 
         selected_id = parsed.get('tree_id')
         if selected_id not in tree_ids:
             self.get_logger().warning(
-                f"Gemini returned unknown tree '{selected_id}'; falling back."
+                f"{self._selection_provider} returned unknown tree '{selected_id}'; "
+                "falling back."
             )
             return self._fallback_selection(tree_ids)
 
@@ -320,7 +453,8 @@ class LLMInterfaceNode(Node):
         rationale = parsed.get('rationale', '')
         idx = tree_ids.index(selected_id)
         reason = (
-            f"[{self._selection_model_name}] Selected tree '{selected_id}' "
+            f"[{self._provider_display_name(self._selection_provider, self._selection_model_name)}] "
+            f"Selected tree '{selected_id}' "
             f"because {rationale or 'it best matched the mission context'}."
         )
         return idx, max(0.0, min(confidence, 1.0)), reason
@@ -397,15 +531,11 @@ class LLMInterfaceNode(Node):
 
     def _get_selection_chain(self):
         if not hasattr(self, '_selection_chain'):
-            api_key = os.environ.get('GEMINI_API_KEY')
-            if not api_key:
-                raise RuntimeError(
-                    'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
-                )
-            llm = ChatGoogleGenerativeAI(
-                model=self._selection_model_name,
+            llm = self._create_chat_llm(
+                provider_name=self._selection_provider,
+                model_name=self._selection_model_name,
                 temperature=self._selection_temperature,
-                api_key=api_key,
+                purpose='selection',
             )
             template = PromptTemplate.from_template(self._selection_prompt_template)
             self._selection_chain = template | llm
@@ -704,34 +834,24 @@ class LLMInterfaceNode(Node):
     def _get_payload_chain(self):
         """Lazy-load the payload generation chain."""
         if not hasattr(self, '_payload_chain'):
-            api_key = os.environ.get('GEMINI_API_KEY')
-            if not api_key:
-                raise RuntimeError(
-                    'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
-                )
-            
-            llm = ChatGoogleGenerativeAI(
-                model=self._payload_model_name,
-                temperature=0.0,  # Deterministic for payload generation
-                api_key=api_key,
+            llm = self._create_chat_llm(
+                provider_name=self._payload_provider,
+                model_name=self._payload_model_name,
+                temperature=0.0,
+                purpose='payload',
             )
             template = PromptTemplate.from_template("""{prompt}""")
             self._payload_chain = template | llm
-        
         return self._payload_chain
 
     def _get_payload_normalizer_chain(self):
         """Lazy-load the payload normalizer chain."""
         if not hasattr(self, '_payload_normalizer_chain'):
-            api_key = os.environ.get('GEMINI_API_KEY')
-            if not api_key:
-                raise RuntimeError(
-                    'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
-                )
-            llm = ChatGoogleGenerativeAI(
-                model=self._payload_normalizer_model_name,
+            llm = self._create_chat_llm(
+                provider_name=self._payload_normalizer_provider,
+                model_name=self._payload_normalizer_model_name,
                 temperature=0.0,
-                api_key=api_key,
+                purpose='payload normalization',
             )
             template = PromptTemplate.from_template(self._payload_normalizer_prompt)
             self._payload_normalizer_chain = template | llm
@@ -739,15 +859,11 @@ class LLMInterfaceNode(Node):
 
     def _get_payload_llm(self):
         if not hasattr(self, '_payload_llm'):
-            api_key = os.environ.get('GEMINI_API_KEY')
-            if not api_key:
-                raise RuntimeError(
-                    'GEMINI_API_KEY not set; disable selection_llm_enabled or export the key.'
-                )
-            self._payload_llm = ChatGoogleGenerativeAI(
-                model=self._payload_model_name,
+            self._payload_llm = self._create_chat_llm(
+                provider_name=self._payload_provider,
+                model_name=self._payload_model_name,
                 temperature=0.0,
-                api_key=api_key,
+                purpose='payload',
             )
         return self._payload_llm
 

@@ -1,3 +1,4 @@
+import os
 import sys
 import types
 
@@ -64,11 +65,37 @@ def _install_langchain_stubs() -> None:
         llm_module = types.ModuleType('langchain_google_genai')
 
         class DummyLLM:
+            init_calls = []
+
             def __init__(self, *args, **kwargs):
-                pass
+                type(self).init_calls.append(kwargs)
 
         llm_module.ChatGoogleGenerativeAI = DummyLLM
         sys.modules['langchain_google_genai'] = llm_module
+
+    if 'langchain_openai' not in sys.modules:
+        openai_module = types.ModuleType('langchain_openai')
+
+        class DummyOpenAILLM:
+            init_calls = []
+
+            def __init__(self, *args, **kwargs):
+                type(self).init_calls.append(kwargs)
+
+        openai_module.ChatOpenAI = DummyOpenAILLM
+        sys.modules['langchain_openai'] = openai_module
+
+    if 'langchain_openrouter' not in sys.modules:
+        openrouter_module = types.ModuleType('langchain_openrouter')
+
+        class DummyOpenRouterLLM:
+            init_calls = []
+
+            def __init__(self, *args, **kwargs):
+                type(self).init_calls.append(kwargs)
+
+        openrouter_module.ChatOpenRouter = DummyOpenRouterLLM
+        sys.modules['langchain_openrouter'] = openrouter_module
 
 
 _install_ros_stubs()
@@ -180,3 +207,73 @@ def test_prepare_llm_json_text_extracts_embedded_json_snippet():
     )
 
     assert cleaned == '{"waypoints": "1.0,2.0,0.0"}'
+
+
+def test_create_chat_llm_supports_openrouter_provider():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    node._openrouter_app_url = 'https://generalist.example'
+    node._openrouter_app_title = 'Generalist BT'
+    openrouter_cls = sys.modules['langchain_openrouter'].ChatOpenRouter
+    openrouter_cls.init_calls.clear()
+    original_key = os.environ.get('OPENROUTER_API_KEY')
+    os.environ['OPENROUTER_API_KEY'] = 'test-openrouter-key'
+
+    try:
+        llm = node._create_chat_llm(
+            provider_name='openrouter',
+            model_name='openai/gpt-4o-mini',
+            temperature=0.0,
+            purpose='payload',
+        )
+    finally:
+        if original_key is None:
+            os.environ.pop('OPENROUTER_API_KEY', None)
+        else:
+            os.environ['OPENROUTER_API_KEY'] = original_key
+
+    assert isinstance(llm, openrouter_cls)
+    assert openrouter_cls.init_calls == [
+        {
+            'model': 'openai/gpt-4o-mini',
+            'temperature': 0.0,
+            'app_url': 'https://generalist.example',
+            'app_title': 'Generalist BT',
+        }
+    ]
+
+
+def test_create_chat_llm_supports_openai_provider():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    node._openrouter_app_url = ''
+    node._openrouter_app_title = ''
+    openai_cls = sys.modules['langchain_openai'].ChatOpenAI
+    openai_cls.init_calls.clear()
+    original_key = os.environ.get('OPENAI_API_KEY')
+    os.environ['OPENAI_API_KEY'] = 'test-openai-key'
+
+    try:
+        llm = node._create_chat_llm(
+            provider_name='openai',
+            model_name='gpt-4o-mini',
+            temperature=0.0,
+            purpose='selection',
+        )
+    finally:
+        if original_key is None:
+            os.environ.pop('OPENAI_API_KEY', None)
+        else:
+            os.environ['OPENAI_API_KEY'] = original_key
+
+    assert isinstance(llm, openai_cls)
+    assert openai_cls.init_calls == [
+        {
+            'model': 'gpt-4o-mini',
+            'temperature': 0.0,
+        }
+    ]
+
+
+def test_normalize_provider_name_accepts_openrouter_aliases():
+    assert LLMInterfaceNode._normalize_provider_name('google') == 'gemini'
+    assert LLMInterfaceNode._normalize_provider_name('open_ai') == 'openai'
+    assert LLMInterfaceNode._normalize_provider_name('open_router') == 'openrouter'
