@@ -401,10 +401,14 @@
       }
 
       function renderPendingPlan(plan) {
+        const previousSessionId = currentPendingPlan
+          ? String(currentPendingPlan.session_id || "").trim()
+          : "";
         const validPlan = isValidPendingPlan(plan);
         currentPendingPlan = validPlan ? plan : null;
         if (!validPlan) {
           currentPendingPlan = null;
+          feedbackEl.value = "";
           pendingTreeEl.textContent = "No pending plan.";
           pendingMissionEl.textContent = "-";
           pendingPayloadEl.textContent = "-";
@@ -419,6 +423,13 @@
           return;
         }
         const approvalRequired = !!plan.approval_required;
+        const currentSessionId = String(plan.session_id || "").trim();
+        if (previousSessionId && previousSessionId !== currentSessionId) {
+          feedbackEl.value = "";
+        }
+        if (!approvalRequired) {
+          feedbackEl.value = "";
+        }
         pendingTreeEl.textContent = plan.tree_id || "unknown";
         pendingMissionEl.textContent = plan.mission || "-";
         pendingPayloadEl.textContent = prettyJson(plan.payload_object || plan.payload_json);
@@ -723,6 +734,8 @@
           if (!res.ok) {
             const detail = await res.json();
             alert(detail.detail || "Failed to approve plan");
+          } else {
+            feedbackEl.value = "";
           }
         } finally {
           await fetchState();
@@ -748,6 +761,8 @@
           if (!res.ok) {
             const detail = await res.json();
             alert(detail.detail || "Failed to cancel plan");
+          } else {
+            feedbackEl.value = "";
           }
         } finally {
           await fetchState();

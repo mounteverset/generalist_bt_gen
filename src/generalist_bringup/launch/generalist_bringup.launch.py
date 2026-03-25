@@ -6,6 +6,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, NotSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -46,6 +47,14 @@ def generate_launch_description():
         default_value='false',
         description='Launch CLI chat node if true, otherwise launch the web UI node.'
     )
+    demo_mode_arg = DeclareLaunchArgument(
+        'demo_mode',
+        default_value='false',
+        description=(
+            'Run in demo mode. When true, mission_coordinator skips external calls and '
+            'llm_interface is not launched.'
+        )
+    )
 
     bt_executor_node = Node(
         package='bt_executor',
@@ -56,6 +65,7 @@ def generate_launch_description():
     )
 
     llm_interface_node = Node(
+        condition=IfCondition(NotSubstitution(LaunchConfiguration('demo_mode'))),
         package='llm_interface',
         executable='llm_interface_node',
         name='llm_interface',
@@ -89,7 +99,15 @@ def generate_launch_description():
         executable='mission_coordinator_node',
         name='mission_coordinator',
         output='screen',
-        parameters=[LaunchConfiguration('mission_coordinator_params')]
+        parameters=[
+            LaunchConfiguration('mission_coordinator_params'),
+            {
+                'demo_mode': ParameterValue(
+                    LaunchConfiguration('demo_mode'),
+                    value_type=bool,
+                )
+            },
+        ]
     )
 
     cli_chat_node = Node(
@@ -124,6 +142,7 @@ def generate_launch_description():
         llm_params_arg,
         context_params_arg,
         use_cli_arg,
+        demo_mode_arg,
         bt_executor_node,
         llm_interface_node,
         annotated_map_saver_node,

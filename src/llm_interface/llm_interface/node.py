@@ -38,6 +38,14 @@ DEFAULT_PAYLOAD_PROMPT = (
     "(required blackboard keys), generate a JSON payload for the behavior tree.\n\n"
     "SUBTREE_ID: {subtree_id}\n\n"
     "USER_COMMAND: {user_command}\n\n"
+    "OPERATOR_REFINEMENT_NOTES:\n"
+    "{refinement_notes}\n\n"
+    "SESSION_REFINEMENT_HISTORY_JSON:\n"
+    "{refinement_history_json}\n\n"
+    "PRIOR_REJECTED_PLAN_REASONING:\n"
+    "{prior_plan_reasoning}\n\n"
+    "PRIOR_REJECTED_PAYLOAD_JSON:\n"
+    "{prior_plan_payload_json}\n\n"
     "CONTEXT (raw sensor data):\n"
     "{context_json}\n\n"
     "CONTRACT (required blackboard keys with types/defaults):\n"
@@ -50,6 +58,12 @@ DEFAULT_PAYLOAD_PROMPT = (
     "4. If images are provided, use them to extract map/goal information\n"
     "5. Return ONLY valid JSON matching the contract schema\n"
     "6. Do NOT include markdown code fences\n\n"
+    "7. If OPERATOR_REFINEMENT_NOTES are present, treat them as corrections to the prior plan\n"
+    "   and update the payload to address them explicitly\n\n"
+    "8. If SESSION_REFINEMENT_HISTORY_JSON is present, use each entry to match rejection feedback\n"
+    "   with the payload and reasoning that caused it, and avoid repeating the same failures\n\n"
+    "9. If PRIOR_REJECTED_PLAN_REASONING or PRIOR_REJECTED_PAYLOAD_JSON are present, use them\n"
+    "   as the rejected baseline and revise the payload instead of repeating the same mistake\n\n"
     "OUTPUT (JSON only):"
 )
 
@@ -286,7 +300,7 @@ class LLMInterfaceNode(Node):
             return self._fallback_selection(tree_ids)
 
         raw_content = getattr(llm_result, 'content', llm_result)
-        cleaned_content = self._strip_code_fence(str(raw_content))
+        cleaned_content = self._prepare_llm_json_text(raw_content)
         try:
             parsed = json.loads(cleaned_content)
         except Exception as exc:
@@ -321,6 +335,65 @@ class LLMInterfaceNode(Node):
             if stripped.endswith("```"):
                 stripped = stripped.rsplit("```", 1)[0]
         return stripped.strip()
+
+    def _prepare_llm_json_text(self, raw_content) -> str:
+        text = self._llm_content_to_text(raw_content)
+        cleaned = self._strip_code_fence(text)
+        json_candidate = self._extract_json_snippet(cleaned)
+        return json_candidate or cleaned
+
+    def _llm_content_to_text(self, raw_content) -> str:
+        if raw_content is None:
+            return ''
+        if isinstance(raw_content, str):
+            return raw_content
+        if isinstance(raw_content, list):
+            parts = [self._llm_content_to_text(item) for item in raw_content]
+            return '\n'.join(part for part in parts if part).strip()
+        if isinstance(raw_content, dict):
+            for key in ('text', 'output_text'):
+                value = raw_content.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            for key in ('content', 'parts'):
+                nested = raw_content.get(key)
+                if nested is None:
+                    continue
+                flattened = self._llm_content_to_text(nested)
+                if flattened:
+                    return flattened
+            return str(raw_content)
+
+        text_attr = getattr(raw_content, 'text', None)
+        if isinstance(text_attr, str) and text_attr.strip():
+            return text_attr
+        content_attr = getattr(raw_content, 'content', None)
+        if content_attr is not None and content_attr is not raw_content:
+            flattened = self._llm_content_to_text(content_attr)
+            if flattened:
+                return flattened
+        return str(raw_content)
+
+    def _extract_json_snippet(self, text: str) -> str:
+        candidate = (text or '').strip()
+        if not candidate:
+            return ''
+        decoder = json.JSONDecoder()
+        try:
+            _, end = decoder.raw_decode(candidate)
+            return candidate[:end]
+        except Exception:
+            pass
+
+        for index, char in enumerate(candidate):
+            if char not in '{[':
+                continue
+            try:
+                _, end = decoder.raw_decode(candidate[index:])
+                return candidate[index:index + end]
+            except Exception:
+                continue
+        return ''
 
     def _get_selection_chain(self):
         if not hasattr(self, '_selection_chain'):
@@ -370,10 +443,25 @@ class LLMInterfaceNode(Node):
                 user_command=request.user_command,
                 attachment_uris=list(request.attachment_uris)
             )
+            refinement_notes = self._extract_refinement_notes(context, request.user_command)
+            refinement_history_json = self._extract_refinement_history_json(
+                context, request.user_command
+            )
+            prior_reasoning = self._extract_prior_plan_reasoning(context, request.user_command)
+            prior_payload_json = self._extract_prior_plan_payload_json(
+                context, request.user_command
+            )
+            reasoning = f"Generated {len(payload_dict)} blackboard entries from context"
+            if refinement_notes:
+                reasoning += " with operator refinement feedback"
+            if refinement_history_json:
+                reasoning += " using session refinement history"
+            if prior_reasoning or prior_payload_json:
+                reasoning += " using the rejected prior plan as context"
             
             response.status_code = response.SUCCESS
             response.payload_json = json.dumps(payload_dict, ensure_ascii=False)
-            response.reasoning = f"Generated {len(payload_dict)} blackboard entries from context"
+            response.reasoning = reasoning
             response.tool_trace_json = "[]"  # TODO: Add MCP tool traces when available
             
         except json.JSONDecodeError as e:
@@ -420,7 +508,7 @@ class LLMInterfaceNode(Node):
                 llm_result = chain.invoke({"prompt": prompt_text})
                 raw_content = getattr(llm_result, 'content', llm_result)
 
-            cleaned = self._strip_code_fence(str(raw_content))
+            cleaned = self._prepare_llm_json_text(raw_content)
             payload = self._safe_parse_payload(cleaned)
             if payload is None:
                 if self._payload_schema_enforced:
@@ -779,7 +867,7 @@ class LLMInterfaceNode(Node):
             except Exception as exc:
                 self.get_logger().warning(f"Payload normalizer failed: {exc}")
                 continue
-            cleaned = self._strip_code_fence(str(getattr(llm_result, 'content', llm_result)))
+            cleaned = self._prepare_llm_json_text(getattr(llm_result, 'content', llm_result))
             normalized = self._safe_parse_payload(cleaned)
             if normalized is None:
                 continue
@@ -802,9 +890,21 @@ class LLMInterfaceNode(Node):
     ) -> str:
         attachment_summary = ", ".join(attachment_uris) if attachment_uris else "none"
         template = self._payload_prompts.get(subtree_id, self._payload_prompt_default)
+        refinement_notes = self._extract_refinement_notes(context, user_command)
+        refinement_history_json = self._extract_refinement_history_json(
+            context, user_command
+        )
+        prior_plan_reasoning = self._extract_prior_plan_reasoning(context, user_command)
+        prior_plan_payload_json = self._extract_prior_plan_payload_json(
+            context, user_command
+        )
         values = {
             'subtree_id': subtree_id,
             'user_command': user_command or '',
+            'refinement_notes': refinement_notes or 'none',
+            'refinement_history_json': refinement_history_json or '[]',
+            'prior_plan_reasoning': prior_plan_reasoning or 'none',
+            'prior_plan_payload_json': prior_plan_payload_json or 'none',
             'context_json': json.dumps(context, indent=2),
             'contract_json': json.dumps(contract, indent=2),
             'attachment_uris': attachment_summary,
@@ -817,6 +917,141 @@ class LLMInterfaceNode(Node):
                 "Falling back to default."
             )
             return self._payload_prompt_default.format(**values)
+
+    def _extract_refinement_notes(self, context: dict, user_command: str) -> str:
+        notes: List[str] = []
+        if isinstance(context, dict):
+            refinement = self._extract_mission_refinement_context(context)
+            if isinstance(refinement, dict):
+                operator_feedback = refinement.get('operator_feedback')
+                if isinstance(operator_feedback, str) and operator_feedback.strip():
+                    notes.append(operator_feedback.strip())
+                prompt = refinement.get('prompt')
+                if isinstance(prompt, str) and prompt.strip():
+                    notes.append(f"Refinement prompt: {prompt.strip()}")
+            direct_feedback = context.get('operator_feedback')
+            if isinstance(direct_feedback, str) and direct_feedback.strip():
+                notes.append(direct_feedback.strip())
+
+        if isinstance(user_command, str) and 'OPERATOR_REFINEMENT_FEEDBACK:' in user_command:
+            _, _, feedback_block = user_command.partition('OPERATOR_REFINEMENT_FEEDBACK:')
+            cleaned_feedback = feedback_block.strip()
+            if cleaned_feedback:
+                notes.append(cleaned_feedback)
+
+        deduped: List[str] = []
+        seen = set()
+        for note in notes:
+            normalized = note.strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(normalized)
+        return "\n\n".join(deduped)
+
+    def _extract_prior_plan_reasoning(self, context: dict, user_command: str) -> str:
+        reasoning_values: List[str] = []
+        if isinstance(context, dict):
+            refinement = self._extract_mission_refinement_context(context)
+            if isinstance(refinement, dict):
+                prior_reasoning = refinement.get('prior_reasoning')
+                if isinstance(prior_reasoning, str) and prior_reasoning.strip():
+                    reasoning_values.append(prior_reasoning.strip())
+
+        extracted = self._extract_tagged_block(
+            user_command, 'PRIOR_REJECTED_PLAN_REASONING:', 'PRIOR_REJECTED_PAYLOAD_JSON:'
+        )
+        if extracted:
+            reasoning_values.append(extracted)
+        return self._dedupe_joined_blocks(reasoning_values)
+
+    def _extract_prior_plan_payload_json(self, context: dict, user_command: str) -> str:
+        payload_values: List[str] = []
+        if isinstance(context, dict):
+            refinement = self._extract_mission_refinement_context(context)
+            if isinstance(refinement, dict):
+                prior_payload_json = refinement.get('prior_payload_json')
+                if isinstance(prior_payload_json, str) and prior_payload_json.strip():
+                    payload_values.append(prior_payload_json.strip())
+
+        extracted = self._extract_tagged_block(
+            user_command,
+            'PRIOR_REJECTED_PAYLOAD_JSON:',
+            'Refine the mission payload to address the rejected plan details above.',
+        )
+        if extracted:
+            payload_values.append(extracted)
+        return self._dedupe_joined_blocks(payload_values)
+
+    def _extract_refinement_history_json(self, context: dict, user_command: str) -> str:
+        history_entries = []
+        if isinstance(context, dict):
+            refinement = self._extract_mission_refinement_context(context)
+            if isinstance(refinement, dict):
+                history = refinement.get('history')
+                if isinstance(history, list):
+                    history_entries.extend(history)
+
+        extracted = self._extract_tagged_block(
+            user_command,
+            'SESSION_REFINEMENT_HISTORY_JSON:',
+            'Refine the mission payload to address the rejected plan details above.',
+        )
+        if extracted:
+            try:
+                parsed = json.loads(extracted)
+            except Exception:
+                pass
+            else:
+                if isinstance(parsed, list):
+                    history_entries.extend(parsed)
+
+        normalized_entries = []
+        seen = set()
+        for entry in history_entries:
+            if not isinstance(entry, dict):
+                continue
+            serialized = json.dumps(entry, ensure_ascii=False, sort_keys=True)
+            if serialized in seen:
+                continue
+            seen.add(serialized)
+            normalized_entries.append(entry)
+        if not normalized_entries:
+            return ''
+        return json.dumps(normalized_entries, ensure_ascii=False, indent=2)
+
+    def _extract_mission_refinement_context(self, context: dict) -> Optional[dict]:
+        if not isinstance(context, dict):
+            return None
+        request_hints = context.get('REQUEST_HINTS')
+        if not isinstance(request_hints, dict):
+            return None
+        refinement = request_hints.get('MISSION_REFINEMENT')
+        if not isinstance(refinement, dict):
+            return None
+        return refinement
+
+    def _extract_tagged_block(
+        self, text: str, start_tag: str, end_tag: str = ''
+    ) -> str:
+        if not isinstance(text, str) or start_tag not in text:
+            return ''
+        _, _, remainder = text.partition(start_tag)
+        candidate = remainder.strip()
+        if end_tag and end_tag in candidate:
+            candidate, _, _ = candidate.partition(end_tag)
+        return candidate.strip()
+
+    def _dedupe_joined_blocks(self, values: List[str]) -> str:
+        deduped: List[str] = []
+        seen = set()
+        for value in values:
+            normalized = (value or '').strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(normalized)
+        return "\n\n".join(deduped)
 
     def _invoke_multimodal_payload(self, prompt_text: str, attachment_uris: list) -> str:
         llm = self._get_payload_llm()

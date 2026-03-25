@@ -20,7 +20,6 @@ from gen_bt_interfaces.srv import (
     GetMissionState,
     MissionControl,
     OperatorDecision,
-    PlanSubtree,
     SelectBehaviorTree,
 )
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
@@ -117,9 +116,6 @@ class MissionCoordinatorNode(Node):
         self._select_tree_client = self.create_client(
             SelectBehaviorTree, self.params.llm_select_service
         )
-        self._plan_subtree_client = self.create_client(
-            PlanSubtree, self.params.llm_plan_service
-        )
         self._context_gather_client = ActionClient(
             self, GatherContext, self.params.context_gather_action
         )
@@ -131,6 +127,7 @@ class MissionCoordinatorNode(Node):
         )
         self._pending_decisions: Dict[str, Future] = {}
         self._operator_feedback: Dict[str, str] = {}
+        self._refinement_history: Dict[str, List[Dict[str, Any]]] = {}
         self._status_service = self.create_service(
             GetMissionState,
             self.params.status_service,
@@ -289,9 +286,13 @@ class MissionCoordinatorNode(Node):
 
     def _clear_active_session(self) -> None:
         with self._state_lock:
+            session_id = self._active_session_id
             self._active_session_id = ''
             self._active_bt_goal_handle = None
             self._abort_requested_session = ''
+        if session_id:
+            self._operator_feedback.pop(session_id, None)
+            self._refinement_history.pop(session_id, None)
 
     def _snapshot_state(self) -> Dict[str, Any]:
         with self._state_lock:
@@ -505,32 +506,61 @@ class MissionCoordinatorNode(Node):
                 return result
 
             self._publish_active_subtree(selected_tree)
-            should_execute = True
-            if self._requires_operator_accept(goal):
+            refinement_iteration = 0
+            while self._requires_operator_accept(goal):
                 self._set_lifecycle_state(self.STATE_WAITING_APPROVAL)
                 plan = self._build_pending_plan(
-                    selected_tree, goal, gather_result, payload_response
+                    selected_tree,
+                    goal,
+                    gather_result,
+                    payload_response,
+                    operator_feedback=self._operator_feedback.get(session_id, ''),
+                    refinement_iteration=refinement_iteration,
                 )
                 self._publish_pending_plan(plan)
                 should_execute = await self._await_operator_decision(
                     str(plan['session_id']), selected_tree
                 )
+                if should_execute:
+                    break
 
-            if not should_execute:
-                goal_handle.succeed()
                 with self._state_lock:
                     aborted = self._abort_requested_session == session_id
                 if aborted:
+                    goal_handle.succeed()
                     self._set_lifecycle_state(self.STATE_CANCELED)
+                    result.accepted = False
                     result.outcome_message = 'Mission aborted by operator.'
-                else:
+                    self._publish_status(result.outcome_message)
+                    return result
+
+                feedback_text = (self._operator_feedback.get(session_id, '') or '').strip()
+                if not feedback_text:
+                    goal_handle.succeed()
                     self._set_lifecycle_state(self.STATE_CANCELED)
+                    result.accepted = False
                     result.outcome_message = 'Mission canceled by operator.'
-                result.accepted = False
-                self._publish_status(result.outcome_message)
-                if payload_response is not None and not aborted:
-                    await self._handle_rejected_plan(selected_tree, goal, payload_response)
-                return result
+                    self._publish_status(result.outcome_message)
+                    return result
+
+                refinement_iteration += 1
+                refined = await self._refine_rejected_plan(
+                    selected_tree,
+                    goal,
+                    feedback_text,
+                    refinement_iteration,
+                    payload_response,
+                )
+                if refined is None:
+                    goal_handle.succeed()
+                    self._set_lifecycle_state(self.STATE_FAILED)
+                    result.accepted = False
+                    result.outcome_message = (
+                        'Unable to refine the rejected plan with operator feedback.'
+                    )
+                    self._publish_status(result.outcome_message)
+                    return result
+                gather_result, payload_response = refined
 
             self._set_lifecycle_state(self.STATE_EXECUTING)
             self._log_debug(f'Selected tree {selected_tree}, dispatching to BT executor.')
@@ -667,7 +697,106 @@ class MissionCoordinatorNode(Node):
             return json.dumps(contract, ensure_ascii=False)
         return '{}'
 
-    async def _gather_context(self, tree_id: str, goal: MissionCommand.Goal):
+    def _build_context_gather_hint(
+        self,
+        tree_id: str,
+        goal: MissionCommand.Goal,
+        operator_feedback: str = '',
+        prior_payload_json: str = '',
+        prior_reasoning: str = '',
+        refinement_history: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        raw_context = (goal.context_json or '').strip()
+        hint_payload: Dict[str, Any] = {}
+        if raw_context:
+            try:
+                parsed_context = json.loads(raw_context)
+            except Exception:
+                hint_payload['original_goal_context'] = raw_context
+            else:
+                if isinstance(parsed_context, dict):
+                    hint_payload.update(parsed_context)
+                else:
+                    hint_payload['original_goal_context'] = parsed_context
+
+        hint_payload['MISSION_REQUEST'] = {
+            'session_id': goal.session_id or 'unknown',
+            'subtree_id': tree_id,
+            'mission_text': goal.command or '',
+        }
+        if operator_feedback:
+            hint_payload['MISSION_REFINEMENT'] = {
+                'requested': True,
+                'operator_feedback': operator_feedback,
+                'prior_reasoning': prior_reasoning,
+                'prior_payload_json': prior_payload_json,
+                'history': list(refinement_history or []),
+                'prompt': self._compose_payload_user_command(
+                    goal.command,
+                    operator_feedback,
+                    prior_payload_json=prior_payload_json,
+                    prior_reasoning=prior_reasoning,
+                    refinement_history=refinement_history,
+                ),
+            }
+        return json.dumps(hint_payload, ensure_ascii=False)
+
+    def _compose_payload_user_command(
+        self,
+        mission_text: str,
+        operator_feedback: str = '',
+        prior_payload_json: str = '',
+        prior_reasoning: str = '',
+        refinement_history: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        command = (mission_text or '').strip()
+        feedback = (operator_feedback or '').strip()
+        history = list(refinement_history or [])
+        if not feedback and not prior_payload_json and not prior_reasoning and not history:
+            return command
+        sections = [command]
+        if feedback:
+            sections.extend(
+                [
+                    'OPERATOR_REFINEMENT_FEEDBACK:',
+                    feedback,
+                ]
+            )
+        if prior_reasoning:
+            sections.extend(
+                [
+                    'PRIOR_REJECTED_PLAN_REASONING:',
+                    prior_reasoning,
+                ]
+            )
+        if prior_payload_json:
+            sections.extend(
+                [
+                    'PRIOR_REJECTED_PAYLOAD_JSON:',
+                    prior_payload_json,
+                ]
+            )
+        if history:
+            sections.extend(
+                [
+                    'SESSION_REFINEMENT_HISTORY_JSON:',
+                    json.dumps(history, ensure_ascii=False, indent=2),
+                ]
+            )
+        sections.append(
+            'Refine the mission payload to address the rejected plan details above.'
+        )
+        return '\n\n'.join(section for section in sections if section)
+
+    async def _gather_context(
+        self,
+        tree_id: str,
+        goal: MissionCommand.Goal,
+        operator_feedback: str = '',
+        prior_payload_json: str = '',
+        prior_reasoning: str = '',
+        refinement_history: Optional[List[Dict[str, Any]]] = None,
+    ):
         if not self._wait_for_action(
             self._context_gather_client, self.params.context_gather_action
         ):
@@ -677,7 +806,14 @@ class MissionCoordinatorNode(Node):
         gather_goal.subtree_id = tree_id
         gather_goal.context_requirements = self._context_requirements_for_tree(tree_id)
         gather_goal.timeout_sec = float(self.params.gather_timeout_sec)
-        gather_goal.geo_hint = goal.context_json or ''
+        gather_goal.geo_hint = self._build_context_gather_hint(
+            tree_id,
+            goal,
+            operator_feedback,
+            prior_payload_json=prior_payload_json,
+            prior_reasoning=prior_reasoning,
+            refinement_history=refinement_history,
+        )
         req_label = ','.join(gather_goal.context_requirements) or 'none'
         self.get_logger().info(
             f'Requesting context gather (session={gather_goal.session_id}, subtree={tree_id}, '
@@ -718,7 +854,14 @@ class MissionCoordinatorNode(Node):
         self._log_debug(f'Context gather feedback: {feedback.stage} {feedback.detail}')
 
     async def _create_payload(
-        self, tree_id: str, goal: MissionCommand.Goal, gather_result
+        self,
+        tree_id: str,
+        goal: MissionCommand.Goal,
+        gather_result,
+        operator_feedback: str = '',
+        prior_payload_json: str = '',
+        prior_reasoning: str = '',
+        refinement_history: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[CreatePayload.Response]:
         if not self._wait_for_service(
             self._create_payload_client, self.params.create_payload_service
@@ -727,7 +870,13 @@ class MissionCoordinatorNode(Node):
         request = CreatePayload.Request()
         request.session_id = goal.session_id or 'unknown'
         request.subtree_id = tree_id
-        request.user_command = goal.command
+        request.user_command = self._compose_payload_user_command(
+            goal.command,
+            operator_feedback,
+            prior_payload_json=prior_payload_json,
+            prior_reasoning=prior_reasoning,
+            refinement_history=refinement_history,
+        )
         request.subtree_contract_json = self._subtree_contract_for_tree(tree_id)
         request.context_snapshot_json = gather_result.context_json
         request.attachment_uris = list(gather_result.attachment_uris)
@@ -775,6 +924,8 @@ class MissionCoordinatorNode(Node):
         goal: MissionCommand.Goal,
         gather_result,
         payload: CreatePayload.Response,
+        operator_feedback: str = '',
+        refinement_iteration: int = 0,
     ) -> dict:
         return {
             'session_id': goal.session_id or 'unknown',
@@ -785,6 +936,8 @@ class MissionCoordinatorNode(Node):
             'tool_trace_json': payload.tool_trace_json,
             'context_snapshot_json': getattr(gather_result, 'context_json', ''),
             'attachment_uris': list(getattr(gather_result, 'attachment_uris', []) or []),
+            'operator_feedback': operator_feedback,
+            'refinement_iteration': int(refinement_iteration),
             'operator_decision_service': self._operator_service_name,
         }
 
@@ -809,47 +962,101 @@ class MissionCoordinatorNode(Node):
             self._clear_pending_plan()
         return bool(decision)
 
-    async def _handle_rejected_plan(
-        self, tree_id: str, goal: MissionCommand.Goal, payload: CreatePayload.Response
-    ) -> None:
+    async def _refine_rejected_plan(
+        self,
+        tree_id: str,
+        goal: MissionCommand.Goal,
+        operator_feedback: str,
+        refinement_iteration: int,
+        prior_payload: CreatePayload.Response,
+    ) -> Optional[Tuple[Any, CreatePayload.Response]]:
         session_id = goal.session_id or 'unknown'
-        feedback_text = self._operator_feedback.get(session_id, '')
-        if not feedback_text:
-            return
-        if not self._wait_for_service(self._plan_subtree_client, self.params.llm_plan_service):
-            self._publish_status('PlanSubtree service unavailable; skipping LLM replan.')
-            return
-        request = PlanSubtree.Request()
-        request.session_id = session_id
-        request.mission_text = goal.command
-        request.context_snapshot = goal.context_json or ''
-        request.blackboard_state = payload.payload_json
-        prior_plan_info = {
-            'prior_tree_id': tree_id,
-            'prior_reasoning': payload.reasoning,
-            'prior_payload_json': payload.payload_json,
-            'operator_feedback': feedback_text,
-        }
-        request.failure_report = json.dumps(prior_plan_info, ensure_ascii=False)
-        request.requested_capabilities = []
-        self._log_debug(
-            f'Calling PlanSubtree for session={session_id} with operator feedback.'
+        prior_payload_json = prior_payload.payload_json or '{}'
+        prior_reasoning = prior_payload.reasoning or ''
+        history = self._append_refinement_history_entry(
+            session_id,
+            tree_id,
+            refinement_iteration,
+            operator_feedback,
+            prior_payload_json,
+            prior_reasoning,
         )
-        response = await self._call_service(self._plan_subtree_client, request)
-        if response is None:
-            self._publish_status('PlanSubtree returned no response for rejected plan.')
-            return
-        if response.status_code != 0:
-            self._publish_status(
-                f'PlanSubtree could not refine plan (status={response.status_code}).'
-            )
-            return
         self._publish_status(
-            'LLM generated an updated plan after operator feedback; see logs for details.'
+            f'Refining rejected plan for session={session_id} '
+            f'(iteration={refinement_iteration}).'
         )
-        self._log_debug(
-            f'Updated plan summary: {response.summary} (bt_xml length={len(response.bt_xml)})'
+
+        self._set_lifecycle_state(self.STATE_GATHERING_CONTEXT)
+        gather_result = await self._gather_context(
+            tree_id,
+            goal,
+            operator_feedback=operator_feedback,
+            prior_payload_json=prior_payload_json,
+            prior_reasoning=prior_reasoning,
+            refinement_history=history,
         )
+        if not gather_result or not gather_result.success:
+            self._publish_status(
+                'Refinement context gather failed.'
+                if not gather_result
+                else f'Refinement context gather failed: {gather_result.message}'
+            )
+            return None
+
+        self._set_lifecycle_state(self.STATE_BUILDING_PAYLOAD)
+        payload_response = await self._create_payload(
+            tree_id,
+            goal,
+            gather_result,
+            operator_feedback=operator_feedback,
+            prior_payload_json=prior_payload_json,
+            prior_reasoning=prior_reasoning,
+            refinement_history=history,
+        )
+        if payload_response is None:
+            self._publish_status('Refinement payload generation failed.')
+            return None
+
+        self._publish_status(
+            'Updated plan generated from operator feedback; awaiting confirmation.'
+        )
+        return gather_result, payload_response
+
+    def _append_refinement_history_entry(
+        self,
+        session_id: str,
+        tree_id: str,
+        refinement_iteration: int,
+        operator_feedback: str,
+        prior_payload_json: str,
+        prior_reasoning: str,
+    ) -> List[Dict[str, Any]]:
+        session_key = self._normalize_session_id(session_id)
+        entry = {
+            'iteration': int(refinement_iteration),
+            'tree_id': tree_id,
+            'operator_feedback': (operator_feedback or '').strip(),
+            'prior_reasoning': (prior_reasoning or '').strip(),
+            'prior_payload_json': prior_payload_json or '{}',
+            'payload_waypoints': self._extract_waypoints_for_history(prior_payload_json),
+        }
+        history = self._refinement_history.setdefault(session_key, [])
+        history.append(entry)
+        return [dict(item) for item in history]
+
+    def _extract_waypoints_for_history(self, payload_json: str) -> Any:
+        if not payload_json:
+            return None
+        try:
+            payload = json.loads(payload_json)
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        for key in ('waypoints', 'route', 'points', 'targets', 'goal_points'):
+            if key in payload:
+                return payload.get(key)
+        return None
 
     async def _execute_behavior_tree(
         self, tree_id: str, goal: MissionCommand.Goal, payload_json: str

@@ -2,10 +2,10 @@ llm_interface:
   ros__parameters:
     planning_service_name: '/llm_interface/plan_subtree'
     selection_service_name: '/llm_interface/select_behavior_tree'
-    model_name: 'gemini-3-flash-preview'
-    selection_model_name: 'gemini-3-flash-preview'
-    payload_model_name: 'gemini-3-flash-preview'
-    payload_normalizer_model_name: 'gemini-2.5-flash-lite'
+    model_name: 'gemini-3.1-flash-lite-preview'
+    selection_model_name: 'gemini-3.1-flash-lite-preview'
+    payload_model_name: 'gemini-3.1-flash-lite-preview'
+    payload_normalizer_model_name: 'gemini-3.1-flash-lite-preview'
     selection_llm_enabled: true
     selection_temperature: 0.0
     payload_multimodal_enabled: true

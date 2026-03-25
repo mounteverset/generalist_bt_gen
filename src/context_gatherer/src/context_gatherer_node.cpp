@@ -208,6 +208,35 @@ private:
     requirement_handlers_["SLAM_MAP_ANNOTATED_IMAGE"] = annotated_handler;
   }
 
+  void append_geo_hint_context(const std::string& geo_hint, json& context_json)
+  {
+    if (geo_hint.empty()) {
+      return;
+    }
+
+    try {
+      const auto parsed = json::parse(geo_hint);
+      if (parsed.is_object()) {
+        context_json["REQUEST_HINTS"] = parsed;
+      } else {
+        context_json["REQUEST_HINTS"] = {
+          {"raw", geo_hint},
+          {"parsed", parsed}
+        };
+      }
+      return;
+    } catch (const std::exception& exc) {
+      RCLCPP_WARN(
+        get_logger(),
+        "Failed to parse geo_hint as JSON, preserving raw value: %s",
+        exc.what());
+    }
+
+    context_json["REQUEST_HINTS"] = {
+      {"raw", geo_hint}
+    };
+  }
+
   void handle_robot_pose(json& context_json)
   {
     std::lock_guard<std::mutex> lock(data_mutex_);
@@ -805,6 +834,7 @@ private:
 
     json context_json;
     std::vector<std::string> attachment_uris;
+    append_geo_hint_context(goal->geo_hint, context_json);
 
     auto feedback = std::make_shared<GatherContext::Feedback>();
     feedback->stage = "START";
