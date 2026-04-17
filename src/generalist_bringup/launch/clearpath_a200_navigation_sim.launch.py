@@ -74,13 +74,13 @@ def generate_launch_description():
 
     mock_gps_latitude_arg = DeclareLaunchArgument(
         'mock_gps_latitude_deg',
-        default_value='48.20286111111111',
+        default_value='48.284828555284605',
         description='Mock GPS latitude in decimal degrees'
     )
 
     mock_gps_longitude_arg = DeclareLaunchArgument(
         'mock_gps_longitude_deg',
-        default_value='11.64486111111111',
+        default_value='11.607701317621604',
         description='Mock GPS longitude in decimal degrees'
     )
 
