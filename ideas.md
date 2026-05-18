@@ -11,22 +11,22 @@ which has a longer runtime but may produce better results because it is able to 
 - [ ] Circle back and ask questions if subtree is unclear
 - [ ] regularly create up to date catalogues of actions/trees, maybe when starting the whole stack we first run a parser, that updates the catalogue of available trees 
 - [ ] context_gatherer checks the available ros topics and matches them to the respective requirement
-- [ ] we need to enforce the outcome generated payload to fit the expected formar by the BT
+- [x] we need to enforce the outcome generated payload to fit the expected formar by the BT
     - compare llm interface -> to compare the generated payload with the required output format and other requirements, like number of waypoints from the initial prompt
 - [ ] pre-trials of outputs with specific input data 
     - how well does an llm perform with relation to the goal we give it 
     - can it generate waypoints from gps tile map and gps pose?
     - if something doesnt work we can relate to these pre-trials to start a discussion
-- [ ] save history of past missions to better e.g. byte_rover, memori
+- [x] save history of past missions to better e.g. byte_rover, memori
 - [ ] pre-trials: 
         - comparison of different zoom levels, multiple runs of same scenario, to combat, more times the same area but different types
         - other tile map sources
         - pre trials should connect to the later scenarios where we test
         - concrete scenario definitions for pre-trials and final test -> have to match
-- [ ] create list of available data sources that make sense for the robot context to have
+- [x] create list of available data sources that make sense for the robot context to have
 - [x] display planned wapyoints from payload in rviz
 - [x] augmentation to standard map_saver which puts the coordinate system and a proper grid net onto the saved map, and also clearly displays the robot pose inside of this map. 
 - [ ] open ended mission open question
 - [ ] Lastenheft derived from requirements
-
+- [ ] fallback when no tree is available, this is where trigger would be to generate a new one or let the llm propose what it would need changed in the existing catalogue
 

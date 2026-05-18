@@ -2,7 +2,7 @@ import json
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 
-MAP_CONTEXT_KEYS = ('SATELLITE_MAP', 'ANNOTATED_SLAM_MAP_IMAGE', 'SLAM_MAP_IMAGE')
+MAP_CONTEXT_KEYS = ('SATELLITE_MAP', 'ANNOTATED_SLAM_MAP_IMAGE')
 
 
 def load_json_value(raw_value: Any) -> Any:

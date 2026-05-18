@@ -298,19 +298,9 @@ private:
       handle_gps_fix(ctx);
     };
 
-    requirement_handlers_["SLAM_MAP"] = [this](json& ctx, std::vector<std::string>& uris) {
-      handle_slam_map(ctx, uris);
-    };
-
-    requirement_handlers_["SLAM_MAP_IMAGE"] = [this](json& ctx, std::vector<std::string>& uris) {
-      handle_slam_map_image(ctx, uris);
-    };
-
-    auto annotated_handler = [this](json& ctx, std::vector<std::string>& uris) {
+    requirement_handlers_["ANNOTATED_SLAM_MAP_IMAGE"] = [this](json& ctx, std::vector<std::string>& uris) {
       handle_annotated_slam_map_image(ctx, uris);
     };
-    requirement_handlers_["ANNOTATED_SLAM_MAP_IMAGE"] = annotated_handler;
-    requirement_handlers_["SLAM_MAP_ANNOTATED_IMAGE"] = annotated_handler;
 
     auto satellite_handler = [this](json& ctx, std::vector<std::string>& uris) {
       handle_satellite_map(ctx, uris);
@@ -501,66 +491,6 @@ private:
     }
   }
 
-  void handle_slam_map(json& context_json, std::vector<std::string>& uris)
-  {
-    auto map = get_latest_slam_map();
-    if (!map) {
-      RCLCPP_WARN(get_logger(), "SLAM_MAP requested but no map data available");
-      return;
-    }
-
-    std::string uri = save_map_to_disk(map);
-    if (uri.empty()) {
-      return;
-    }
-
-    uris.push_back(uri);
-    context_json["SLAM_MAP"] = {
-      {"uri", uri},
-      {"width", map->info.width},
-      {"height", map->info.height},
-      {"resolution", map->info.resolution},
-      {"frame_id", map->header.frame_id},
-      {"timestamp", map->header.stamp.sec},
-      {"map_metadata", build_map_metadata_json(map, false)}
-    };
-    if (debug_logging_) {
-      RCLCPP_INFO(
-        get_logger(), "Captured SLAM_MAP: %ux%u -> %s",
-        map->info.width, map->info.height, uri.c_str());
-    }
-  }
-
-  void handle_slam_map_image(json& context_json, std::vector<std::string>& uris)
-  {
-    auto map = get_latest_slam_map();
-    if (!map) {
-      RCLCPP_WARN(get_logger(), "SLAM_MAP_IMAGE requested but no map data available");
-      return;
-    }
-
-    std::string uri = save_map_image_to_disk(map);
-    if (uri.empty()) {
-      return;
-    }
-
-    uris.push_back(uri);
-    context_json["SLAM_MAP_IMAGE"] = {
-      {"uri", uri},
-      {"width", map->info.width},
-      {"height", map->info.height},
-      {"resolution", map->info.resolution},
-      {"frame_id", map->header.frame_id},
-      {"timestamp", map->header.stamp.sec},
-      {"map_metadata", build_map_metadata_json(map, false)}
-    };
-    if (debug_logging_) {
-      RCLCPP_INFO(
-        get_logger(), "Captured SLAM_MAP_IMAGE: %ux%u -> %s",
-        map->info.width, map->info.height, uri.c_str());
-    }
-  }
-
   void handle_annotated_slam_map_image(json& context_json, std::vector<std::string>& uris)
   {
     auto map = get_latest_slam_map();
@@ -684,88 +614,6 @@ private:
       return "";
     } catch (std::exception& e) {
       RCLCPP_ERROR(get_logger(), "Failed to save image: %s", e.what());
-      return "";
-    }
-  }
-
-  std::string save_map_to_disk(const nav_msgs::msg::OccupancyGrid::SharedPtr& map)
-  {
-    try {
-      const std::string filename = build_timestamped_path("slam_map", "json");
-
-      json map_json = {
-        {"width", map->info.width},
-        {"height", map->info.height},
-        {"resolution", map->info.resolution},
-        {"frame_id", map->header.frame_id},
-        {"timestamp", map->header.stamp.sec},
-        {"origin", {
-          {"position", {
-            {"x", map->info.origin.position.x},
-            {"y", map->info.origin.position.y},
-            {"z", map->info.origin.position.z}
-          }},
-          {"orientation", {
-            {"x", map->info.origin.orientation.x},
-            {"y", map->info.origin.orientation.y},
-            {"z", map->info.origin.orientation.z},
-            {"w", map->info.origin.orientation.w}
-          }}
-        }},
-        {"data", map->data}
-      };
-
-      std::ofstream out(filename);
-      if (!out) {
-        RCLCPP_ERROR(get_logger(), "Failed to open map file for writing: %s", filename.c_str());
-        return "";
-      }
-      out << map_json.dump();
-      return to_file_uri(filename);
-    } catch (const std::exception& e) {
-      RCLCPP_ERROR(get_logger(), "Failed to save map: %s", e.what());
-      return "";
-    }
-  }
-
-  std::string save_map_image_to_disk(const nav_msgs::msg::OccupancyGrid::SharedPtr& map)
-  {
-    try {
-      const std::string filename = build_timestamped_path("slam_map", "png");
-      const int width = static_cast<int>(map->info.width);
-      const int height = static_cast<int>(map->info.height);
-      if (width <= 0 || height <= 0) {
-        RCLCPP_WARN(get_logger(), "SLAM map has invalid dimensions (%d x %d)", width, height);
-        return "";
-      }
-
-      cv::Mat image(height, width, CV_8UC1);
-      const auto& data = map->data;
-      const size_t expected = static_cast<size_t>(width) * static_cast<size_t>(height);
-      if (data.size() < expected) {
-        RCLCPP_WARN(
-          get_logger(), "SLAM map data size mismatch (got %zu, expected %zu)",
-          data.size(), expected);
-      }
-
-      for (int grid_y = 0; grid_y < height; ++grid_y) {
-        const int image_y = height - 1 - grid_y;
-        for (int x = 0; x < width; ++x) {
-          const size_t idx = static_cast<size_t>(grid_y) * static_cast<size_t>(width) + x;
-          const int8_t value = idx < data.size() ? data[idx] : -1;
-          uint8_t pixel = 127;
-          if (value >= 0) {
-            const int clamped = std::max(0, std::min(100, static_cast<int>(value)));
-            pixel = static_cast<uint8_t>(255 - (clamped * 255) / 100);
-          }
-          image.at<uint8_t>(image_y, x) = pixel;
-        }
-      }
-
-      cv::imwrite(filename, image);
-      return to_file_uri(filename);
-    } catch (const std::exception& e) {
-      RCLCPP_ERROR(get_logger(), "Failed to save map image: %s", e.what());
       return "";
     }
   }
