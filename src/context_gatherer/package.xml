@@ -19,6 +19,7 @@
   <build_depend>geographic_msgs</build_depend>
   <build_depend>image_transport</build_depend>
   <build_depend>cv_bridge</build_depend>
+  <build_depend>language_feature_msgs</build_depend>
   <build_depend>nlohmann_json</build_depend>
   <build_depend>libcurl4-openssl-dev</build_depend>
 
@@ -32,6 +33,7 @@
   <exec_depend>geographic_msgs</exec_depend>
   <exec_depend>image_transport</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>language_feature_msgs</exec_depend>
   <exec_depend>nlohmann_json</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>

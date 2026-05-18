@@ -9,6 +9,9 @@ context_gatherer:
     annotated_map_service_timeout_sec: 10.0
     satellite_map_annotator_service_name: "/satellite_map_annotator/annotate"
     satellite_map_annotator_timeout_sec: 10.0
+    find_anything_service_name: "/language_processor/find_object_locations"
+    find_anything_service_timeout_sec: 10.0
+    find_anything_default_max_results: 5
     maptiler_api_key: ""
     maptiler_api_mode: "maps" # tiles or maps
     maptiler_style_id: "openstreetmap" # openstreetmap or satellite-v2

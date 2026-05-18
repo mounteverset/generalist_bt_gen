@@ -19,6 +19,7 @@ find_package(nav_msgs REQUIRED)
 find_package(geographic_msgs REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
+find_package(language_feature_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(CURL REQUIRED)
@@ -37,6 +38,7 @@ ament_target_dependencies(context_gatherer_node
   geographic_msgs
   image_transport
   cv_bridge
+  language_feature_msgs
 )
 ament_target_dependencies(annotated_map_saver_node
   geometry_msgs
@@ -79,6 +81,7 @@ ament_export_dependencies(
   geographic_msgs
   image_transport
   cv_bridge
+  language_feature_msgs
 )
 
 ament_package()

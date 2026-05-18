@@ -22,6 +22,7 @@
 #include "gen_bt_interfaces/action/gather_context.hpp"
 #include "gen_bt_interfaces/srv/annotate_satellite_map.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "language_feature_msgs/srv/find_object_locations.hpp"
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav2_msgs/srv/save_map.hpp"
@@ -44,6 +45,7 @@ public:
   using GoalHandle = rclcpp_action::ServerGoalHandle<GatherContext>;
   using SaveMap = nav2_msgs::srv::SaveMap;
   using AnnotateSatelliteMap = gen_bt_interfaces::srv::AnnotateSatelliteMap;
+  using FindObjectLocations = language_feature_msgs::srv::FindObjectLocations;
   using RequirementHandler = std::function<void(json&, std::vector<std::string>&)>;
 
   ContextGathererNode()
@@ -62,6 +64,12 @@ public:
       "satellite_map_annotator_service_name", "/satellite_map_annotator/annotate");
     satellite_map_annotator_timeout_sec_ = this->declare_parameter<double>(
       "satellite_map_annotator_timeout_sec", 10.0);
+    find_anything_service_name_ = this->declare_parameter<std::string>(
+      "find_anything_service_name", "/language_processor/find_object_locations");
+    find_anything_service_timeout_sec_ = this->declare_parameter<double>(
+      "find_anything_service_timeout_sec", 10.0);
+    find_anything_default_max_results_ = this->declare_parameter<int>(
+      "find_anything_default_max_results", 5);
     maptiler_api_key_ = this->declare_parameter<std::string>(
       "maptiler_api_key",
       std::getenv("MAPTILER_API_KEY") ? std::getenv("MAPTILER_API_KEY") : "");
@@ -161,13 +169,15 @@ public:
     annotated_map_client_ = create_client<SaveMap>(annotated_map_service_name_);
     satellite_map_annotator_client_ = create_client<AnnotateSatelliteMap>(
       satellite_map_annotator_service_name_);
+    find_anything_client_ = create_client<FindObjectLocations>(find_anything_service_name_);
 
     RCLCPP_INFO(
       get_logger(),
-      "Context gatherer ready with %zu requirement handlers, annotated map client %s, satellite annotator %s",
+      "Context gatherer ready with %zu requirement handlers, annotated map client %s, satellite annotator %s, FindAnything client %s",
       requirement_handlers_.size(),
       annotated_map_service_name_.c_str(),
-      satellite_map_annotator_service_name_.c_str());
+      satellite_map_annotator_service_name_.c_str(),
+      find_anything_service_name_.c_str());
   }
 
   ~ContextGathererNode() override
@@ -235,6 +245,7 @@ private:
   rclcpp_action::Server<GatherContext>::SharedPtr action_server_;
   rclcpp::Client<SaveMap>::SharedPtr annotated_map_client_;
   rclcpp::Client<AnnotateSatelliteMap>::SharedPtr satellite_map_annotator_client_;
+  rclcpp::Client<FindObjectLocations>::SharedPtr find_anything_client_;
 
   std::string action_name_;
   std::string output_directory_;
@@ -245,6 +256,9 @@ private:
   double annotated_map_service_timeout_sec_;
   std::string satellite_map_annotator_service_name_;
   double satellite_map_annotator_timeout_sec_;
+  std::string find_anything_service_name_;
+  double find_anything_service_timeout_sec_;
+  int find_anything_default_max_results_;
   std::string maptiler_api_key_;
   std::string maptiler_api_mode_;
   std::string maptiler_style_id_;
@@ -307,6 +321,10 @@ private:
     };
     requirement_handlers_["SATELLITE_MAP"] = satellite_handler;
     requirement_handlers_["SATELLITE_TILE"] = satellite_handler;
+
+    requirement_handlers_["FIND_ANYTHING"] = [this](json& ctx, std::vector<std::string>& /*uris*/) {
+      handle_find_anything(ctx);
+    };
   }
 
   void append_geo_hint_context(const std::string& geo_hint, json& context_json)
@@ -590,6 +608,102 @@ private:
       RCLCPP_INFO(
         get_logger(), "Captured SATELLITE_MAP via service: %s",
         artifacts.image_uri.c_str());
+    }
+  }
+
+  void handle_find_anything(json& context_json)
+  {
+    json request_json = extract_find_anything_request(context_json);
+    const std::vector<std::string> queries = extract_find_anything_queries(context_json, request_json);
+    if (queries.empty()) {
+      RCLCPP_WARN(
+        get_logger(),
+        "FIND_ANYTHING requested but no query was provided in request hints or mission text");
+      return;
+    }
+
+    if (!find_anything_client_->wait_for_service(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double>(find_anything_service_timeout_sec_))))
+    {
+      RCLCPP_ERROR(
+        get_logger(), "FindAnything service %s is unavailable",
+        find_anything_service_name_.c_str());
+      return;
+    }
+
+    const uint32_t max_results = static_cast<uint32_t>(std::max(
+      1,
+      std::min(50, extract_int_from_json(
+        request_json, "max_results", find_anything_default_max_results_))));
+
+    json query_results = json::array();
+    for (const auto& query : queries) {
+      auto request = std::make_shared<FindObjectLocations::Request>();
+      request->query = query;
+      request->max_results = max_results;
+
+      auto future = find_anything_client_->async_send_request(request);
+      if (future.wait_for(std::chrono::duration<double>(find_anything_service_timeout_sec_)) !=
+          std::future_status::ready)
+      {
+        RCLCPP_WARN(
+          get_logger(), "Timed out waiting for FindAnything response for query '%s'",
+          query.c_str());
+        query_results.push_back({
+          {"query", query},
+          {"max_results", max_results},
+          {"success", false},
+          {"message", "Timed out waiting for service response"},
+          {"locations", json::array()}
+        });
+        continue;
+      }
+
+      const auto response = future.get();
+      json locations = json::array();
+      if (response) {
+        for (const auto& location : response->locations) {
+          locations.push_back({
+            {"frame_id", location.header.frame_id},
+            {"timestamp", {
+              {"sec", location.header.stamp.sec},
+              {"nanosec", location.header.stamp.nanosec}
+            }},
+            {"point", {
+              {"x", location.point.x},
+              {"y", location.point.y},
+              {"z", location.point.z}
+            }}
+          });
+        }
+      }
+
+      query_results.push_back({
+        {"query", query},
+        {"max_results", max_results},
+        {"success", response != nullptr},
+        {"result_count", locations.size()},
+        {"locations", locations}
+      });
+    }
+
+    context_json["FIND_ANYTHING"] = {
+      {"service_name", find_anything_service_name_},
+      {"max_results", max_results},
+      {"query_count", query_results.size()},
+      {"queries", query_results}
+    };
+    if (query_results.size() == 1) {
+      context_json["FIND_ANYTHING"]["query"] = query_results[0]["query"];
+      context_json["FIND_ANYTHING"]["result_count"] = query_results[0].value("result_count", 0);
+      context_json["FIND_ANYTHING"]["locations"] = query_results[0]["locations"];
+    }
+
+    if (debug_logging_) {
+      RCLCPP_INFO(
+        get_logger(), "Captured FIND_ANYTHING for %zu query/queries via %s",
+        queries.size(), find_anything_service_name_.c_str());
     }
   }
 
@@ -940,6 +1054,104 @@ private:
       return json();
     }
     return find_nested_satellite_request(*request_hints);
+  }
+
+  static json find_nested_find_anything_request(const json& value)
+  {
+    if (!value.is_object()) {
+      if (value.is_string()) {
+        return {{"query", value.get<std::string>()}};
+      }
+      return json();
+    }
+
+    for (const auto& key : {"FIND_ANYTHING", "find_anything", "OBJECT_QUERY", "object_query"}) {
+      const auto it = value.find(key);
+      if (it != value.end()) {
+        if (it->is_object()) {
+          return *it;
+        }
+        if (it->is_string()) {
+          return {{"query", it->get<std::string>()}};
+        }
+      }
+    }
+
+    const auto original_context = value.find("original_goal_context");
+    if (original_context != value.end()) {
+      const json nested = find_nested_find_anything_request(*original_context);
+      if (!nested.is_null()) {
+        return nested;
+      }
+    }
+
+    return json();
+  }
+
+  static json extract_find_anything_request(const json& context_json)
+  {
+    const auto request_hints = context_json.find("REQUEST_HINTS");
+    if (request_hints == context_json.end()) {
+      return json::object();
+    }
+    const json request = find_nested_find_anything_request(*request_hints);
+    return request.is_object() ? request : json::object();
+  }
+
+  static std::string extract_mission_text(const json& context_json)
+  {
+    const auto request_hints = context_json.find("REQUEST_HINTS");
+    if (request_hints == context_json.end() || !request_hints->is_object()) {
+      return "";
+    }
+    const auto mission_request = request_hints->find("MISSION_REQUEST");
+    if (mission_request != request_hints->end() && mission_request->is_object()) {
+      const auto mission_text = mission_request->find("mission_text");
+      if (mission_text != mission_request->end() && mission_text->is_string()) {
+        return mission_text->get<std::string>();
+      }
+    }
+    return "";
+  }
+
+  static std::vector<std::string> extract_find_anything_queries(
+    const json& context_json,
+    const json& request_json)
+  {
+    std::vector<std::string> queries;
+    if (request_json.is_object()) {
+      const auto queries_it = request_json.find("queries");
+      if (queries_it != request_json.end() && queries_it->is_array()) {
+        for (const auto& entry : *queries_it) {
+          if (entry.is_string()) {
+            const std::string query = entry.get<std::string>();
+            if (!query.empty()) {
+              queries.push_back(query);
+            }
+          } else if (entry.is_object()) {
+            const std::string query = extract_first_string(
+              entry, {"query", "text", "object", "object_query"});
+            if (!query.empty()) {
+              queries.push_back(query);
+            }
+          }
+        }
+      }
+
+      const std::string single_query = extract_first_string(
+        request_json, {"query", "text", "object", "object_query"});
+      if (!single_query.empty()) {
+        queries.push_back(single_query);
+      }
+    }
+
+    if (queries.empty()) {
+      const std::string mission_text = extract_mission_text(context_json);
+      if (!mission_text.empty()) {
+        queries.push_back(mission_text);
+      }
+    }
+    return queries;
   }
 
   static std::string extract_mission_session_id(const json& context_json)
