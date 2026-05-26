@@ -30,3 +30,39 @@ which has a longer runtime but may produce better results because it is able to 
 - [ ] Lastenheft derived from requirements
 - [ ] fallback when no tree is available, this is where trigger would be to generate a new one or let the llm propose what it would need changed in the existing catalogue
 
+- why exactly this approach to the architecture? bestehende ansätze vergleichen
+
+- wie macht man das messbar? generierung von bt
+
+- warum wird evaluiert so wie evaliuiert wird? 
+    - ableiten aus der recherche
+
+- argument dass llms dass doch auch so können
+    - entkräftung durch baseline trials
+
+- baseline comparison als validierungsgrundlage
+    - händisch programmieren
+    - end2end generation vs. parametrisierung
+    - qgroundcontrol vs. just start
+
+- wo schaffe ich messbaren mehrwert? 
+    - zeitersparnis? hand-hab-barmachmachung der robotik
+    - wessen problem lösen wir?
+    - beschreibung des roboterbedieners
+
+- roboter / system soll erkennen, wenn er es nicht schaffen wird die mission zu vervollständigen und wenn der roboter während der execution es nicht schafft soll das klar ankommen
+
+- scope klar definieren, wo beginne ich?  welche annahmen treffen über die leute?
+- domain experts befragen wie lange es dauert und wieviel zeit man spart
+- 
+- rückfragen zu den capabilities, mission description stichwort: see zu see durch schilf
+
+- bt selection correctness,
+
+- adverserial agent? why not? 
+
+- Wasserrichtlinie, 
+
+- Scenario A: Die Stammdicke messen als exemplarisches Beispiel um zu zeigen 
+
+- 
