@@ -2,7 +2,7 @@
 
 This repository contains a software module which runs a behavior tree for an autonomous mobile robot. Whenever the behavior tree executor detects that the BT in its current form has got limitations and can not complete its mission with the available behaviors it will query an LLM in order for it to generate a new subtree which purpose it is to be expand the domain of the robot. The tree then gets relaunched and the robot can finish its task with the new and improved BT guiding its action.
 
-The general idea is to have a given set of BT skills that call ROS 2 services/actions, while a **mission coordinator** node outside the tree talks to the LLM (via `llm_interface`) to decide **which** subtree/entry point should run next. It also triggers tree regeneration when the skill catalog is insufficient. The BT itself remains a pure execution layer.
+The general idea is to have a given set of BT skills that call ROS 2 services/actions, while a **mission coordinator** node outside the tree first asks `mission_reasoner` whether the mission is compatible with the robot capabilities. The reasoner can ask `llm_interface` to extract structured mission requirements, but the final capability decision remains deterministic. After that gate, the coordinator talks to the LLM to decide **which** subtree/entry point should run next. It also triggers tree regeneration when the skill catalog is insufficient. The BT itself remains a pure execution layer.
 
 The way to interact with the system is by chat, either via CLI or via a simple web interface; both talk to the mission coordinator action server.
 
@@ -142,7 +142,12 @@ Learn more: [Using tmux with ROS](./docs/tmux_ros_guide.md)
 - bt_executor -> extends BehaviorTree.ROS2 with needed functionality
 - robot_actions -> robot specific behavior tree actions like Drive, TakePicture etc.
 - mission_coordinator -> orchestrates LLM planning + bt_executor goals
+- mission_reasoner -> checks natural-language missions against robot capabilities before BT selection
 - llm_interface/context_gatherer -> LangChain
+
+For the complete handoff from implemented BT.CPP robot action plugins to a
+running mission, see
+[From BT.CPP Robot Action Plugins to a Running Mission](./docs/robot_action_plugins_to_running_system.md).
 
 ### Possible scenarios where this approach can outperform current methods of behavior tree generation and hence show higher levels of deliberation for the robot:
 

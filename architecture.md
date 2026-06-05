@@ -7,24 +7,32 @@ mission flow is not confused with future tree-regeneration work.
 ## Overview
 
 `generalist_bt_gen` is a ROS 2 Jazzy stack for running natural-language robot
-missions through a mission coordinator, an LLM payload layer, a context-gathering
-node, and a BehaviorTree.ROS2 executor.
+missions through a mission coordinator, a deterministic mission reasoner, an LLM
+payload layer, a context-gathering node, and a BehaviorTree.ROS2 executor.
 
 The implemented flow is:
 
 1. A user submits a command through the CLI or web UI.
 2. `mission_coordinator` accepts a `MissionCommand` action goal.
-3. `mission_coordinator` asks `llm_interface` to choose one known behavior tree.
-4. `mission_coordinator` asks `context_gatherer` for the context required by that
+3. `mission_coordinator` asks `mission_reasoner` to validate the command against
+   the robot system description and BT catalogue capabilities. When enabled,
+   `mission_reasoner` first asks `llm_interface` to extract structured mission
+   requirements, then applies deterministic validation to those requirements.
+4. If the mission is accepted, `mission_coordinator` asks `llm_interface` to
+   choose one compatible known behavior tree.
+5. `mission_coordinator` asks `context_gatherer` for the context required by that
    tree.
-5. `mission_coordinator` asks `llm_interface` to turn that context into a
+6. `mission_coordinator` asks `llm_interface` to turn that context into a
    blackboard payload.
-6. If operator approval is required, the pending plan is published and the
+7. If operator approval is required, the pending plan is published and the
    coordinator waits for approval, rejection, or abort.
-7. After approval, `mission_coordinator` sends an `ExecuteTree` goal to
+8. After approval, `mission_coordinator` sends an `ExecuteTree` goal to
    `bt_executor`.
-8. `bt_executor` creates and ticks the selected BehaviorTree.CPP tree, loads the
+9. `bt_executor` creates and ticks the selected BehaviorTree.CPP tree, loads the
    JSON payload into the blackboard, and returns the final BT node status.
+
+If the reasoner returns a clarification question or refusal, the mission ends
+before BT selection, context gathering, payload generation, or execution.
 
 The executor does not currently synthesize, merge, reload, or regenerate behavior
 trees after failures. `PlanSubtree.srv` exists and `llm_interface` serves it, but
@@ -37,10 +45,11 @@ the current mission coordinator runtime does not call it.
 | `generalist_bringup` | Launches the integrated stack: `bt_executor`, `llm_interface` unless demo mode is enabled, `context_gatherer`, map helper nodes, `mission_coordinator`, one UI, and a dummy temperature service node. | `launch/generalist_bringup.launch.py`, `config/bt_executor_params.yaml` |
 | `user_interface` | Provides CLI and FastAPI/uvicorn web UIs. Both use `MissionGateway` to send mission goals to `mission_coordinator`, query mission state, send approve/reject/abort commands, subscribe to status topics, and display pending plan previews. The UI does not call `bt_executor` directly. | `MissionCommand.action`, `GetMissionState.srv`, `MissionControl.srv`, `OperatorDecision.srv`, `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree`, `/mission_coordinator/pending_plan` |
 | `mission_coordinator` | Owns the runtime orchestration. It exposes `/mission_coordinator/execute_tree`, tracks one active mission session, selects a tree, gathers context, builds a payload, waits for optional operator approval, supports payload refinement after rejection, dispatches to `bt_executor`, and maps the BT result into a mission result. | Action server: `/mission_coordinator/execute_tree`. Clients: `/llm_interface/select_behavior_tree`, `/context_gatherer/gather`, `/llm_interface/create_payload`, `/bt_executor/execute_tree`. Services: `/mission_coordinator/status`, `/mission_coordinator/control`, `/mission_coordinator/operator_decision` plus per-process operator-decision alias. |
-| `llm_interface` | Provides LangChain-backed selection and payload services. Selection chooses from the configured tree catalog. Payload generation maps context plus a subtree contract into blackboard JSON, with optional multimodal image attachments and optional schema normalization. If configured LLM calls fail, selection and payload generation have heuristic fallbacks. | Services: `/llm_interface/select_behavior_tree`, `/llm_interface/create_payload`, `/llm_interface/plan_subtree`. Providers implemented in code: Gemini, OpenAI, OpenRouter. |
+| `mission_reasoner` | Validates mission commands before BT selection. It optionally asks `llm_interface` to extract structured requirements, then compares those requirements plus deterministic command rules against the configured system description and BT metadata. It returns accept, clarification, or refusal and can narrow the BT candidate list. | Service: `/mission_reasoner/validate_mission`. Client: `/llm_interface/extract_mission_requirements`. Config: `config/system_description.yaml`, `config/tree_metadata.yaml`. |
+| `llm_interface` | Provides LangChain-backed requirement extraction, selection, and payload services. Requirement extraction maps free-form commands into structured capability requirements. Selection chooses from the configured tree catalog. Payload generation maps context plus a subtree contract into blackboard JSON, with optional multimodal image attachments and optional schema normalization. If configured LLM calls fail, selection and payload generation have heuristic fallbacks. | Services: `/llm_interface/extract_mission_requirements`, `/llm_interface/select_behavior_tree`, `/llm_interface/create_payload`, `/llm_interface/plan_subtree`. Providers implemented in code: Gemini, OpenAI, OpenRouter. |
 | `context_gatherer` | Serves a `GatherContext` action. It subscribes to robot state and sensor topics, captures requested context keys, saves image/map artifacts under `/tmp/context_gatherer` by default, and returns structured JSON plus attachment URIs. It also calls helper services for annotated SLAM maps, satellite-map annotation/fetching, and FindAnything object-location lookup. | Action server: `/context_gatherer/gather`. Inputs include `/odom`, optional pose covariance, GPS, RGB/depth camera topics, battery state, map topic, and `/language_processor/find_object_locations`. |
 | `bt_executor` | Subclasses `BT::TreeExecutionServer`. It loads BT XML and robot action plugins, exposes `/bt_executor/execute_tree`, creates a fresh `BT::Tree` for each action goal, seeds the blackboard from the goal payload, publishes textual status and active tree root name, and returns the final BT result. | Action server: `/bt_executor/execute_tree`. Publishes `/mission_coordinator/status_text` and `/mission_coordinator/active_subtree`. Loads XML from `bt_executor/trees` and plugins from `robot_actions/lib`. |
-| `robot_actions` | BehaviorTree.CPP/BehaviorTree.ROS2 plugins used by the XML trees. Current registered nodes are `MoveTo`, `TakePicture`, `LogTemperature`, `RestartNode`, and `ParseWaypoints`. | Nav2 `NavigateToPose`, trigger-style ROS services, blackboard ports. |
+| `robot_actions` | BehaviorTree.CPP/BehaviorTree.ROS2 plugins used by the XML trees. Current registered nodes include `MoveTo`, `TakePicture`/`TakePhoto`, `DistanceTraveled`, `FindObjectLocation`/`FindAnything`, `LogTemperature`, `RestartNode`, and `ParseWaypoints`. | Nav2 `NavigateToPose`, FindAnything object-location service, RGB image and odometry topics, trigger-style ROS services, blackboard ports. |
 | `gen_bt_interfaces` | Custom action/service contracts shared by Python and C++ packages. | `MissionCommand`, `GatherContext`, `CreatePayload`, `SelectBehaviorTree`, `PlanSubtree`, `GetMissionState`, `MissionControl`, `OperatorDecision`, and related services. |
 
 There is no implemented `bt_updater` package in the current repository.
@@ -48,17 +57,16 @@ There is no implemented `bt_updater` package in the current repository.
 ## Tree Catalog and Metadata
 
 The mission coordinator selects from a configured catalog, not by scanning all XML
-files at runtime. The default configured catalog contains only:
+files at runtime. The configured catalog is first filtered by `mission_reasoner`
+using static capability metadata.
 
-- `demo_tree.xml::Iterates waypoint queue via MoveTo and LogTemperature.`
+`config/tree_metadata.yaml` contains metadata for `demo_tree.xml`,
+`navigate_and_photograph.xml`, and `explore_area.xml`. Only `demo_tree.xml` is
+present in `src/bt_executor/trees`; the others are catalogue-level future trees.
 
-`config/tree_metadata.yaml` contains metadata for `demo_tree.xml` and additional
-future trees such as `navigate_and_photograph.xml` and `explore_area.xml`. Only
-`demo_tree.xml` is present in `src/bt_executor/trees` and in the mission
-coordinator catalog by default.
+The coordinator reads metadata to decide:
 
-For a selected tree, the coordinator reads metadata to decide:
-
+- `mission_intents` and `required_capabilities`: passed to `mission_reasoner`.
 - `context_requirements`: passed to `context_gatherer`.
 - `blackboard_contract`: passed to `llm_interface/create_payload`.
 
@@ -95,6 +103,7 @@ sequenceDiagram
     actor User
     participant UI as user_interface
     participant MC as mission_coordinator
+    participant R as mission_reasoner
     participant LLM as llm_interface
     participant Ctx as context_gatherer
     participant Exec as bt_executor
@@ -107,7 +116,17 @@ sequenceDiagram
     alt demo_mode true
       MC-->>UI: MissionCommand result: Demo mission acknowledged
     else normal runtime
-      MC->>LLM: SelectBehaviorTree(user_command, available_trees, descriptions)
+      MC->>R: ValidateMission(command, context_json, tree_catalog_json)
+      opt LLM requirement extraction enabled
+        R->>LLM: ExtractMissionRequirements(command, capability catalog, tree catalog)
+        LLM-->>R: required_capabilities + constraints + ambiguities
+      end
+      R-->>MC: ACCEPT + candidate_trees / CLARIFY / REFUSE
+
+      alt clarification or refusal
+        MC-->>UI: MissionCommand result accepted=false
+      else accepted
+      MC->>LLM: SelectBehaviorTree(user_command, candidate_trees, descriptions)
       LLM-->>MC: selected_tree or no match
 
       alt no selected tree
@@ -141,12 +160,15 @@ sequenceDiagram
         Exec-->>MC: ExecuteTree result(node_status, return_message)
         MC-->>UI: MissionCommand result(accepted = node_status SUCCESS and not aborted)
       end
+      end
     end
 ```
 
 Important runtime details:
 
 - `mission_coordinator` handles one active mission at a time.
+- `mission_reasoner` is a hard pre-selection gate. When enabled, an unavailable
+  reasoner service causes the coordinator to fail closed.
 - Operator approval is enabled by default. UI clients can bypass it per goal by
   setting `auto_execute=true` in the goal context JSON.
 - A rejected plan with feedback does not change the BT XML. It causes another
@@ -162,8 +184,12 @@ Important runtime details:
 
 ## LLM Behavior
 
-`llm_interface` currently implements three services:
+`llm_interface` currently implements four services:
 
+- `ExtractMissionRequirements`: converts the free-form mission command into
+  structured capability requirements, mission intents, constraints, and
+  ambiguities for `mission_reasoner`. The reasoner remains the final
+  deterministic gate.
 - `SelectBehaviorTree`: chooses one tree from the supplied catalog. It calls the
   configured LangChain provider when enabled and falls back to the first tree if
   the model is unavailable or returns an invalid choice.
@@ -212,6 +238,9 @@ succeed with whatever context was collected.
 - `context_gatherer` writes artifacts under `/tmp/context_gatherer` by default.
 - BehaviorTree.ROS2 creates a Groot2 publisher for each created tree on the
   configured port.
+- `mission_reasoner` reads the static system description from
+  `config/system_description.yaml` and can use
+  `/llm_interface/extract_mission_requirements` as a semantic parser.
 
 Some declared parameters are reserved or only partially wired today, including
 `llm_plan_service`, `context_snapshot_service`, `enable_context_snapshot`,

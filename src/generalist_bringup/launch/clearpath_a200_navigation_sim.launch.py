@@ -38,7 +38,7 @@ def generate_launch_description():
 
     world_arg = DeclareLaunchArgument(
         'world',
-        default_value='warehouse',
+        default_value='solar_farm',
         description='Gazebo world to load (warehouse, office, construction, etc.)'
     )
 

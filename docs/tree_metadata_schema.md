@@ -1,6 +1,8 @@
 # Subtree Metadata Schema
 
 This file defines metadata for behavior trees, including context requirements and blackboard contracts.
+It also declares the static capabilities used by `mission_reasoner` before
+behavior-tree selection.
 
 ## Schema Format
 
@@ -8,6 +10,14 @@ This file defines metadata for behavior trees, including context requirements an
 trees:
   - id: "tree_filename.xml"
     description: "Human-readable description of what this tree does"
+    mission_intents:
+      - "navigate_waypoints"  # Mission classes this tree can satisfy
+    required_capabilities:
+      - "locomotion.ground"   # Capability IDs declared in system_description.yaml
+    unsupported_requirements:
+      - "locomotion.flight"   # Optional explicit refusal hints
+    selection_constraints:
+      max_range_m: 5000       # Optional static limits checked before selection
     context_requirements:
       - REQUIREMENT_NAME  # Enum-like values that context_gatherer understands
     blackboard_contract:
@@ -23,6 +33,21 @@ trees:
 trees:
   - id: "navigate_and_photograph.xml"
     description: "Navigate to waypoints and take photos at regular intervals"
+    mission_intents:
+      - "navigate_waypoints"
+      - "photograph_route"
+      - "document_area"
+    required_capabilities:
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "sensing.rgb_image"
+      - "localization.gps"
+    unsupported_requirements:
+      - "locomotion.flight"
+      - "sensing.thermal_image"
+    selection_constraints:
+      max_range_m: 5000
+      requires_target_area_or_route: true
     context_requirements:
       - ROBOT_POSE
       - RGB_IMAGE
@@ -42,6 +67,14 @@ trees:
 
   - id: "explore_area.xml"
     description: "Autonomous exploration of an unknown area with obstacle avoidance"
+    mission_intents:
+      - "explore_area"
+      - "survey_area"
+    required_capabilities:
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "localization.odometry"
+      - "mapping.slam"
     context_requirements:
       - ROBOT_POSE
       - POINTCLOUD
@@ -62,6 +95,14 @@ trees:
 
   - id: "demo_tree.xml"
     description: "Simple demo tree for testing the system"
+    mission_intents:
+      - "navigate_waypoints"
+      - "log_temperature"
+    required_capabilities:
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "sensing.temperature"
+      - "payload.parse_waypoints"
     context_requirements:
       - ROBOT_POSE
     blackboard_contract:
@@ -83,3 +124,12 @@ trees:
 | `GPS_FIX` | GPS coordinates | `/gps/fix` |
 | `BATTERY_STATE` | Battery percentage and voltage | `/battery_state` |
 | `SEMANTIC_MAP` | Semantic map query result | Custom service |
+
+## Capability Fields
+
+| Field | Description |
+|-------------|-------------|
+| `mission_intents` | Normalized mission classes that the reasoner can use for explanations and future extraction. |
+| `required_capabilities` | Capability IDs that must be supported by `config/system_description.yaml` for this tree to remain a candidate. |
+| `unsupported_requirements` | Optional common capability mismatches that should produce specific refusal messages. |
+| `selection_constraints` | Static limits such as maximum range or required target information. Dynamic checks still belong in context gathering or payload validation. |

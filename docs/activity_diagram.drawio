@@ -37,13 +37,13 @@
                 <mxCell id="recv_mission" value="Receive Goal" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
                     <mxGeometry x="40" y="170" width="120" height="40" as="geometry"/>
                 </mxCell>
-                <mxCell id="call_select" value="Call SelectBehaviorTree" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                <mxCell id="call_select" value="Call ValidateMission&#xa;then SelectBehaviorTree" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
                     <mxGeometry x="40" y="240" width="120" height="40" as="geometry"/>
                 </mxCell>
-                <mxCell id="dec_found" value="Tree Found?" style="rhombus;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                <mxCell id="dec_found" value="Reasoner accepts&#xa;and tree found?" style="rhombus;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
                     <mxGeometry x="60" y="310" width="80" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="fail_select" value="Report Failure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="lane_mc" vertex="1">
+                <mxCell id="fail_select" value="Report clarification,&#xa;refusal, or failure" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="lane_mc" vertex="1">
                     <mxGeometry x="130" y="370" width="60" height="40" as="geometry"/>
                 </mxCell>
                 <mxCell id="call_gather" value="Call GatherContext" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
@@ -80,6 +80,9 @@
                 </mxCell>
                 <mxCell id="lane_llm" value="LLM Interface" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
                     <mxGeometry x="400" y="40" width="160" height="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="lane_reasoner_note" value="mission_reasoner: optional LLM requirement extraction, then deterministic validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="410" y="180" width="140" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="process_select" value="Select Best Tree&#xa;(LLM/Rules)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
                     <mxGeometry x="20" y="240" width="120" height="40" as="geometry"/>

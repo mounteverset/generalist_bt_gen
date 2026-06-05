@@ -17,6 +17,9 @@
                 <mxCell id="llm_interface" value="llm_interface" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;verticalAlign=top;" parent="1" vertex="1">
                     <mxGeometry x="700" y="40" width="160" height="80" as="geometry"/>
                 </mxCell>
+                <mxCell id="mission_reasoner" value="mission_reasoner" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="700" y="130" width="160" height="70" as="geometry"/>
+                </mxCell>
                 <mxCell id="context_gatherer" value="context_gatherer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;verticalAlign=top;" parent="1" vertex="1">
                     <mxGeometry x="700" y="210" width="160" height="80" as="geometry"/>
                 </mxCell>
@@ -52,6 +55,24 @@
                 </mxCell>
                 <mxCell id="text_mc_llm_select" value="Service Client (SelectBehaviorTree)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
                     <mxGeometry x="550" y="110" width="130" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_mc_reasoner_validate" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="mission_coordinator" target="mission_reasoner" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint as="sourcePoint"/>
+                        <mxPoint as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="text_mc_reasoner_validate" value="Service Client (ValidateMission)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="550" y="180" width="130" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_reasoner_llm_extract" value="" style="endArrow=classic;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;dashed=1;" parent="1" source="mission_reasoner" target="llm_interface" edge="1">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint as="sourcePoint"/>
+                        <mxPoint as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="text_reasoner_llm_extract" value="Service Client (ExtractMissionRequirements)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="110" width="170" height="30" as="geometry"/>
                 </mxCell>
                 <mxCell id="edge_mc_llm_plan" value="" style="endArrow=classic;html=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" parent="1" source="mission_coordinator" target="llm_interface" edge="1">
                     <mxGeometry width="50" height="50" relative="1" as="geometry">

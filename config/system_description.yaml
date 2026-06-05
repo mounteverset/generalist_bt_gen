@@ -1,0 +1,141 @@
+# Machine-readable platform capability model used by mission_reasoner.
+
+platform:
+  id: "a200_0000"
+  name: "Clearpath Husky A200"
+  type: "ground_rover"
+  locomotion:
+    - "ground"
+  max_range_m: 5000
+  max_speed_ms: 1.0
+  max_mission_duration_s: 7200
+  payload_capacity_kg: 2.0
+
+sensors:
+  - id: "rgb_camera"
+    capability: "sensing.rgb_image"
+    type: "camera"
+    modality: "RGB"
+    topic: "/a200_0000/sensors/camera_0/color/image"
+  - id: "depth_camera"
+    capability: "sensing.depth_image"
+    type: "camera"
+    modality: "depth"
+    topic: "/a200_0000/sensors/camera_0/depth/image"
+  - id: "gps"
+    capability: "localization.gps"
+    type: "navigation"
+    modality: "GPS"
+    topic: "/gps/fix"
+  - id: "imu"
+    capability: "localization.imu"
+    type: "navigation"
+    modality: "IMU"
+    topic: "/imu/data"
+  - id: "odom"
+    capability: "localization.odometry"
+    type: "navigation"
+    modality: "odometry"
+    topic: "/odom"
+  - id: "slam_map"
+    capability: "mapping.slam"
+    type: "map"
+    modality: "occupancy_grid"
+    topic: "/a200_0000/map"
+
+actions:
+  - id: "navigate"
+    capability: "navigation.waypoints"
+    type: "locomotion"
+    ros_interface: "/a200_0000/navigate_to_pose"
+    ros_type: "action"
+    description: "Navigate to target poses on traversable ground."
+    requires:
+      - "locomotion.ground"
+      - "localization.odometry"
+  - id: "photograph"
+    capability: "sensing.rgb_image"
+    type: "sensing"
+    ros_interface: "/camera/capture"
+    ros_type: "service"
+    description: "Capture RGB images."
+    requires:
+      - "sensing.rgb_image"
+  - id: "find_object_location"
+    capability: "perception.object_location"
+    type: "perception"
+    ros_interface: "/language_processor/find_object_locations"
+    ros_type: "service"
+    description: "Find object point locations from a natural-language object query."
+    requires:
+      - "mapping.slam"
+      - "sensing.rgb_image"
+  - id: "log_temperature"
+    capability: "sensing.temperature"
+    type: "sensing"
+    ros_interface: "/temperature/log"
+    ros_type: "service"
+    description: "Log temperature through the configured demo service."
+  - id: "parse_waypoints"
+    capability: "payload.parse_waypoints"
+    type: "utility"
+    description: "Parse waypoint payloads into a BT waypoint queue."
+  - id: "restart_node"
+    capability: "system.restart_node"
+    type: "system"
+    description: "Restart a named ROS node through a service wrapper."
+
+capabilities:
+  supported:
+    - "locomotion.ground"
+    - "navigation.waypoints"
+    - "sensing.rgb_image"
+    - "sensing.depth_image"
+    - "sensing.temperature"
+    - "localization.gps"
+    - "localization.imu"
+    - "localization.odometry"
+    - "mapping.slam"
+    - "perception.object_location"
+    - "payload.parse_waypoints"
+    - "system.restart_node"
+  unsupported:
+    locomotion.flight: "The Husky A200 is a ground rover and cannot fly."
+    locomotion.water_surface: "The Husky A200 is not configured as a surface vessel."
+    sensing.thermal_image: "No thermal or infrared camera is declared for this platform."
+    manipulation.pick_place: "No manipulator or gripper is declared for this platform."
+    sampling.soil: "No soil sampling or digging tool is declared for this platform."
+    sampling.water: "No water sampling payload is declared for this platform."
+
+environmental_limits:
+  max_wind_kmh: 25
+  min_ambient_light_lux: 50
+  operating_temp_c:
+    - -10
+    - 40
+
+command_capability_rules:
+  - capability: "locomotion.flight"
+    keywords: ["fly", "flight", "aerial", "drone", "overfly", "treetop", "treetops"]
+  - capability: "locomotion.water_surface"
+    keywords: ["sail", "boat", "shoreline from water", "across the lake"]
+  - capability: "sensing.thermal_image"
+    keywords: ["thermal", "infrared", "ir image", "heat signature"]
+  - capability: "manipulation.pick_place"
+    keywords: ["pick up", "grip", "grab", "carry", "collect object"]
+  - capability: "sampling.soil"
+    keywords: ["dig", "soil sample", "soil sampling", "sample soil", "bore"]
+  - capability: "sampling.water"
+    keywords: ["water sample", "sample water", "measure water quality"]
+  - capability: "sensing.rgb_image"
+    keywords: ["photo", "photos", "picture", "pictures", "photograph", "document", "image", "images"]
+  - capability: "navigation.waypoints"
+    keywords: ["drive", "navigate", "go to", "patrol", "survey", "explore", "waypoint", "waypoints", "route"]
+  - capability: "perception.object_location"
+    keywords: ["find object", "find the", "locate object", "locate the", "where is", "object location"]
+
+clarification_rules:
+  - intent: "document"
+    keywords: ["document", "inspect", "survey"]
+    question: "What target area or route should the robot document?"
+    requires_any_context_keys: ["target_area", "waypoints", "route", "geo_hint"]

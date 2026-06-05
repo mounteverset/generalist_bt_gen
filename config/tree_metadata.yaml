@@ -4,6 +4,21 @@
 trees:
   - id: "demo_tree.xml"
     description: "Iterates through waypoints, navigates, and logs temperature."
+    mission_intents:
+      - "navigate_waypoints"
+      - "log_temperature"
+    required_capabilities:
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "sensing.temperature"
+      - "payload.parse_waypoints"
+    unsupported_requirements:
+      - "locomotion.flight"
+      - "sensing.thermal_image"
+      - "manipulation.pick_place"
+      - "sampling.soil"
+    selection_constraints:
+      max_range_m: 5000
     context_requirements: [ROBOT_POSE, ANNOTATED_SLAM_MAP_IMAGE] # , SATELLITE_MAP, GPS_FIX
     blackboard_contract:
       waypoints:
@@ -23,6 +38,23 @@ trees:
 
   - id: "navigate_and_photograph.xml"
     description: "Navigate to waypoints and take photos at regular intervals"
+    mission_intents:
+      - "navigate_waypoints"
+      - "photograph_route"
+      - "document_area"
+    required_capabilities:
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "sensing.rgb_image"
+      - "localization.gps"
+    unsupported_requirements:
+      - "locomotion.flight"
+      - "sensing.thermal_image"
+      - "manipulation.pick_place"
+      - "sampling.soil"
+    selection_constraints:
+      max_range_m: 5000
+      requires_target_area_or_route: true
     context_requirements:
       - ROBOT_POSE
       - RGB_IMAGE
@@ -44,10 +76,46 @@ trees:
       camera_topic:
         type: "string"
         required: false
-        default: "/camera/image_raw"
+        default: "/a200_0000/sensors/camera_0/color/image"
+      odom_topic:
+        type: "string"
+        required: false
+        default: "/odom"
+      photo_output_directory:
+        type: "string"
+        required: false
+        default: "/tmp/robot_actions/photos"
+      photo_filename_prefix:
+        type: "string"
+        required: false
+        default: "mission_photo"
+      image_timeout_ms:
+        type: "int"
+        required: false
+        default: 1000
+      odom_timeout_ms:
+        type: "int"
+        required: false
+        default: 50
 
   - id: "explore_area.xml"
     description: "Autonomous exploration of an unknown area with obstacle avoidance"
+    mission_intents:
+      - "explore_area"
+      - "survey_area"
+    required_capabilities:
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "localization.odometry"
+      - "mapping.slam"
+    unsupported_requirements:
+      - "locomotion.flight"
+      - "sensing.thermal_image"
+      - "manipulation.pick_place"
+      - "sampling.soil"
+    selection_constraints:
+      max_radius_m: 50
+      min_battery_percent: 20
     context_requirements:
       - ROBOT_POSE
       - POINTCLOUD
