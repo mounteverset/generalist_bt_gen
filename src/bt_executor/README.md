@@ -38,7 +38,7 @@ Key parameters:
 | `action_name` | Action server name exposed to mission coordinator. | `/bt_executor/execute_tree` |
 | `plugin_directories` | Additional directories scanned for ROS BT plugins. Accepts absolute paths or `package/subfolder` entries resolved relative to the package prefix. | `["robot_actions/lib"]` |
 | `nav2_action_name` | Default action server name used by the `MoveTo` BT node (can still be overridden per-node via the `action_name` input port). | `"/navigate_to_pose"` |
-| `log_temperature_service_name` / `take_picture_service_name` | Default service names used by the respective `robot_actions` service nodes (overridable via `service_name` input ports). | `"/log_temperature"`, `"/take_picture"` |
+| `log_temperature_service_name` / `take_photo_image_topic` / `distance_traveled_odom_topic` / `find_anything_service_name` | Default service/topic names used by the respective `robot_actions` sensing/perception nodes. `TakePicture`/`TakePhoto` and `DistanceTraveled` can override image/odometry topics with input ports. `FindObjectLocation`/`FindAnything` can override the service with the standard `service_name` port. | `"/log_temperature"`, `"/a200_0000/sensors/camera_0/color/image"`, `"/odom"`, `"/language_processor/find_object_locations"` |
 | `behavior_trees` | List of `package/subfolder` entries that contain BT XML files to pre-register. | `["bt_executor/trees"]` |
 | `status_topic` / `active_node_topic` | Topics publishing textual status + active subtree for UI/mission coordinator. | `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree` |
 | `enable_debug_logging` | Enables verbose BT execution logs (per-tick blackboard dump + robot action debug traces). Keep `false` for normal operation. | `false` |

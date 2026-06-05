@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<!--
+Tree Name: navigate_and_photograph.xml
+Description: Follow a waypoint mission while a composed distance gate and
+             TakePhoto action save an RGB image every configured odometry interval.
+Usage Instructions:
+  - Payload must include "waypoints" as semicolon-separated x,y,yaw entries.
+  - "photo_interval_m" controls the traveled-distance interval between captures.
+  - Camera and odometry topics can be supplied through the blackboard payload or
+    fall back to robot_actions parameters.
+-->
+<root BTCPP_format="4" main_tree_to_execute="navigate_and_photograph.xml">
+  <BehaviorTree ID="navigate_and_photograph.xml">
+    <Sequence name="NavigateAndPhotographMission">
+      <ParseWaypoints raw_waypoints="{waypoints}" waypoint_queue="{waypoint_queue}" waypoint_count="{waypoint_count}" />
+      <Parallel name="NavigateWhilePhotographing" success_count="1" failure_count="1">
+        <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="SUCCESS">
+          <Sequence name="VisitWaypoint">
+            <MoveTo name="DriveToWaypoint" pose="{active_waypoint}" action_name="/a200_0000/navigate_to_pose"/>
+          </Sequence>
+        </LoopString>
+        <KeepRunningUntilFailure>
+          <Sequence name="PhotographAtDistanceInterval">
+            <DistanceTraveled
+              interval_m="{photo_interval_m}"
+              odom_topic="{odom_topic}"
+              odom_timeout_ms="{odom_timeout_ms}"
+              distance_accumulated_m="{photo_distance_accumulated_m}" />
+            <TakePhoto
+              image_topic="{camera_topic}"
+              output_directory="{photo_output_directory}"
+              filename_prefix="{photo_filename_prefix}"
+              timeout_ms="{image_timeout_ms}"
+              filepath="{last_photo_path}" />
+          </Sequence>
+        </KeepRunningUntilFailure>
+      </Parallel>
+    </Sequence>
+  </BehaviorTree>
+</root>

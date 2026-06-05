@@ -8,6 +8,8 @@ ROS - related nodes will be making use of the boilerplate classes in behaviortre
 | Action Class Name | Type | Ports | Description | 
 | --- | --- | --- | --- |
 | MoveTo | `RosActionNode<nav2_msgs::action::NavigateToPose>` | `pose` (`"x,y,theta"`) | Sends NavigateToPose goals to Nav2 |
-| TakePicture | `RosServiceNode<std_srvs::srv::Trigger>` | `filepath` (output) | Invokes camera capture service and returns saved path |
+| TakePicture / TakePhoto | `SyncActionNode` | `image_topic`, `output_directory`, `filename_prefix`, `timeout_ms`, `filepath` (output) | Saves the latest RGB image from a configurable topic to disk |
+| FindObjectLocation / FindAnything | `RosServiceNode<language_feature_msgs::srv::FindObjectLocations>` | `object`, `max_results`, `default_yaw`, `x`/`y`/`yaw`/`pose`/`frame_id` (outputs) | Calls FindAnything and exposes the first returned object point as a 2D pose |
 | LogTemperature | `RosServiceNode<std_srvs::srv::Trigger>` | `logfile_path` (input) | Requests a temperature capture/logging service |
 | RestartNode | `RosServiceNode<std_srvs::srv::SetBool>` | `node_name` (input) | Asks supervisor service to restart the specified node |
+| DistanceTraveled | `StatefulActionNode` | `interval_m`, `odom_topic`, `odom_timeout_ms`, `distance_accumulated_m` (output) | Returns `SUCCESS` whenever the configured odometry distance interval has been traveled, otherwise `RUNNING` |

@@ -9,22 +9,33 @@ find_package(ament_cmake REQUIRED)
 find_package(behaviortree_cpp REQUIRED)
 find_package(behaviortree_ros2 REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(language_feature_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(OpenCV REQUIRED)
 
 set(dependencies
   behaviortree_cpp
   behaviortree_ros2
   nav2_msgs
+  nav_msgs
   geometry_msgs
+  language_feature_msgs
   rclcpp
   std_srvs
+  sensor_msgs
+  cv_bridge
 )
 
 add_library(${PROJECT_NAME} SHARED
   src/move_to.cpp
   src/take_picture.cpp
+  src/distance_traveled.cpp
+  src/find_object_location.cpp
   src/log_temperature.cpp
   src/restart_node.cpp
   src/parse_waypoints.cpp
@@ -36,6 +47,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 target_compile_definitions(${PROJECT_NAME} PRIVATE BT_PLUGIN_EXPORT)
 ament_target_dependencies(${PROJECT_NAME} ${dependencies})
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})
 
 install(
   TARGETS ${PROJECT_NAME}
