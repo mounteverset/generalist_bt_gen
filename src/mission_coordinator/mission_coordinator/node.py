@@ -21,6 +21,7 @@ from gen_bt_interfaces.srv import (
     MissionControl,
     OperatorDecision,
     SelectBehaviorTree,
+    ValidateMission,
 )
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -40,12 +41,14 @@ class CoordinatorParams:
     bt_executor_action: str
     context_gather_action: str
     create_payload_service: str
+    mission_reasoner_service: str
     context_snapshot_service: str
     status_topic: str
     active_subtree_topic: str
     pending_plan_topic: str
     operator_decision_service: str
     enable_context_snapshot: bool
+    enable_mission_reasoner: bool
     require_operator_accept: bool
     demo_mode: bool
     llm_timeout_sec: float
@@ -56,6 +59,7 @@ class CoordinatorParams:
     transcript_directory: Path
     known_trees: list
     tree_metadata_file: str
+    system_description_file: str
     mission_namespace: str = 'mission_coordinator'
 
 
@@ -63,6 +67,7 @@ class MissionCoordinatorNode(Node):
     """Skeleton node that will orchestrate UI, LLM, and BT executor interactions."""
 
     STATE_IDLE = 'IDLE'
+    STATE_VALIDATING_MISSION = 'VALIDATING_MISSION'
     STATE_SELECTING_TREE = 'SELECTING_TREE'
     STATE_GATHERING_CONTEXT = 'GATHERING_CONTEXT'
     STATE_BUILDING_PAYLOAD = 'BUILDING_PAYLOAD'
@@ -121,6 +126,9 @@ class MissionCoordinatorNode(Node):
         )
         self._create_payload_client = self.create_client(
             CreatePayload, self.params.create_payload_service
+        )
+        self._mission_reasoner_client = self.create_client(
+            ValidateMission, self.params.mission_reasoner_service
         )
         self._bt_executor_client = ActionClient(
             self, ExecuteTree, self.params.bt_executor_action
@@ -194,6 +202,9 @@ class MissionCoordinatorNode(Node):
             create_payload_service=declare(
                 'create_payload_service', '/llm_interface/create_payload'
             ),
+            mission_reasoner_service=declare(
+                'mission_reasoner_service', '/mission_reasoner/validate_mission'
+            ),
             context_snapshot_service=declare(
                 'context_snapshot_service', '/context_gatherer/snapshot'
             ),
@@ -208,6 +219,7 @@ class MissionCoordinatorNode(Node):
                 'operator_decision_service', '/mission_coordinator/operator_decision'
             ),
             enable_context_snapshot=bool(declare('enable_context_snapshot', True)),
+            enable_mission_reasoner=bool(declare('enable_mission_reasoner', True)),
             require_operator_accept=bool(declare('require_operator_accept', True)),
             demo_mode=bool(declare('demo_mode', True)),
             llm_timeout_sec=float(declare('llm_timeout_sec', 45.0)),
@@ -218,6 +230,7 @@ class MissionCoordinatorNode(Node):
             transcript_directory=transcript_dir,
             known_trees=declare('known_trees', known_trees_default) or known_trees_default,
             tree_metadata_file=declare('tree_metadata_file', ''),
+            system_description_file=declare('system_description_file', ''),
         )
 
     # endregion
@@ -429,7 +442,7 @@ class MissionCoordinatorNode(Node):
         self.get_logger().info(
             f'Received mission goal (session={requested_session})'
         )
-        self._set_lifecycle_state(self.STATE_SELECTING_TREE)
+        self._set_lifecycle_state(self.STATE_VALIDATING_MISSION)
         return GoalResponse.ACCEPT
 
     def _cancel_callback(self, goal_handle) -> CancelResponse:
@@ -448,9 +461,9 @@ class MissionCoordinatorNode(Node):
         aborted = False
 
         try:
-            self._set_lifecycle_state(self.STATE_SELECTING_TREE)
+            self._set_lifecycle_state(self.STATE_VALIDATING_MISSION)
             self._publish_status(f"Received mission: {goal.command}")
-            self._publish_active_subtree('selecting_tree')
+            self._publish_active_subtree('validating_mission')
             self._log_debug(f'Mission goal received: "{goal.command}" (session={session_id})')
 
             if self.params.demo_mode:
@@ -471,7 +484,17 @@ class MissionCoordinatorNode(Node):
                 self._set_lifecycle_state(self.STATE_SUCCEEDED)
                 return result
 
-            selected_tree = await self._select_behavior_tree(goal)
+            candidate_trees = await self._validate_mission(goal)
+            if candidate_trees is None:
+                goal_handle.succeed()
+                self._set_lifecycle_state(self.STATE_FAILED)
+                result.accepted = False
+                result.outcome_message = self._status_snapshot
+                return result
+
+            self._set_lifecycle_state(self.STATE_SELECTING_TREE)
+            self._publish_active_subtree('selecting_tree')
+            selected_tree = await self._select_behavior_tree(goal, candidate_trees)
             if not selected_tree:
                 goal_handle.succeed()
                 self._set_lifecycle_state(self.STATE_FAILED)
@@ -649,7 +672,15 @@ class MissionCoordinatorNode(Node):
                         metadata[tree_id] = {
                             'description': tree.get('description', ''),
                             'context_requirements': tree.get('context_requirements', []),
-                            'blackboard_contract': tree.get('blackboard_contract', {})
+                            'blackboard_contract': tree.get('blackboard_contract', {}),
+                            'mission_intents': tree.get('mission_intents', []),
+                            'required_capabilities': tree.get('required_capabilities', []),
+                            'unsupported_requirements': tree.get(
+                                'unsupported_requirements', []
+                            ),
+                            'selection_constraints': tree.get(
+                                'selection_constraints', {}
+                            ),
                         }
             
             self.get_logger().info(f'Loaded metadata for {len(metadata)} trees from {metadata_path}')
@@ -659,9 +690,89 @@ class MissionCoordinatorNode(Node):
         
         return metadata
 
-    async def _select_behavior_tree(self, goal: MissionCommand.Goal) -> Optional[str]:
+    def _build_reasoner_tree_catalog_json(self) -> str:
+        trees = []
+        for tree_id, description in self._tree_catalog:
+            metadata = self._tree_metadata.get(tree_id, {})
+            trees.append(
+                {
+                    'id': tree_id,
+                    'description': metadata.get('description') or description,
+                    'mission_intents': metadata.get('mission_intents', []),
+                    'required_capabilities': metadata.get('required_capabilities', []),
+                    'unsupported_requirements': metadata.get(
+                        'unsupported_requirements', []
+                    ),
+                    'selection_constraints': metadata.get('selection_constraints', {}),
+                }
+            )
+        return json.dumps({'trees': trees}, ensure_ascii=False)
+
+    async def _validate_mission(
+        self, goal: MissionCommand.Goal
+    ) -> Optional[List[str]]:
+        if not self.params.enable_mission_reasoner:
+            return [tree_id for tree_id, _ in self._tree_catalog]
+        self._publish_status('Validating mission against robot capabilities.')
+        if not self._wait_for_service(
+            self._mission_reasoner_client, self.params.mission_reasoner_service
+        ):
+            message = 'Mission reasoner unavailable; refusing mission before selection.'
+            self.get_logger().warn(message)
+            self._publish_status(message)
+            return None
+        request = ValidateMission.Request()
+        request.session_id = goal.session_id or 'unknown'
+        request.user_command = goal.command or ''
+        request.context_json = goal.context_json or ''
+        request.tree_catalog_json = self._build_reasoner_tree_catalog_json()
+        response = await self._call_service(self._mission_reasoner_client, request)
+        if response is None:
+            message = 'Mission reasoner returned no response.'
+            self._publish_status(message)
+            return None
+        if response.status_code == response.ACCEPT:
+            candidates = list(response.candidate_trees)
+            if not candidates:
+                candidates = [tree_id for tree_id, _ in self._tree_catalog]
+            self._publish_status(response.message or 'Mission capability check passed.')
+            self._log_debug(
+                f'Mission reasoner accepted mission; candidates={candidates}, '
+                f'matched={list(response.matched_capabilities)}'
+            )
+            return candidates
+        if response.status_code == response.CLARIFY:
+            message = response.clarification_question or response.message
+            self._publish_status(message)
+            self._log_debug(f'Mission reasoner requested clarification: {message}')
+            return None
+        if response.status_code == response.REFUSE:
+            message = response.message or 'Mission refused by capability reasoner.'
+            self._publish_status(message)
+            self._log_debug(
+                f'Mission reasoner refused mission; missing={list(response.missing_capabilities)}'
+            )
+            return None
+        message = response.message or 'Mission reasoner failed to validate mission.'
+        self._publish_status(message)
+        return None
+
+    async def _select_behavior_tree(
+        self,
+        goal: MissionCommand.Goal,
+        candidate_tree_ids: Optional[List[str]] = None,
+    ) -> Optional[str]:
         if not self._tree_catalog:
             self._log_debug('Tree catalog empty, cannot select behavior.')
+            return None
+        allowed = set(candidate_tree_ids or [])
+        catalog = [
+            (tree_id, description)
+            for tree_id, description in self._tree_catalog
+            if not allowed or tree_id in allowed
+        ]
+        if not catalog:
+            self._log_debug('Mission reasoner left no candidate trees for selection.')
             return None
         self._log_debug('Waiting for SelectBehaviorTree service...')
         if not self._wait_for_service(self._select_tree_client, self.params.llm_select_service):
@@ -669,8 +780,8 @@ class MissionCoordinatorNode(Node):
         request = SelectBehaviorTree.Request()
         request.session_id = goal.session_id or 'unknown'
         request.user_command = goal.command
-        request.available_trees = [tree_id for tree_id, _ in self._tree_catalog]
-        request.tree_descriptions = [desc for _, desc in self._tree_catalog]
+        request.available_trees = [tree_id for tree_id, _ in catalog]
+        request.tree_descriptions = [desc for _, desc in catalog]
         request.context_snapshot = goal.context_json or ''
         self._log_debug(f'Calling selection service for session={request.session_id}')
         response = await self._call_service(self._select_tree_client, request)

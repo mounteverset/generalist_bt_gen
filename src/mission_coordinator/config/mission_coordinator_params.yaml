@@ -10,12 +10,14 @@
       bt_executor_action: "/bt_executor/execute_tree"
       context_gather_action: "/context_gatherer/gather"
       create_payload_service: "/llm_interface/create_payload"
+      mission_reasoner_service: "/mission_reasoner/validate_mission"
       context_snapshot_service: "/context_gatherer/snapshot"
       status_topic: "/mission_coordinator/status_text"
       active_subtree_topic: "/mission_coordinator/active_subtree"
 
       # Behavior flags
       enable_context_snapshot: true
+      enable_mission_reasoner: true
       require_operator_accept: true
       demo_mode: false  # When true, skip ROS calls and emit mock status.
       enable_debug_logging: false
@@ -30,7 +32,10 @@
       # Logging
       transcript_directory: "~/.generalist_bt/mission_logs"
       tree_metadata_file: "/home/luke/generalist_bt_gen/config/tree_metadata.yaml"
+      system_description_file: "/home/luke/generalist_bt_gen/config/system_description.yaml"
 
       # Tree catalog for selection service
       known_trees:
         - "demo_tree.xml::Iterates waypoint queue via MoveTo and LogTemperature."
+        - "navigate_and_photograph.xml::Navigate to waypoints and take RGB photos."
+        - "explore_area.xml::Explore a ground area with obstacle avoidance."

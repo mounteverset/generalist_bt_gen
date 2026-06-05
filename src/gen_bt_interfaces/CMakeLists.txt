@@ -17,11 +17,13 @@ set(action_files
 set(service_files
   "srv/AnnotateSatelliteMap.srv"
   "srv/CreatePayload.srv"
+  "srv/ExtractMissionRequirements.srv"
   "srv/GetMissionState.srv"
   "srv/MissionControl.srv"
   "srv/OperatorDecision.srv"
   "srv/PlanSubtree.srv"
   "srv/SelectBehaviorTree.srv"
+  "srv/ValidateMission.srv"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

@@ -2,18 +2,23 @@ llm_interface:
   ros__parameters:
     planning_service_name: '/llm_interface/plan_subtree'
     selection_service_name: '/llm_interface/select_behavior_tree'
+    mission_requirements_service_name: '/llm_interface/extract_mission_requirements'
     provider: 'openrouter'  # options: gemini | openai | openrouter
     selection_provider: 'openrouter' 
+    mission_requirements_provider: 'openrouter'
     payload_provider: 'openrouter'  
     payload_normalizer_provider: 'openrouter'  
-    model_name: 'stepfun/step-3.5-flash:free'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
-    selection_model_name: 'stepfun/step-3.5-flash:free'
-    payload_model_name: 'openai/gpt-5.4'  
-    payload_normalizer_model_name: 'stepfun/step-3.5-flash:free' 
+    model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
+    selection_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'
+    mission_requirements_model_name: 'google/gemini-3.5-flash'
+    payload_model_name: 'google/gemini-3.5-flash'  
+    payload_normalizer_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free' 
     openrouter_app_url: ''  # optional OpenRouter attribution URL
     openrouter_app_title: 'generalist_bt_gen'  # optional OpenRouter attribution title
     selection_llm_enabled: true
+    mission_requirements_llm_enabled: true
     selection_temperature: 0.0
+    mission_requirements_temperature: 0.0
     payload_multimodal_enabled: true
     payload_max_attachment_bytes: 5000000
     payload_max_attachments: 4
@@ -31,6 +36,27 @@ llm_interface:
         Respond strictly as JSON: {{"tree_id": "<id or NONE>", "confidence": 0-1, "rationale": "..."}}
         USER_COMMAND: {user_command}
         TREES_JSON: {trees_json}
+      mission_requirements: |
+        You extract robot mission requirements from natural language. Return only JSON.
+        Use capability IDs exactly as they appear in CAPABILITY_CATALOG_JSON when possible.
+        Do not decide whether the mission is safe or executable; only classify what the user asks for.
+
+        USER_COMMAND: {user_command}
+
+        CONTEXT_JSON: {context_json}
+
+        CAPABILITY_CATALOG_JSON: {capability_catalog_json}
+
+        TREE_CATALOG_JSON: {tree_catalog_json}
+
+        Return JSON with this shape:
+        {{
+          "required_capabilities": ["capability.id"],
+          "mission_intents": ["intent_id"],
+          "constraints": {{"range_m": null, "duration_s": null}},
+          "ambiguities": ["short operator-facing ambiguity"],
+          "rationale": "brief explanation"
+        }}
       payload:
         default: |
           You are a robot mission planner for a mobile field robot type Husky A200. Given CONTEXT (sensor data) and CONTRACT (required

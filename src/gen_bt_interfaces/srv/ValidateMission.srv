@@ -1,0 +1,21 @@
+# Service to validate a natural-language mission against robot capabilities
+# before behavior-tree selection.
+
+# Request
+string session_id
+string user_command
+string context_json
+string tree_catalog_json
+---
+uint8 ACCEPT=0
+uint8 CLARIFY=1
+uint8 REFUSE=2
+uint8 ERROR=3
+
+uint8 status_code
+string message
+string clarification_question
+string reasoning_json
+string[] matched_capabilities
+string[] missing_capabilities
+string[] candidate_trees

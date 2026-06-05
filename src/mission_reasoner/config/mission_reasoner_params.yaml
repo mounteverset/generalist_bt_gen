@@ -1,0 +1,9 @@
+mission_reasoner:
+  ros__parameters:
+    validate_mission_service: "/mission_reasoner/validate_mission"
+    mission_requirements_service: "/llm_interface/extract_mission_requirements"
+    system_description_file: "/home/luke/generalist_bt_gen/config/system_description.yaml"
+    enable_llm_extraction: true
+    llm_extraction_timeout_sec: 45.0
+    llm_service_wait_timeout_sec: 2.0
+    enable_debug_logging: false

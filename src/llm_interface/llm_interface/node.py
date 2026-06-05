@@ -11,7 +11,12 @@ from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 
 import rclpy
-from gen_bt_interfaces.srv import CreatePayload, PlanSubtree, SelectBehaviorTree
+from gen_bt_interfaces.srv import (
+    CreatePayload,
+    ExtractMissionRequirements,
+    PlanSubtree,
+    SelectBehaviorTree,
+)
 try:
     from langchain_core.prompts import PromptTemplate
     from langchain_core.messages import HumanMessage
@@ -44,6 +49,24 @@ DEFAULT_SELECTION_PROMPT = (
     "Respond strictly as JSON: {{\"tree_id\": \"<id or NONE>\", \"confidence\": 0-1, \"rationale\": \"...\"}}\n"
     "USER_COMMAND: {user_command}\n"
     "TREES_JSON: {trees_json}\n"
+)
+
+DEFAULT_REQUIREMENTS_PROMPT = (
+    "You extract robot mission requirements from natural language. Return only JSON.\n"
+    "Use capability IDs exactly as they appear in CAPABILITY_CATALOG_JSON when possible.\n"
+    "Do not decide whether the mission is safe or executable; only classify what the user asks for.\n\n"
+    "USER_COMMAND: {user_command}\n\n"
+    "CONTEXT_JSON: {context_json}\n\n"
+    "CAPABILITY_CATALOG_JSON: {capability_catalog_json}\n\n"
+    "TREE_CATALOG_JSON: {tree_catalog_json}\n\n"
+    "Return JSON with this shape:\n"
+    "{{\n"
+    "  \"required_capabilities\": [\"capability.id\"],\n"
+    "  \"mission_intents\": [\"intent_id\"],\n"
+    "  \"constraints\": {{\"range_m\": null, \"duration_s\": null}},\n"
+    "  \"ambiguities\": [\"short operator-facing ambiguity\"],\n"
+    "  \"rationale\": \"brief explanation\"\n"
+    "}}\n"
 )
 
 DEFAULT_PAYLOAD_PROMPT = (
@@ -120,6 +143,11 @@ class LLMInterfaceNode(Node):
             self.declare_parameter('selection_service_name', '/llm_interface/select_behavior_tree')
         if not self.has_parameter('create_payload_service_name'):
             self.declare_parameter('create_payload_service_name', '/llm_interface/create_payload')
+        if not self.has_parameter('mission_requirements_service_name'):
+            self.declare_parameter(
+                'mission_requirements_service_name',
+                '/llm_interface/extract_mission_requirements',
+            )
         if not self.has_parameter('default_bt_template'):
             self.declare_parameter(
                 'default_bt_template',
@@ -147,6 +175,10 @@ class LLMInterfaceNode(Node):
             self.declare_parameter(
                 'payload_normalizer_provider', self.get_parameter('provider').value
             )
+        if not self.has_parameter('mission_requirements_provider'):
+            self.declare_parameter(
+                'mission_requirements_provider', self.get_parameter('provider').value
+            )
         if not self.has_parameter('openrouter_app_url'):
             self.declare_parameter('openrouter_app_url', '')
         if not self.has_parameter('openrouter_app_title'):
@@ -163,10 +195,18 @@ class LLMInterfaceNode(Node):
             self.declare_parameter(
                 'payload_normalizer_model_name', self.get_parameter('model_name').value
             )
+        if not self.has_parameter('mission_requirements_model_name'):
+            self.declare_parameter(
+                'mission_requirements_model_name', self.get_parameter('model_name').value
+            )
         if not self.has_parameter('selection_llm_enabled'):
             self.declare_parameter('selection_llm_enabled', True)
+        if not self.has_parameter('mission_requirements_llm_enabled'):
+            self.declare_parameter('mission_requirements_llm_enabled', True)
         if not self.has_parameter('selection_temperature'):
             self.declare_parameter('selection_temperature', 0.0)
+        if not self.has_parameter('mission_requirements_temperature'):
+            self.declare_parameter('mission_requirements_temperature', 0.0)
         if not self.has_parameter('payload_multimodal_enabled'):
             self.declare_parameter('payload_multimodal_enabled', True)
         if not self.has_parameter('payload_max_attachment_bytes'):
@@ -184,6 +224,10 @@ class LLMInterfaceNode(Node):
             self.declare_parameter('payload_schema_max_retries', 1)
         if not self.has_parameter('prompts.selection'):
             self.declare_parameter('prompts.selection', DEFAULT_SELECTION_PROMPT)
+        if not self.has_parameter('prompts.mission_requirements'):
+            self.declare_parameter(
+                'prompts.mission_requirements', DEFAULT_REQUIREMENTS_PROMPT
+            )
         if not self.has_parameter('prompts.payload.default'):
             self.declare_parameter('prompts.payload.default', DEFAULT_PAYLOAD_PROMPT)
         if not self.has_parameter('prompts.payload_normalizer'):
@@ -204,6 +248,12 @@ class LLMInterfaceNode(Node):
                 self.get_parameter('payload_normalizer_provider').value or self._provider
             )
         )
+        self._mission_requirements_provider = self._normalize_provider_name(
+            str(
+                self.get_parameter('mission_requirements_provider').value
+                or self._provider
+            )
+        )
         self._model_name = str(self.get_parameter('model_name').value)
         self._selection_model_name = str(
             self.get_parameter('selection_model_name').value or self._model_name
@@ -214,11 +264,20 @@ class LLMInterfaceNode(Node):
         self._payload_normalizer_model_name = str(
             self.get_parameter('payload_normalizer_model_name').value or self._model_name
         )
+        self._mission_requirements_model_name = str(
+            self.get_parameter('mission_requirements_model_name').value or self._model_name
+        )
         self._selection_llm_enabled = bool(
             self.get_parameter('selection_llm_enabled').value
         )
+        self._mission_requirements_llm_enabled = bool(
+            self.get_parameter('mission_requirements_llm_enabled').value
+        )
         self._selection_temperature = float(
             self.get_parameter('selection_temperature').value
+        )
+        self._mission_requirements_temperature = float(
+            self.get_parameter('mission_requirements_temperature').value
         )
         self._payload_multimodal_enabled = bool(
             self.get_parameter('payload_multimodal_enabled').value
@@ -240,6 +299,9 @@ class LLMInterfaceNode(Node):
         )
         self._selection_prompt_template = str(
             self.get_parameter('prompts.selection').value
+        )
+        self._mission_requirements_prompt_template = str(
+            self.get_parameter('prompts.mission_requirements').value
         )
         self._payload_prompt_default = str(
             self.get_parameter('prompts.payload.default').value
@@ -263,6 +325,7 @@ class LLMInterfaceNode(Node):
         planning_topic = self.get_parameter('planning_service_name').value
         selection_topic = self.get_parameter('selection_service_name').value
         payload_topic = self.get_parameter('create_payload_service_name').value
+        requirements_topic = self.get_parameter('mission_requirements_service_name').value
         self._plan_template = self.get_parameter('default_bt_template').value
 
         self._plan_service = self.create_service(
@@ -271,14 +334,22 @@ class LLMInterfaceNode(Node):
         self._selection_service = self.create_service(
             SelectBehaviorTree, selection_topic, self.handle_selection_request
         )
+        self._requirements_service = self.create_service(
+            ExtractMissionRequirements,
+            requirements_topic,
+            self.handle_extract_mission_requirements,
+        )
         self._payload_service = self.create_service(
             CreatePayload, payload_topic, self.handle_create_payload
         )
         self.get_logger().info(
             "LLMInterfaceNode ready "
-            f"(plan={planning_topic}, select={selection_topic}, payload={payload_topic}, "
+            f"(plan={planning_topic}, select={selection_topic}, "
+            f"requirements={requirements_topic}, payload={payload_topic}, "
             f"selection_provider={self._selection_provider}, "
             f"selection_model={self._selection_model_name}, "
+            f"mission_requirements_provider={self._mission_requirements_provider}, "
+            f"mission_requirements_model={self._mission_requirements_model_name}, "
             f"payload_provider={self._payload_provider}, "
             f"payload_model={self._payload_model_name}, "
             f"payload_normalizer_provider={self._payload_normalizer_provider}, "
@@ -548,6 +619,124 @@ class LLMInterfaceNode(Node):
             return None
         tree_id = tree_ids[0]
         return 0, 0.5, f"[heuristic] defaulted to '{tree_id}'"
+
+    # endregion
+
+    # region Mission Requirement Extraction
+    def handle_extract_mission_requirements(
+        self,
+        request: ExtractMissionRequirements.Request,
+        response: ExtractMissionRequirements.Response,
+    ) -> ExtractMissionRequirements.Response:
+        requirements, reasoning = self._extract_requirements_via_llm(
+            user_command=request.user_command,
+            context_json=request.context_json,
+            capability_catalog_json=request.capability_catalog_json,
+            tree_catalog_json=request.tree_catalog_json,
+        )
+        if requirements is None:
+            response.status_code = response.ERROR
+            response.requirements_json = '{}'
+            response.reasoning = reasoning or 'Mission requirement extraction failed.'
+            return response
+
+        response.status_code = response.SUCCESS
+        response.requirements_json = json.dumps(requirements, ensure_ascii=False)
+        response.reasoning = reasoning
+        return response
+
+    def _extract_requirements_via_llm(
+        self,
+        user_command: str,
+        context_json: str,
+        capability_catalog_json: str,
+        tree_catalog_json: str,
+    ) -> Tuple[Optional[dict], str]:
+        if not self._mission_requirements_llm_enabled:
+            return None, 'Mission requirement LLM extraction is disabled.'
+
+        try:
+            chain = self._get_mission_requirements_chain()
+        except RuntimeError as exc:
+            self.get_logger().warning(str(exc))
+            return None, str(exc)
+
+        try:
+            llm_result = chain.invoke(
+                {
+                    'user_command': user_command or '',
+                    'context_json': context_json or '{}',
+                    'capability_catalog_json': capability_catalog_json or '{}',
+                    'tree_catalog_json': tree_catalog_json or '{}',
+                }
+            )
+        except Exception as exc:
+            message = (
+                f"{self._provider_display_name(self._mission_requirements_provider, self._mission_requirements_model_name)} "
+                f"mission requirement extraction failed: {exc}"
+            )
+            self.get_logger().warning(message)
+            return None, message
+
+        raw_content = getattr(llm_result, 'content', llm_result)
+        cleaned = self._prepare_llm_json_text(raw_content)
+        try:
+            parsed = json.loads(cleaned)
+        except Exception as exc:
+            message = f"Unable to parse mission requirements response '{raw_content}': {exc}"
+            self.get_logger().warning(message)
+            return None, message
+        if not isinstance(parsed, dict):
+            return None, 'Mission requirements response was not a JSON object.'
+
+        requirements = self._normalize_requirements_payload(parsed)
+        reasoning = str(
+            parsed.get('rationale')
+            or parsed.get('reasoning')
+            or 'Extracted mission requirements from user command.'
+        )
+        return requirements, reasoning
+
+    def _normalize_requirements_payload(self, parsed: dict) -> dict:
+        required_capabilities = parsed.get('required_capabilities', [])
+        if not isinstance(required_capabilities, list):
+            required_capabilities = []
+        mission_intents = parsed.get('mission_intents', [])
+        if not isinstance(mission_intents, list):
+            mission_intents = []
+        ambiguities = parsed.get('ambiguities', [])
+        if not isinstance(ambiguities, list):
+            ambiguities = []
+        constraints = parsed.get('constraints', {})
+        if not isinstance(constraints, dict):
+            constraints = {}
+        return {
+            'required_capabilities': [
+                str(item).strip() for item in required_capabilities if str(item).strip()
+            ],
+            'mission_intents': [
+                str(item).strip() for item in mission_intents if str(item).strip()
+            ],
+            'constraints': constraints,
+            'ambiguities': [
+                str(item).strip() for item in ambiguities if str(item).strip()
+            ],
+            'rationale': str(parsed.get('rationale', '') or parsed.get('reasoning', '')),
+        }
+
+    def _get_mission_requirements_chain(self):
+        if not hasattr(self, '_mission_requirements_chain'):
+            llm = self._create_chat_llm(
+                provider_name=self._mission_requirements_provider,
+                model_name=self._mission_requirements_model_name,
+                temperature=self._mission_requirements_temperature,
+                purpose='mission requirement extraction',
+            )
+            template = PromptTemplate.from_template(
+                self._mission_requirements_prompt_template
+            )
+            self._mission_requirements_chain = template | llm
+        return self._mission_requirements_chain
 
     # endregion
 

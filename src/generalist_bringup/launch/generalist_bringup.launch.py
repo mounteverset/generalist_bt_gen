@@ -16,6 +16,7 @@ def generate_launch_description():
     ui_params = Path(get_package_share_directory('user_interface')) / 'config' / 'chat_params.yaml'
     llm_params = Path(get_package_share_directory('llm_interface')) / 'config' / 'llm_interface_params.yaml'
     context_params = Path(get_package_share_directory('context_gatherer')) / 'config' / 'context_gatherer_params.yaml'
+    reasoner_params = Path(get_package_share_directory('mission_reasoner')) / 'config' / 'mission_reasoner_params.yaml'
 
     params_file_arg = DeclareLaunchArgument(
         'bt_executor_params',
@@ -41,6 +42,11 @@ def generate_launch_description():
         'context_gatherer_params',
         default_value=str(context_params),
         description='Path to the context_gatherer parameter file.'
+    )
+    reasoner_params_arg = DeclareLaunchArgument(
+        'mission_reasoner_params',
+        default_value=str(reasoner_params),
+        description='Path to the mission_reasoner parameter file.'
     )
     use_cli_arg = DeclareLaunchArgument(
         'use_cli_ui',
@@ -102,6 +108,15 @@ def generate_launch_description():
         parameters=[LaunchConfiguration('context_gatherer_params')],
     )
 
+    mission_reasoner_node = Node(
+        condition=IfCondition(NotSubstitution(LaunchConfiguration('demo_mode'))),
+        package='mission_reasoner',
+        executable='mission_reasoner_node',
+        name='mission_reasoner',
+        output='screen',
+        parameters=[LaunchConfiguration('mission_reasoner_params')]
+    )
+
     mission_coordinator_node = Node(
         package='mission_coordinator',
         executable='mission_coordinator_node',
@@ -149,10 +164,12 @@ def generate_launch_description():
         ui_params_arg,
         llm_params_arg,
         context_params_arg,
+        reasoner_params_arg,
         use_cli_arg,
         demo_mode_arg,
         bt_executor_node,
         llm_interface_node,
+        mission_reasoner_node,
         annotated_map_saver_node,
         satellite_map_annotator_node,
         context_gatherer_node,

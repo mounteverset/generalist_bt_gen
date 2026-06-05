@@ -1,6 +1,11 @@
 # `mission_coordinator` package
 
-The mission_coordinator is responsible for sending the user request coming from the web/chat UI via a action call to a LLM, provide context of available sensor sources and information about available robot action behavior trees. 
+The mission_coordinator is responsible for receiving the user request from the
+web/chat UI, validating it against the robot capability reasoner, asking the LLM
+to select a compatible behavior tree, gathering context, building the payload,
+and then dispatching execution to `bt_executor`. The reasoner may use
+`llm_interface` to extract mission requirements, but the capability gate remains
+inside `mission_reasoner`.
 After receiving a behavior tree decision which tree to execute the mission coordinator calls the `bt_executor` action server with the respective tree to call. The payload is needed context for the execution of the tree, this could for example be waypoints or a tree species which is the target to photograph. The payload will be parsed from JSON to populate the blackboard of the `bt_executor` for execution. 
 
 The mission coordinator should have the possibility to be somewhat configurable during run-time with dynamic reconfigure by the user interface. E.g. the LLM provider should be changeable by the UI, it should exist an option to toggle if the mission_coordinator waits for an acknowledge by the user before sending an action goal to execute a BT. Also at some point we want to use memori inside of the LLM interface app, this should also be an option to select or de-select.
@@ -15,12 +20,14 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | `status_service` | Service endpoint for mission state snapshots (`GetMissionState.srv`). | `/mission_coordinator/status` |
 | `control_service` | Service endpoint for operator/runtime controls (`MissionControl.srv`). | `/mission_coordinator/control` |
 | `llm_plan_service` | Service to request BT XML/subtree plans from `llm_interface`. | `/llm_interface/plan_subtree` |
+| `mission_reasoner_service` | Service that validates a mission before BT selection. | `/mission_reasoner/validate_mission` |
 | `bt_executor_action` | Action client target on the BT executor. | `/bt_executor/execute_tree` |
 | `context_snapshot_service` | Optional sensor-context capture service. | `/context_gatherer/snapshot` |
 | `status_topic` | Status text published for UI consumption. | `/mission_coordinator/status_text` |
 | `active_subtree_topic` | Current subtree identifier being executed. | `/mission_coordinator/active_subtree` |
 | `operator_decision_service` | Alias service for operator approve/reject; pending plans include a coordinator-specific endpoint to avoid conflicts across duplicate launches. | `/mission_coordinator/operator_decision` |
 | `enable_context_snapshot` | Toggle context gathering before LLM call. | `true` |
+| `enable_mission_reasoner` | Toggle the hard pre-selection capability gate. | `true` |
 | `require_operator_accept` | If true, wait for UI acknowledgement before running BT (can be bypassed per mission with `context_json.auto_execute=true`). | `true` |
 | `demo_mode` | Skip ROS calls and emit mock responses (dev aid). | `true` |
 | `llm_timeout_sec` | Timeout for LLM planning service. | `45.0` |

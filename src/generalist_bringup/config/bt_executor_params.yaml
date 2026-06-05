@@ -14,7 +14,9 @@ bt_action_server:
     # robot_actions defaults
     nav2_action_name: "/navigate_to_pose"
     log_temperature_service_name: "/log_temperature"
-    take_picture_service_name: "/take_picture"
+    take_photo_image_topic: "/a200_0000/sensors/camera_0/color/image"
+    distance_traveled_odom_topic: "/odom"
+    find_anything_service_name: "/language_processor/find_object_locations"
 
     status_topic: "/mission_coordinator/status_text"
     active_node_topic: "/mission_coordinator/active_subtree"

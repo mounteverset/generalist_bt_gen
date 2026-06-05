@@ -137,6 +137,7 @@ def _install_ros_stubs() -> None:
         gen_srv_module.MissionControl = DummySrv
         gen_srv_module.OperatorDecision = DummySrv
         gen_srv_module.SelectBehaviorTree = DummySrv
+        gen_srv_module.ValidateMission = DummySrv
         sys.modules['gen_bt_interfaces.srv'] = gen_srv_module
 
     if 'std_msgs.msg' not in sys.modules:
@@ -258,3 +259,35 @@ def test_append_refinement_history_entry_accumulates_session_history():
     assert second[0]['payload_waypoints'] == '1.0,2.0,0.0'
     assert second[1]['iteration'] == 2
     assert second[1]['payload_waypoints'] == '1.0,2.0,0.0; 3.0,4.0,0.0'
+
+
+def test_build_reasoner_tree_catalog_includes_capability_metadata():
+    node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
+    node._tree_catalog = [
+        ('demo_tree.xml', 'Fallback demo tree.'),
+        ('navigate_and_photograph.xml', 'Navigate and take photos.'),
+    ]
+    node._tree_metadata = {
+        'demo_tree.xml': {
+            'description': 'Metadata description.',
+            'mission_intents': ['navigate_waypoints'],
+            'required_capabilities': ['navigation.waypoints'],
+            'unsupported_requirements': ['locomotion.flight'],
+            'selection_constraints': {'max_range_m': 5000},
+        },
+        'navigate_and_photograph.xml': {
+            'mission_intents': ['photograph_route'],
+            'required_capabilities': ['navigation.waypoints', 'sensing.rgb_image'],
+        },
+    }
+
+    catalog = json.loads(node._build_reasoner_tree_catalog_json())['trees']
+
+    assert catalog[0]['id'] == 'demo_tree.xml'
+    assert catalog[0]['description'] == 'Metadata description.'
+    assert catalog[0]['required_capabilities'] == ['navigation.waypoints']
+    assert catalog[0]['selection_constraints']['max_range_m'] == 5000
+    assert catalog[1]['required_capabilities'] == [
+        'navigation.waypoints',
+        'sensing.rgb_image',
+    ]

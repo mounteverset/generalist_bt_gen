@@ -1,8 +1,9 @@
 # llm_interface
 
-LangChain-powered ROS 2 node that exposes planning + tree-selection services for the mission coordinator. The node will:
+LangChain-powered ROS 2 node that exposes requirement extraction, planning, tree-selection, and payload services for the mission pipeline. The node will:
 
 - Listen on `/llm_interface/plan_subtree` to synthesize new BT XML (see `service_definition_plan.md`).
+- Listen on `/llm_interface/extract_mission_requirements` to classify free-form mission commands into structured capability requirements for `mission_reasoner`.
 - Listen on `/llm_interface/select_behavior_tree` to pick the most relevant existing subtree before regeneration using the configured LangChain provider.
 - Call the configured LLM provider + MCP tools to translate mission text + context snapshots into BT XML.
 - Log requests/responses for auditability and provide summaries back to the UI layer.
@@ -12,6 +13,7 @@ LangChain-powered ROS 2 node that exposes planning + tree-selection services for
 The active provider is selected via ROS parameters in `config/llm_interface_params.yaml`:
 
 - `provider`: global default provider for all llm_interface calls.
+- `mission_requirements_provider`: provider for mission requirement extraction.
 - `selection_provider`: provider for behavior-tree selection.
 - `payload_provider`: provider for payload generation.
 - `payload_normalizer_provider`: provider for payload schema correction.
