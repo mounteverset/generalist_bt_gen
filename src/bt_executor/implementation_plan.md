@@ -33,10 +33,10 @@ Goal: deliver the first version of `bt_executor` that wraps `behaviortree_ros2::
 | 8 | Build `bt_executor_node` | Task 3 | `main.cpp` that loads params, instantiates server, spins. ✅ |
 | 9 | Wire plugin & tree loading | Task 8 | Parse parameters for plugin directories, XML path; pass to server constructor. ✅ |
 |10 | Add telemetry publishers | Task 6 | `rclcpp::Publisher<std_msgs::msg::String>` for `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree`. ✅ |
-|11 | Tree asset stub | README guidance | Provide starter XML (e.g., `trees/demo_tree.xml`) to allow server to load. ✅ |
+|11 | Tree asset stub | README guidance | Provide starter XML (e.g., `trees/temperature_logging.xml`) to allow server to load. ✅ |
 |12 | Config + launch files | Task 2 | Install YAML + `launch/bt_executor.launch.py` referencing tree + plugin params. ✅ |
 |13 | Documentation updates | All | Update `README.md` with build/run instructions and hook behavior. ✅ |
-|14 | Build/test verification | All | `colcon build --packages-select bt_executor` + simple `ros2 run bt_executor bt_executor_node` smoke test (with demo tree). ✅ |
+|14 | Build/test verification | All | `colcon build --packages-select bt_executor` + simple `ros2 run bt_executor bt_executor_node` smoke test (with temperature logging tree). ✅ |
 
 ### Stretch (later phases)
 - Integrate regeneration triggers (call mission coordinator service when onLoopAfterTick detects failure).

@@ -50,14 +50,14 @@ Defines metadata for trees:
 
 ```yaml
 trees:
-  - id: "demo_tree.xml"
-    description: "Simple demo tree"
+  - id: "temperature_logging.xml"
+    description: "Navigate through waypoints and log temperature."
     context_requirements:
       - ROBOT_POSE
     blackboard_contract:
       test_message:
         type: "string"
-        default: "Hello from demo tree"
+        default: "Hello from temperature logging tree"
 ```
 
 #### [mission_coordinator/node.py](file:///home/luke/generalist_bt_gen/src/mission_coordinator/mission_coordinator/node.py)

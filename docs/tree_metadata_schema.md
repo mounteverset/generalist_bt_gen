@@ -93,8 +93,8 @@ trees:
         required: false
         default: true
 
-  - id: "demo_tree.xml"
-    description: "Simple demo tree for testing the system"
+  - id: "temperature_logging.xml"
+    description: "Navigate through waypoints and log temperature at each waypoint."
     mission_intents:
       - "navigate_waypoints"
       - "log_temperature"
@@ -109,7 +109,7 @@ trees:
       test_message:
         type: "string"
         required: false
-        default: "Hello from demo tree"
+        default: "Hello from temperature logging tree"
 ```
 
 ## Supported Context Requirements

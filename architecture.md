@@ -49,7 +49,7 @@ the current mission coordinator runtime does not call it.
 | `llm_interface` | Provides LangChain-backed requirement extraction, selection, and payload services. Requirement extraction maps free-form commands into structured capability requirements. Selection chooses from the configured tree catalog. Payload generation maps context plus a subtree contract into blackboard JSON, with optional multimodal image attachments and optional schema normalization. If configured LLM calls fail, selection and payload generation have heuristic fallbacks. | Services: `/llm_interface/extract_mission_requirements`, `/llm_interface/select_behavior_tree`, `/llm_interface/create_payload`, `/llm_interface/plan_subtree`. Providers implemented in code: Gemini, OpenAI, OpenRouter. |
 | `context_gatherer` | Serves a `GatherContext` action. It subscribes to robot state and sensor topics, captures requested context keys, saves image/map artifacts under `/tmp/context_gatherer` by default, and returns structured JSON plus attachment URIs. It also calls helper services for annotated SLAM maps, satellite-map annotation/fetching, and FindAnything object-location lookup. | Action server: `/context_gatherer/gather`. Inputs include `/odom`, optional pose covariance, GPS, RGB/depth camera topics, battery state, map topic, and `/language_processor/find_object_locations`. |
 | `bt_executor` | Subclasses `BT::TreeExecutionServer`. It loads BT XML and robot action plugins, exposes `/bt_executor/execute_tree`, creates a fresh `BT::Tree` for each action goal, seeds the blackboard from the goal payload, publishes textual status and active tree root name, and returns the final BT result. | Action server: `/bt_executor/execute_tree`. Publishes `/mission_coordinator/status_text` and `/mission_coordinator/active_subtree`. Loads XML from `bt_executor/trees` and plugins from `robot_actions/lib`. |
-| `robot_actions` | BehaviorTree.CPP/BehaviorTree.ROS2 plugins used by the XML trees. Current registered nodes include `MoveTo`, `TakePicture`/`TakePhoto`, `DistanceTraveled`, `FindObjectLocation`/`FindAnything`, `LogTemperature`, `RestartNode`, and `ParseWaypoints`. | Nav2 `NavigateToPose`, FindAnything object-location service, RGB image and odometry topics, trigger-style ROS services, blackboard ports. |
+| `robot_actions` | BehaviorTree.CPP/BehaviorTree.ROS2 plugins used by the XML trees. Current registered nodes include `MoveTo`, `TakePicture`/`TakePhoto`, `GetCurrentPose`, `DistanceTraveled`, `FindObjectLocation`/`FindAnything`, `LogTemperature`, `RestartNode`, and `ParseWaypoints`. | Nav2 `NavigateToPose`, FindAnything object-location service, RGB image and odometry topics, trigger-style ROS services, blackboard ports. |
 | `gen_bt_interfaces` | Custom action/service contracts shared by Python and C++ packages. | `MissionCommand`, `GatherContext`, `CreatePayload`, `SelectBehaviorTree`, `PlanSubtree`, `GetMissionState`, `MissionControl`, `OperatorDecision`, and related services. |
 
 There is no implemented `bt_updater` package in the current repository.
@@ -60,9 +60,10 @@ The mission coordinator selects from a configured catalog, not by scanning all X
 files at runtime. The configured catalog is first filtered by `mission_reasoner`
 using static capability metadata.
 
-`config/tree_metadata.yaml` contains metadata for `demo_tree.xml`,
-`navigate_and_photograph.xml`, and `explore_area.xml`. Only `demo_tree.xml` is
-present in `src/bt_executor/trees`; the others are catalogue-level future trees.
+`config/tree_metadata.yaml` contains metadata for `temperature_logging.xml`,
+`navigate_and_photograph.xml`, and `explore_area.xml`. Only
+`temperature_logging.xml` is present in `src/bt_executor/trees`; the others are
+catalogue-level future trees.
 
 The coordinator reads metadata to decide:
 
@@ -72,12 +73,12 @@ The coordinator reads metadata to decide:
 
 ## Implemented Behavior Tree
 
-`src/bt_executor/trees/demo_tree.xml` is the executable tree currently used by
-the default stack:
+`src/bt_executor/trees/temperature_logging.xml` is the executable tree currently
+used by the default stack:
 
 ```text
-BehaviorTree ID="demo_tree.xml"
-  Sequence name="WaypointMission"
+BehaviorTree ID="temperature_logging.xml"
+  Sequence name="TemperatureLoggingMission"
     ParseWaypoints raw_waypoints="{waypoints}"
     LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="SUCCESS"
       Sequence name="VisitWaypoint"

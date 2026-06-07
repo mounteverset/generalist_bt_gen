@@ -38,7 +38,7 @@ Key parameters:
 | `action_name` | Action server name exposed to mission coordinator. | `/bt_executor/execute_tree` |
 | `plugin_directories` | Additional directories scanned for ROS BT plugins. Accepts absolute paths or `package/subfolder` entries resolved relative to the package prefix. | `["robot_actions/lib"]` |
 | `nav2_action_name` | Default action server name used by the `MoveTo` BT node (can still be overridden per-node via the `action_name` input port). | `"/navigate_to_pose"` |
-| `log_temperature_service_name` / `take_photo_image_topic` / `distance_traveled_odom_topic` / `find_anything_service_name` | Default service/topic names used by the respective `robot_actions` sensing/perception nodes. `TakePicture`/`TakePhoto` and `DistanceTraveled` can override image/odometry topics with input ports. `FindObjectLocation`/`FindAnything` can override the service with the standard `service_name` port. | `"/log_temperature"`, `"/a200_0000/sensors/camera_0/color/image"`, `"/odom"`, `"/language_processor/find_object_locations"` |
+| `log_temperature_service_name` / `take_photo_image_topic` / `get_current_pose_pose_topic` / `distance_traveled_odom_topic` / `get_current_pose_odom_topic` / `find_anything_service_name` | Default service/topic names used by the respective `robot_actions` sensing/perception nodes. `TakePicture`/`TakePhoto`, `DistanceTraveled`, and `GetCurrentPose` can override image/pose/odometry topics with input ports. `FindObjectLocation`/`FindAnything` can override the service with the standard `service_name` port. | `"/log_temperature"`, `"/a200_0000/sensors/camera_0/color/image"`, `"/a200_0000/pose"`, `"/a200_0000/platform/odom/filtered"`, `"/a200_0000/platform/odom/filtered"`, `"/language_processor/find_object_locations"` |
 | `behavior_trees` | List of `package/subfolder` entries that contain BT XML files to pre-register. | `["bt_executor/trees"]` |
 | `status_topic` / `active_node_topic` | Topics publishing textual status + active subtree for UI/mission coordinator. | `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree` |
 | `enable_debug_logging` | Enables verbose BT execution logs (per-tick blackboard dump + robot action debug traces). Keep `false` for normal operation. | `false` |
@@ -53,11 +53,12 @@ Use the provided launch file to start the executor with the default configuratio
 ros2 launch bt_executor bt_executor.launch.py
 ```
 
-This loads `config/bt_executor_params.yaml`, which points the server at the demo tree bundle (`trees/`) and registers the `robot_actions` plugin library discovered under `robot_actions/lib`.
+This loads `config/bt_executor_params.yaml`, which points the server at the tree bundle (`trees/`) and registers the `robot_actions` plugin library discovered under `robot_actions/lib`.
 
-## Demo tree (`trees/demo_tree.xml`)
+## Temperature Logging Tree (`trees/temperature_logging.xml`)
 
-The default behavior tree, `MainTree`, executes a waypoint mission:
+The default behavior tree, `temperature_logging.xml`, executes a waypoint
+temperature logging mission:
 
 1. `ParseWaypoints` converts the raw mission payload string (written to `waypoints_raw` on the blackboard) into a `BT::SharedQueue<std::string>` called `waypoint_queue`.
 2. `LoopString` iterates over `waypoint_queue`, handing each `"x,y,yaw"` entry to its child subtree.
@@ -65,3 +66,16 @@ The default behavior tree, `MainTree`, executes a waypoint mission:
 4. After reaching the waypoint, `LogTemperature` triggers a telemetry logging service call using the `logfile_path` also injected via the payload.
 
 Mission payloads may provide waypoints either as arrays (e.g. `[1.0, 2.0, 0.0]`), objects (`{"x": 1.0, "y": 2.0, "yaw": 0.0}`), or ready-to-use `"x,y,yaw"` strings—the executor normalizes them into a string queue for the tree.
+
+## Context sweep tree (`trees/360_rgb_sweep.xml`)
+
+`360_rgb_sweep.xml` is a bounded active-context routine for future
+`context_gatherer` integration. It reads the current map-frame pose with
+`GetCurrentPose`, rotates in place with `MoveTo` using map-frame goals,
+captures RGB images with `TakePhoto` at fixed yaws 0, 1.046, 2.093, 3.14, and
+4.186 radians, then rotates through 5.233 and 6.283 radians without capturing
+duplicate images.
+
+Optional payload keys are `pose_topic`, `pose_timeout_ms`, `odom_topic`,
+`odom_timeout_ms`, `camera_topic`, `photo_output_directory`, and
+`image_timeout_ms`.

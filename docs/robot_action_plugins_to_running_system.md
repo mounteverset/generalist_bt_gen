@@ -109,9 +109,9 @@ The XML `BehaviorTree ID` must match the tree ID used by mission selection and
 metadata. For example:
 
 ```xml
-<root BTCPP_format="4" main_tree_to_execute="demo_tree.xml">
-  <BehaviorTree ID="demo_tree.xml">
-    <Sequence name="WaypointMission">
+<root BTCPP_format="4" main_tree_to_execute="temperature_logging.xml">
+  <BehaviorTree ID="temperature_logging.xml">
+    <Sequence name="TemperatureLoggingMission">
       <ParseWaypoints raw_waypoints="{waypoints}"
                       waypoint_queue="{waypoint_queue}"
                       waypoint_count="{waypoint_count}" />
@@ -132,6 +132,7 @@ Current registered node IDs:
 | --- | --- | --- |
 | `MoveTo` | `pose`, optional `frame_id`, standard `action_name` | Nav2 `NavigateToPose` action |
 | `TakePicture` / `TakePhoto` | inputs `image_topic`, `output_directory`, `filename_prefix`, `timeout_ms`; output `filepath` | RGB `sensor_msgs/Image` topic |
+| `GetCurrentPose` | inputs `odom_topic`, `odom_timeout_ms`; outputs `current_x`, `current_y`, `current_yaw`, `current_pose`, `current_frame_id`, fixed-yaw `sweep_pose_*` strings | Odometry topic |
 | `DistanceTraveled` | inputs `interval_m`, `odom_topic`, output `distance_accumulated_m` | Odometry topic |
 | `FindObjectLocation` / `FindAnything` | inputs `object`, `max_results`, `default_yaw`, standard `service_name`; outputs `x`, `y`, `yaw`, `pose`, `frame_id` | `language_feature_msgs/FindObjectLocations` service |
 | `LogTemperature` | input `logfile_path`, standard `service_name` | `std_srvs/Trigger` temperature service |
@@ -247,13 +248,14 @@ LLM selection call.
 Before running a BT that calls ROS action/service nodes, the backing ROS
 interfaces must be available.
 
-For the current demo tree:
+For the current temperature logging tree:
 
 | BT node | Required server |
 | --- | --- |
 | `MoveTo` | `/a200_0000/navigate_to_pose` or the configured `nav2_action_name` |
 | `LogTemperature` | `/log_temperature` |
 | `TakePicture` / `TakePhoto` | `/a200_0000/sensors/camera_0/color/image` or configured `take_photo_image_topic` |
+| `GetCurrentPose` | `/odom` or configured `get_current_pose_odom_topic` |
 | `DistanceTraveled` | `/odom` or configured `distance_traveled_odom_topic` |
 | `FindObjectLocation` / `FindAnything` | `/language_processor/find_object_locations` or configured `find_anything_service_name` |
 
@@ -352,7 +354,7 @@ directly:
 
 ```bash
 ros2 action send_goal /bt_executor/execute_tree btcpp_ros2_interfaces/action/ExecuteTree \
-  "{target_tree: 'demo_tree.xml', payload: '{\"waypoints\":\"1.0,0.0,0.0; 2.0,0.0,0.0\", \"logfile_path\":\"/tmp/temperature_log.txt\"}'}"
+  "{target_tree: 'temperature_logging.xml', payload: '{\"waypoints\":\"1.0,0.0,0.0; 2.0,0.0,0.0\", \"logfile_path\":\"/tmp/temperature_log.txt\"}'}"
 ```
 
 If this works but the full mission fails, inspect reasoner metadata,
