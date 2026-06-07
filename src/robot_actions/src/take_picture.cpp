@@ -67,8 +67,9 @@ BT::NodeStatus TakePicture::tick()
 
   sensor_msgs::msg::Image image_msg;
   const auto timeout = std::chrono::milliseconds(std::max(0, timeout_ms));
+  auto wait_node = make_wait_node();
   const bool received = rclcpp::wait_for_message<sensor_msgs::msg::Image>(
-    image_msg, node_, image_topic, timeout, rclcpp::SensorDataQoS());
+    image_msg, wait_node, image_topic, timeout, rclcpp::SensorDataQoS());
 
   if (!received) {
     RCLCPP_ERROR(
@@ -87,6 +88,17 @@ BT::NodeStatus TakePicture::tick()
     RCLCPP_INFO(get_logger(), "TakePicture -> saved RGB image to %s", output_path.c_str());
   }
   return BT::NodeStatus::SUCCESS;
+}
+
+rclcpp::Node::SharedPtr TakePicture::make_wait_node() const
+{
+  rclcpp::NodeOptions options;
+  options.context(node_->get_node_options().context());
+  options.use_global_arguments(false);
+  options.start_parameter_services(false);
+  options.start_parameter_event_publisher(false);
+  return std::make_shared<rclcpp::Node>(
+    "take_picture_wait_node", node_->get_namespace(), options);
 }
 
 std::string TakePicture::build_output_path(

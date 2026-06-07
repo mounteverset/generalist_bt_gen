@@ -36,6 +36,7 @@ add_library(${PROJECT_NAME} SHARED
   src/take_picture.cpp
   src/distance_traveled.cpp
   src/find_object_location.cpp
+  src/get_current_pose.cpp
   src/log_temperature.cpp
   src/restart_node.cpp
   src/parse_waypoints.cpp

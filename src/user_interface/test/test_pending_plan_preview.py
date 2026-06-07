@@ -18,7 +18,7 @@ def test_extract_waypoints_from_semicolon_string():
 def test_normalize_pending_plan_builds_map_preview():
     plan = {
         'session_id': 'webui-123',
-        'tree_id': 'demo_tree.xml',
+        'tree_id': 'temperature_logging.xml',
         'summary': 'Visit generated waypoints.',
         'payload_json': json.dumps({'waypoints': '1.0,2.0,0.0; 3.0,4.0,1.57'}),
         'context_snapshot_json': json.dumps(
@@ -79,7 +79,7 @@ def test_extract_waypoints_from_lat_lon_dicts():
 def test_normalize_pending_plan_builds_satellite_map_preview_with_lat_lon_waypoints():
     plan = {
         'session_id': 'webui-geo-123',
-        'tree_id': 'demo_tree.xml',
+        'tree_id': 'temperature_logging.xml',
         'summary': 'Visit generated geographic waypoints.',
         'payload_json': json.dumps(
             {

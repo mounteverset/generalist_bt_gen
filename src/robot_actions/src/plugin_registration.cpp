@@ -4,6 +4,7 @@
 #include "robot_actions/move_to.hpp"
 #include "robot_actions/distance_traveled.hpp"
 #include "robot_actions/find_object_location.hpp"
+#include "robot_actions/get_current_pose.hpp"
 #include "robot_actions/parse_waypoints.hpp"
 #include "robot_actions/restart_node.hpp"
 #include "robot_actions/take_picture.hpp"
@@ -34,6 +35,7 @@ BT_REGISTER_ROS_NODES(factory, params)
   factory.registerNodeType<robot_actions::TakePicture>("TakePicture", picture_params);
   factory.registerNodeType<robot_actions::TakePicture>("TakePhoto", picture_params);
   factory.registerNodeType<robot_actions::DistanceTraveled>("DistanceTraveled", params);
+  factory.registerNodeType<robot_actions::GetCurrentPose>("GetCurrentPose", params);
   factory.registerNodeType<robot_actions::FindObjectLocation>(
     "FindObjectLocation", find_object_params);
   factory.registerNodeType<robot_actions::FindObjectLocation>(

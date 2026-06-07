@@ -20,6 +20,7 @@ public:
   BT::NodeStatus tick() override;
 
 private:
+  rclcpp::Node::SharedPtr make_wait_node() const;
   std::string build_output_path(const std::string & directory, const std::string & prefix) const;
   bool save_image(const sensor_msgs::msg::Image::SharedPtr & image, const std::string & path);
 
