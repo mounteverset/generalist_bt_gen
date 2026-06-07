@@ -63,9 +63,24 @@ class MissionReasoner:
             )
 
         context = self._parse_context(context_json)
-        requested = self._capabilities_from_command(command)
+        requested_from_command = self._capabilities_from_command(command)
+        requested = set(requested_from_command)
         llm_requirements = dict(extracted_requirements or {})
-        requested.update(self._capabilities_from_extracted_requirements(llm_requirements))
+        requested_from_llm = self._capabilities_from_extracted_requirements(
+            llm_requirements
+        )
+        requested.update(requested_from_llm)
+        debug_info = {
+            'context_keys': sorted(context.keys()) if isinstance(context, dict) else [],
+            'tree_count': len(tree_catalog),
+            'tree_ids': [
+                str(tree.get('id', '')).strip()
+                for tree in tree_catalog
+                if tree.get('id')
+            ],
+            'requested_from_command_rules': sorted(requested_from_command),
+            'requested_from_llm': sorted(requested_from_llm),
+        }
         explicit_missing = sorted(
             capability
             for capability in requested
@@ -73,7 +88,11 @@ class MissionReasoner:
             or capability not in self.supported_capabilities
         )
         if explicit_missing:
-            return self._refusal(command, requested, explicit_missing, llm_requirements)
+            result = self._refusal(
+                command, requested, explicit_missing, llm_requirements
+            )
+            result.reasoning['debug_info'] = debug_info
+            return result
 
         clarification = self._clarification_question(command, context)
         if clarification:
@@ -85,6 +104,7 @@ class MissionReasoner:
                     'requested_capabilities': sorted(requested),
                     'llm_requirements': llm_requirements,
                     'context_keys': sorted(context.keys()) if isinstance(context, dict) else [],
+                    'debug_info': debug_info,
                 },
                 matched_capabilities=sorted(requested & self.supported_capabilities),
             )
@@ -100,6 +120,7 @@ class MissionReasoner:
                     'available_trees': [
                         tree.get('id', '') for tree in tree_catalog if tree.get('id')
                     ],
+                    'debug_info': debug_info,
                 },
                 matched_capabilities=sorted(requested & self.supported_capabilities),
                 missing_capabilities=sorted(requested),
@@ -111,6 +132,7 @@ class MissionReasoner:
                 requested & self.supported_capabilities
             )
             limit_refusal.candidate_trees = candidates
+            limit_refusal.reasoning['debug_info'] = debug_info
             return limit_refusal
 
         return ValidationResult(
@@ -120,6 +142,7 @@ class MissionReasoner:
                 'requested_capabilities': sorted(requested),
                 'llm_requirements': llm_requirements,
                 'candidate_trees': candidates,
+                'debug_info': debug_info,
             },
             matched_capabilities=sorted(requested & self.supported_capabilities),
             candidate_trees=candidates,

@@ -18,10 +18,11 @@ llm_interface:
     selection_llm_enabled: true
     mission_requirements_llm_enabled: true
     selection_temperature: 0.0
+    selection_timeout_sec: 10.0
     mission_requirements_temperature: 0.0
     payload_multimodal_enabled: true
     payload_max_attachment_bytes: 5000000
-    payload_max_attachments: 4
+    payload_max_attachments: 6
     payload_attachment_allowlist:
       - 'image/png'
       - 'image/jpeg'
@@ -31,7 +32,7 @@ llm_interface:
       selection: |
         You are a mission planner for a field robot. Given USER_COMMAND and a JSON array of
         behavior trees (each with id + description), choose the best tree or return NONE.
-        tree_id MUST be exactly one of the string IDs in TREES_JSON (e.g., "demo_tree.xml").
+        tree_id MUST be exactly one of the string IDs in TREES_JSON (e.g., "temperature_logging.xml").
         Do NOT answer with numeric indexes.
         Respond strictly as JSON: {{"tree_id": "<id or NONE>", "confidence": 0-1, "rationale": "..."}}
         USER_COMMAND: {user_command}

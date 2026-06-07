@@ -95,12 +95,54 @@ class MissionReasonerNode(Node):
             raise FileNotFoundError(f'System description file not found: {path}')
         return MissionReasoner.from_yaml_file(str(path))
 
+    def _log_debug_info(self, message: str) -> None:
+        if self._debug_logging:
+            self.get_logger().info(message)
+
+    @staticmethod
+    def _text_preview(text: str, limit: int = 160) -> str:
+        normalized = ' '.join((text or '').split())
+        if len(normalized) <= limit:
+            return normalized
+        return normalized[: limit - 3] + '...'
+
     def _handle_validate_mission(
         self, request: ValidateMission.Request, response: ValidateMission.Response
     ) -> ValidateMission.Response:
+        started_at = time.monotonic()
+        self.get_logger().info(
+            'Received mission validation request '
+            f"(session={request.session_id or '<none>'}, "
+            f"command='{self._text_preview(request.user_command)}', "
+            f"context_bytes={len(request.context_json or '')}, "
+            f"tree_catalog_bytes={len(request.tree_catalog_json or '')})"
+        )
         try:
             tree_catalog = parse_tree_catalog(request.tree_catalog_json)
+            self._log_debug_info(
+                'Parsed mission validation inputs '
+                f"(session={request.session_id or '<none>'}, "
+                f"tree_count={len(tree_catalog)}, "
+                f"tree_ids={[tree.get('id', '') for tree in tree_catalog if tree.get('id')]})"
+            )
             extracted_requirements = self._extract_requirements(request)
+            if extracted_requirements:
+                extracted_capabilities = extracted_requirements.get(
+                    'required_capabilities', []
+                )
+                self._log_debug_info(
+                    'Using extracted mission requirements '
+                    f"(session={request.session_id or '<none>'}, "
+                    f"required_capabilities={extracted_capabilities}, "
+                    f"mission_intents={extracted_requirements.get('mission_intents', [])}, "
+                    f"constraints={extracted_requirements.get('constraints', {})}, "
+                    f"ambiguities={extracted_requirements.get('ambiguities', [])})"
+                )
+            else:
+                self._log_debug_info(
+                    'No extracted mission requirements available; '
+                    'using deterministic command rules only.'
+                )
             result = self._reasoner.validate(
                 request.user_command,
                 tree_catalog,
@@ -121,17 +163,29 @@ class MissionReasonerNode(Node):
         response.matched_capabilities = list(result.matched_capabilities)
         response.missing_capabilities = list(result.missing_capabilities)
         response.candidate_trees = list(result.candidate_trees)
-        if self._debug_logging:
-            self.get_logger().info(
-                f'Validation response status={response.status_code}, '
-                f'candidates={response.candidate_trees}, missing={response.missing_capabilities}'
-            )
+        elapsed = time.monotonic() - started_at
+        self.get_logger().info(
+            'Mission validation completed '
+            f"(session={request.session_id or '<none>'}, "
+            f"status={response.status_code}, elapsed={elapsed:.2f}s, "
+            f"matched={response.matched_capabilities}, missing={response.missing_capabilities}, "
+            f"candidates={response.candidate_trees})"
+        )
+        self._log_debug_info(
+            'Mission validation response details '
+            f"(message='{self._text_preview(response.message)}', "
+            f"clarification='{self._text_preview(response.clarification_question)}', "
+            f"reasoning_keys={sorted(result.reasoning.keys())})"
+        )
         return response
 
     def _extract_requirements(
         self, request: ValidateMission.Request
     ) -> Optional[Dict[str, Any]]:
         if not self._enable_llm_extraction:
+            self._log_debug_info(
+                'Mission requirement extraction disabled by parameter; skipping LLM call.'
+            )
             return None
         if not self._requirements_client.wait_for_service(
             timeout_sec=self._llm_service_wait_timeout_sec
@@ -148,6 +202,14 @@ class MissionReasonerNode(Node):
         llm_request.capability_catalog_json = self._capability_catalog_json()
         llm_request.tree_catalog_json = request.tree_catalog_json
 
+        self._log_debug_info(
+            'Calling mission requirement extraction service '
+            f"(session={request.session_id or '<none>'}, "
+            f"command='{self._text_preview(request.user_command)}', "
+            f"context_bytes={len(request.context_json or '')}, "
+            f"capability_catalog_bytes={len(llm_request.capability_catalog_json or '')}, "
+            f"tree_catalog_bytes={len(request.tree_catalog_json or '')})"
+        )
         future = self._requirements_client.call_async(llm_request)
         event = threading.Event()
         future.add_done_callback(lambda _: event.set())
@@ -168,10 +230,14 @@ class MissionReasonerNode(Node):
             )
             return None
         elapsed = time.monotonic() - started_at
-        if self._debug_logging:
-            self.get_logger().info(
-                f'Mission requirement extraction completed in {elapsed:.2f}s.'
-            )
+        self._log_debug_info(
+            'Mission requirement extraction completed '
+            f"(session={request.session_id or '<none>'}, "
+            f"status={getattr(response, 'status_code', '<missing>')}, "
+            f"elapsed={elapsed:.2f}s, "
+            f"requirements_bytes={len(getattr(response, 'requirements_json', '') or '')}, "
+            f"reasoning='{self._text_preview(getattr(response, 'reasoning', ''))}')"
+        )
         if response is None or response.status_code != response.SUCCESS:
             reason = getattr(response, 'reasoning', '') if response else ''
             self.get_logger().warning(
@@ -189,6 +255,14 @@ class MissionReasonerNode(Node):
             return None
         parsed['_source'] = 'llm_interface'
         parsed['_reasoning'] = response.reasoning
+        self._log_debug_info(
+            'Parsed mission requirement extraction response '
+            f"(session={request.session_id or '<none>'}, "
+            f"required_capabilities={parsed.get('required_capabilities', [])}, "
+            f"mission_intents={parsed.get('mission_intents', [])}, "
+            f"constraints={parsed.get('constraints', {})}, "
+            f"ambiguities={parsed.get('ambiguities', [])})"
+        )
         return parsed
 
     def _capability_catalog_json(self) -> str:

@@ -24,6 +24,7 @@
 
       # Timing
       llm_timeout_sec: 45.0
+      selection_timeout_sec: 15.0
       gather_timeout_sec: 15.0
       payload_timeout_sec: 20.0
       bt_timeout_sec: 120.0
@@ -36,6 +37,6 @@
 
       # Tree catalog for selection service
       known_trees:
-        - "demo_tree.xml::Iterates waypoint queue via MoveTo and LogTemperature."
+        - "temperature_logging.xml::Navigate through waypoints and log temperature."
         - "navigate_and_photograph.xml::Navigate to waypoints and take RGB photos."
         - "explore_area.xml::Explore a ground area with obstacle avoidance."

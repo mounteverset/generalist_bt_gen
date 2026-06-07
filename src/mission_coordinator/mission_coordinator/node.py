@@ -31,6 +31,12 @@ from rclpy.task import Future
 from std_msgs.msg import String
 
 
+class _YieldOnce:
+    def __await__(self):
+        yield None
+        return None
+
+
 @dataclass
 class CoordinatorParams:
     mission_action_name: str
@@ -52,6 +58,7 @@ class CoordinatorParams:
     require_operator_accept: bool
     demo_mode: bool
     llm_timeout_sec: float
+    selection_timeout_sec: float
     gather_timeout_sec: float
     payload_timeout_sec: float
     bt_timeout_sec: float
@@ -188,7 +195,7 @@ class MissionCoordinatorNode(Node):
         transcript_dir.mkdir(parents=True, exist_ok=True)
 
         known_trees_default = [
-            'demo_tree.xml::Iterates waypoint queue via MoveTo and LogTemperature.'
+            'temperature_logging.xml::Navigate through waypoints and log temperature.'
         ]
 
         return CoordinatorParams(
@@ -223,6 +230,7 @@ class MissionCoordinatorNode(Node):
             require_operator_accept=bool(declare('require_operator_accept', True)),
             demo_mode=bool(declare('demo_mode', True)),
             llm_timeout_sec=float(declare('llm_timeout_sec', 45.0)),
+            selection_timeout_sec=float(declare('selection_timeout_sec', 15.0)),
             gather_timeout_sec=float(declare('gather_timeout_sec', 15.0)),
             payload_timeout_sec=float(declare('payload_timeout_sec', 20.0)),
             bt_timeout_sec=float(declare('bt_timeout_sec', 120.0)),
@@ -644,7 +652,7 @@ class MissionCoordinatorNode(Node):
                     if tree_id:
                         catalog.append((tree_id, desc.strip()))
         if not catalog:
-            catalog = [('demo_tree.xml', 'Fallback demo tree.')]
+            catalog = [('temperature_logging.xml', 'Fallback temperature logging tree.')]
         self._log_debug(f'Parsed tree catalog: {catalog}')
         return catalog
 
@@ -736,6 +744,11 @@ class MissionCoordinatorNode(Node):
             if not candidates:
                 candidates = [tree_id for tree_id, _ in self._tree_catalog]
             self._publish_status(response.message or 'Mission capability check passed.')
+            self.get_logger().info(
+                'Mission reasoner accepted mission '
+                f'(session={request.session_id}, candidates={candidates}, '
+                f'matched={list(response.matched_capabilities)})'
+            )
             self._log_debug(
                 f'Mission reasoner accepted mission; candidates={candidates}, '
                 f'matched={list(response.matched_capabilities)}'
@@ -747,7 +760,7 @@ class MissionCoordinatorNode(Node):
             self._log_debug(f'Mission reasoner requested clarification: {message}')
             return None
         if response.status_code == response.REFUSE:
-            message = response.message or 'Mission refused by capability reasoner.'
+            message = self._format_reasoner_rejection(response)
             self._publish_status(message)
             self._log_debug(
                 f'Mission reasoner refused mission; missing={list(response.missing_capabilities)}'
@@ -756,6 +769,79 @@ class MissionCoordinatorNode(Node):
         message = response.message or 'Mission reasoner failed to validate mission.'
         self._publish_status(message)
         return None
+
+    def _format_reasoner_rejection(self, response: ValidateMission.Response) -> str:
+        base_message = response.message or 'Mission refused by capability reasoner.'
+        reasoning = self._parse_reasoning_json(response.reasoning_json)
+        llm_requirements = reasoning.get('llm_requirements', {})
+        if not isinstance(llm_requirements, dict):
+            llm_requirements = {}
+
+        requested = self._string_list(
+            reasoning.get('requested_capabilities')
+            or llm_requirements.get('required_capabilities')
+        )
+        matched = self._string_list(response.matched_capabilities)
+        missing = self._string_list(response.missing_capabilities)
+        candidates = self._string_list(response.candidate_trees)
+        available = self._string_list(reasoning.get('available_trees'))
+        mission_intents = self._string_list(llm_requirements.get('mission_intents'))
+        ambiguities = self._string_list(llm_requirements.get('ambiguities'))
+        unsupported_notes = self._string_list(reasoning.get('unsupported_explanations'))
+
+        lines = [base_message, '', 'Reasoner details:']
+        if requested:
+            lines.append(f"- Required capabilities: {', '.join(requested)}")
+        if matched:
+            lines.append(f"- Capabilities matched by the robot: {', '.join(matched)}")
+        if missing:
+            lines.append(
+                "- Capabilities blocking a catalogue match: "
+                f"{', '.join(missing)}"
+            )
+        lines.append(
+            "- Candidate behavior trees: "
+            f"{', '.join(candidates) if candidates else 'none'}"
+        )
+        if available:
+            lines.append(f"- Available behavior trees checked: {', '.join(available)}")
+        if mission_intents:
+            lines.append(f"- Mission intents inferred: {', '.join(mission_intents)}")
+        if ambiguities:
+            lines.append(f"- Ambiguities: {'; '.join(ambiguities)}")
+        constraints = llm_requirements.get('constraints')
+        if isinstance(constraints, dict) and constraints:
+            constraint_text = ', '.join(
+                f'{key}={value}'
+                for key, value in sorted(constraints.items())
+                if value is not None
+            )
+            if constraint_text:
+                lines.append(f"- Constraints inferred: {constraint_text}")
+        if unsupported_notes:
+            lines.append(f"- Unsupported capability notes: {' '.join(unsupported_notes)}")
+
+        return '\n'.join(lines)
+
+    @staticmethod
+    def _parse_reasoning_json(reasoning_json: str) -> Dict[str, Any]:
+        if not reasoning_json:
+            return {}
+        try:
+            parsed = json.loads(reasoning_json)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _string_list(value) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value] if value else []
+        if isinstance(value, (list, tuple, set)):
+            return [str(item) for item in value if str(item)]
+        return []
 
     async def _select_behavior_tree(
         self,
@@ -774,6 +860,17 @@ class MissionCoordinatorNode(Node):
         if not catalog:
             self._log_debug('Mission reasoner left no candidate trees for selection.')
             return None
+        if len(catalog) == 1:
+            selected_tree = catalog[0][0]
+            self.get_logger().info(
+                'Skipping SelectBehaviorTree service because mission reasoner '
+                f'returned one candidate: {selected_tree}'
+            )
+            return selected_tree
+        self.get_logger().info(
+            'Calling SelectBehaviorTree service '
+            f'with candidates={[tree_id for tree_id, _ in catalog]}'
+        )
         self._log_debug('Waiting for SelectBehaviorTree service...')
         if not self._wait_for_service(self._select_tree_client, self.params.llm_select_service):
             return None
@@ -784,7 +881,20 @@ class MissionCoordinatorNode(Node):
         request.tree_descriptions = [desc for _, desc in catalog]
         request.context_snapshot = goal.context_json or ''
         self._log_debug(f'Calling selection service for session={request.session_id}')
-        response = await self._call_service(self._select_tree_client, request)
+        try:
+            response = await self._call_service_with_timeout(
+                self._select_tree_client,
+                request,
+                self.params.selection_timeout_sec,
+            )
+        except TimeoutError:
+            fallback = self._fallback_select_behavior_tree(goal.command, catalog)
+            self.get_logger().warn(
+                'SelectBehaviorTree timed out '
+                f'after {self.params.selection_timeout_sec:.1f}s; '
+                f'using fallback tree {fallback}'
+            )
+            return fallback
         if not response or response.status_code != 0:
             self.get_logger().warn('SelectBehaviorTree returned no match.')
             if response:
@@ -794,6 +904,36 @@ class MissionCoordinatorNode(Node):
             f'Selection response -> tree={response.selected_tree}, confidence={response.confidence}, reason="{response.reason}"'
         )
         return response.selected_tree
+
+    def _fallback_select_behavior_tree(
+        self,
+        command: str,
+        catalog: List[Tuple[str, str]],
+    ) -> Optional[str]:
+        if not catalog:
+            return None
+        command_lower = (command or '').lower()
+        command_tokens = {
+            token for token in command_lower.replace('_', ' ').split()
+            if len(token) > 2
+        }
+
+        best_tree = catalog[0][0]
+        best_score = -1
+        for tree_id, description in catalog:
+            haystack = f'{tree_id} {description}'.lower()
+            haystack_tokens = set(haystack.replace('_', ' ').split())
+            score = len(command_tokens & haystack_tokens)
+            if any(word in command_lower for word in ('temperature', 'temp', 'thermal')):
+                score += 5 if 'temperature' in haystack else 0
+            if any(word in command_lower for word in ('photo', 'picture', 'image', 'rgb', 'camera')):
+                score += 5 if any(word in haystack for word in ('photo', 'photograph', 'image', 'rgb')) else 0
+            if any(word in command_lower for word in ('explore', 'survey', 'area', 'search')):
+                score += 5 if 'explore' in haystack else 0
+            if score > best_score:
+                best_tree = tree_id
+                best_score = score
+        return best_tree
 
     def _context_requirements_for_tree(self, tree_id: str) -> List[str]:
         """Get context requirements from metadata."""
@@ -1254,6 +1394,16 @@ class MissionCoordinatorNode(Node):
 
     async def _call_service(self, client, request):
         return await client.call_async(request)
+
+    async def _call_service_with_timeout(self, client, request, timeout_sec: float):
+        future = client.call_async(request)
+        deadline = time.monotonic() + max(0.1, timeout_sec)
+        while not future.done():
+            if time.monotonic() >= deadline:
+                future.cancel()
+                raise TimeoutError(f'service call timed out after {timeout_sec:.1f}s')
+            await _YieldOnce()
+        return future.result()
 
     @staticmethod
     def _truncate_for_log(text: str, limit: int = 1200) -> str:

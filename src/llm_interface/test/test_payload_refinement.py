@@ -166,7 +166,7 @@ def test_render_payload_prompt_includes_operator_refinement_notes():
     }
 
     prompt = node._render_payload_prompt(
-        subtree_id='demo_tree.xml',
+        subtree_id='temperature_logging.xml',
         user_command='inspect the loading zone',
         context=context,
         contract={'waypoints': {'type': 'string'}},
@@ -189,14 +189,14 @@ def test_prepare_llm_json_text_extracts_json_from_content_parts():
     raw_content = [
         {
             'type': 'text',
-            'text': '{"tree_id": "demo_tree.xml", "confidence": 0.85}',
+            'text': '{"tree_id": "temperature_logging.xml", "confidence": 0.85}',
             'extras': {'signature': 'abc123'},
         }
     ]
 
     cleaned = node._prepare_llm_json_text(raw_content)
 
-    assert cleaned == '{"tree_id": "demo_tree.xml", "confidence": 0.85}'
+    assert cleaned == '{"tree_id": "temperature_logging.xml", "confidence": 0.85}'
 
 
 def test_prepare_llm_json_text_extracts_embedded_json_snippet():

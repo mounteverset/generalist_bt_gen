@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import json
 import math
 import mimetypes
@@ -44,7 +45,8 @@ SUPPORTED_LLM_PROVIDERS = {'gemini', 'openai', 'openrouter'}
 DEFAULT_SELECTION_PROMPT = (
     "You are a mission planner for a field robot. Given USER_COMMAND and a JSON array of\n"
     "behavior trees (each with id + description), choose the best tree or return NONE.\n"
-    "tree_id MUST be exactly one of the string IDs in TREES_JSON (e.g., \"demo_tree.xml\").\n"
+    "tree_id MUST be exactly one of the string IDs in TREES_JSON "
+    "(e.g., \"temperature_logging.xml\").\n"
     "Do NOT answer with numeric indexes.\n"
     "Respond strictly as JSON: {{\"tree_id\": \"<id or NONE>\", \"confidence\": 0-1, \"rationale\": \"...\"}}\n"
     "USER_COMMAND: {user_command}\n"
@@ -205,6 +207,8 @@ class LLMInterfaceNode(Node):
             self.declare_parameter('mission_requirements_llm_enabled', True)
         if not self.has_parameter('selection_temperature'):
             self.declare_parameter('selection_temperature', 0.0)
+        if not self.has_parameter('selection_timeout_sec'):
+            self.declare_parameter('selection_timeout_sec', 10.0)
         if not self.has_parameter('mission_requirements_temperature'):
             self.declare_parameter('mission_requirements_temperature', 0.0)
         if not self.has_parameter('payload_multimodal_enabled'):
@@ -212,7 +216,7 @@ class LLMInterfaceNode(Node):
         if not self.has_parameter('payload_max_attachment_bytes'):
             self.declare_parameter('payload_max_attachment_bytes', 5_000_000)
         if not self.has_parameter('payload_max_attachments'):
-            self.declare_parameter('payload_max_attachments', 4)
+            self.declare_parameter('payload_max_attachments', 6)
         if not self.has_parameter('payload_attachment_allowlist'):
             self.declare_parameter(
                 'payload_attachment_allowlist',
@@ -275,6 +279,9 @@ class LLMInterfaceNode(Node):
         )
         self._selection_temperature = float(
             self.get_parameter('selection_temperature').value
+        )
+        self._selection_timeout_sec = float(
+            self.get_parameter('selection_timeout_sec').value
         )
         self._mission_requirements_temperature = float(
             self.get_parameter('mission_requirements_temperature').value
@@ -348,6 +355,7 @@ class LLMInterfaceNode(Node):
             f"requirements={requirements_topic}, payload={payload_topic}, "
             f"selection_provider={self._selection_provider}, "
             f"selection_model={self._selection_model_name}, "
+            f"selection_timeout_sec={self._selection_timeout_sec:.1f}, "
             f"mission_requirements_provider={self._mission_requirements_provider}, "
             f"mission_requirements_model={self._mission_requirements_model_name}, "
             f"payload_provider={self._payload_provider}, "
@@ -375,6 +383,25 @@ class LLMInterfaceNode(Node):
 
     def _provider_display_name(self, provider_name: str, model_name: str) -> str:
         return f"{provider_name}:{model_name}"
+
+    def _json_collection_count(self, payload: str, key: str = '') -> int:
+        if not payload:
+            return 0
+        try:
+            parsed = json.loads(payload)
+        except Exception:
+            return 0
+        if key and isinstance(parsed, dict):
+            parsed = parsed.get(key, [])
+        if isinstance(parsed, (list, dict)):
+            return len(parsed)
+        return 0
+
+    def _text_preview(self, text: str, limit: int = 160) -> str:
+        normalized = re.sub(r'\s+', ' ', text or '').strip()
+        if len(normalized) <= limit:
+            return normalized
+        return normalized[: limit - 3] + '...'
 
     def _create_chat_llm(
         self, provider_name: str, model_name: str, temperature: float, purpose: str
@@ -427,12 +454,19 @@ class LLMInterfaceNode(Node):
             kwargs['app_url'] = self._openrouter_app_url
         if self._openrouter_app_title:
             kwargs['app_title'] = self._openrouter_app_title
+        if purpose == 'selection':
+            kwargs['timeout'] = max(1, int(math.ceil(self._selection_timeout_sec)))
         return ChatOpenRouter(**kwargs)
 
     # region Selection
     def handle_selection_request(
         self, request: SelectBehaviorTree.Request, response: SelectBehaviorTree.Response
     ) -> SelectBehaviorTree.Response:
+        self.get_logger().info(
+            'Received behavior tree selection request '
+            f"(session={request.session_id or '<none>'}, "
+            f"candidates={list(request.available_trees)})"
+        )
         if len(request.available_trees) != len(request.tree_descriptions):
             response.status_code = self.SELECT_ERROR
             response.reason = (
@@ -464,6 +498,11 @@ class LLMInterfaceNode(Node):
         response.selected_tree = request.available_trees[idx]
         response.confidence = confidence
         response.reason = reason
+        self.get_logger().info(
+            'Behavior tree selection completed '
+            f"(session={request.session_id or '<none>'}, "
+            f"selected={response.selected_tree}, confidence={response.confidence:.2f})"
+        )
         return response
 
     def _select_tree_via_llm(
@@ -473,32 +512,43 @@ class LLMInterfaceNode(Node):
             return None
 
         if not self._selection_llm_enabled:
-            return self._fallback_selection(tree_ids)
+            self.get_logger().info(
+                f'Selection LLM disabled; using fallback for candidates={tree_ids}'
+            )
+            return self._fallback_selection(tree_ids, descriptions, user_command)
 
         try:
             chain = self._get_selection_chain()
         except RuntimeError as exc:
             self.get_logger().error(str(exc))
-            return self._fallback_selection(tree_ids)
+            return self._fallback_selection(tree_ids, descriptions, user_command)
 
         payload = [
             {"id": tree_id, "description": desc}
             for tree_id, desc in zip(tree_ids, descriptions)
         ]
 
+        self.get_logger().info(
+            'Invoking behavior tree selection LLM '
+            f"({self._provider_display_name(self._selection_provider, self._selection_model_name)}, "
+            f"candidates={tree_ids}, timeout={self._selection_timeout_sec:.1f}s)"
+        )
         try:
-            llm_result = chain.invoke(
+            llm_result = self._invoke_chain_with_timeout(
+                chain,
                 {
                     "user_command": user_command,
                     "trees_json": json.dumps(payload, ensure_ascii=False),
-                }
+                },
+                self._selection_timeout_sec,
+                'behavior tree selection LLM',
             )
         except Exception as exc:
             self.get_logger().error(
                 f"{self._provider_display_name(self._selection_provider, self._selection_model_name)} "
                 f"selection failed: {exc}"
             )
-            return self._fallback_selection(tree_ids)
+            return self._fallback_selection(tree_ids, descriptions, user_command)
 
         raw_content = getattr(llm_result, 'content', llm_result)
         cleaned_content = self._prepare_llm_json_text(raw_content)
@@ -510,7 +560,7 @@ class LLMInterfaceNode(Node):
                 f"{self._provider_display_name(self._selection_provider, self._selection_model_name)} "
                 f"response '{raw_content}': {exc}"
             )
-            return self._fallback_selection(tree_ids)
+            return self._fallback_selection(tree_ids, descriptions, user_command)
 
         selected_id = parsed.get('tree_id')
         if selected_id not in tree_ids:
@@ -518,7 +568,7 @@ class LLMInterfaceNode(Node):
                 f"{self._selection_provider} returned unknown tree '{selected_id}'; "
                 "falling back."
             )
-            return self._fallback_selection(tree_ids)
+            return self._fallback_selection(tree_ids, descriptions, user_command)
 
         confidence = float(parsed.get('confidence', 0.6))
         rationale = parsed.get('rationale', '')
@@ -529,6 +579,27 @@ class LLMInterfaceNode(Node):
             f"because {rationale or 'it best matched the mission context'}."
         )
         return idx, max(0.0, min(confidence, 1.0)), reason
+
+    def _invoke_chain_with_timeout(
+        self,
+        chain,
+        variables: dict,
+        timeout_sec: float,
+        label: str,
+    ):
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(chain.invoke, variables)
+        try:
+            result = future.result(timeout=max(0.1, timeout_sec))
+        except concurrent.futures.TimeoutError as exc:
+            future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise TimeoutError(f'{label} timed out after {timeout_sec:.1f}s') from exc
+        except Exception:
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        executor.shutdown(wait=False)
+        return result
 
     def _strip_code_fence(self, text: str) -> str:
         stripped = text.strip()
@@ -613,12 +684,39 @@ class LLMInterfaceNode(Node):
         return self._selection_chain
 
     def _fallback_selection(
-        self, tree_ids: List[str]
+        self,
+        tree_ids: List[str],
+        descriptions: Optional[List[str]] = None,
+        user_command: str = '',
     ) -> Optional[Tuple[int, float, str]]:
         if not tree_ids:
             return None
-        tree_id = tree_ids[0]
-        return 0, 0.5, f"[heuristic] defaulted to '{tree_id}'"
+        descriptions = descriptions or [''] * len(tree_ids)
+        command = (user_command or '').lower()
+        command_tokens = {
+            token for token in re.findall(r'[a-z0-9]+', command)
+            if len(token) > 2
+        }
+
+        best_idx = 0
+        best_score = -1
+        for idx, tree_id in enumerate(tree_ids):
+            haystack = f'{tree_id} {descriptions[idx] if idx < len(descriptions) else ""}'.lower()
+            tokens = set(re.findall(r'[a-z0-9]+', haystack))
+            score = len(command_tokens & tokens)
+            if any(word in command for word in ('temperature', 'temp', 'thermal')):
+                score += 5 if 'temperature' in haystack else 0
+            if any(word in command for word in ('photo', 'picture', 'image', 'rgb', 'camera')):
+                score += 5 if any(word in haystack for word in ('photo', 'photograph', 'image', 'rgb')) else 0
+            if any(word in command for word in ('explore', 'survey', 'area', 'search')):
+                score += 5 if 'explore' in haystack else 0
+            if score > best_score:
+                best_idx = idx
+                best_score = score
+
+        tree_id = tree_ids[best_idx]
+        confidence = 0.65 if best_score > 0 else 0.5
+        return best_idx, confidence, f"[heuristic] selected '{tree_id}'"
 
     # endregion
 
@@ -628,6 +726,21 @@ class LLMInterfaceNode(Node):
         request: ExtractMissionRequirements.Request,
         response: ExtractMissionRequirements.Response,
     ) -> ExtractMissionRequirements.Response:
+        capability_count = self._json_collection_count(
+            request.capability_catalog_json, 'supported'
+        )
+        unsupported_count = self._json_collection_count(
+            request.capability_catalog_json, 'unsupported'
+        )
+        tree_count = self._json_collection_count(request.tree_catalog_json, 'trees')
+        self.get_logger().info(
+            'Received mission requirement extraction request '
+            f"(session={request.session_id or '<none>'}, "
+            f"command='{self._text_preview(request.user_command)}', "
+            f"context_bytes={len(request.context_json or '')}, "
+            f"supported_capabilities={capability_count}, "
+            f"unsupported_capabilities={unsupported_count}, trees={tree_count})"
+        )
         requirements, reasoning = self._extract_requirements_via_llm(
             user_command=request.user_command,
             context_json=request.context_json,
@@ -638,11 +751,23 @@ class LLMInterfaceNode(Node):
             response.status_code = response.ERROR
             response.requirements_json = '{}'
             response.reasoning = reasoning or 'Mission requirement extraction failed.'
+            self.get_logger().warning(
+                'Mission requirement extraction request failed '
+                f"(session={request.session_id or '<none>'}, reason='{response.reasoning}')"
+            )
             return response
 
         response.status_code = response.SUCCESS
         response.requirements_json = json.dumps(requirements, ensure_ascii=False)
         response.reasoning = reasoning
+        self.get_logger().info(
+            'Mission requirement extraction request completed '
+            f"(session={request.session_id or '<none>'}, "
+            f"required_capabilities={requirements.get('required_capabilities', [])}, "
+            f"mission_intents={requirements.get('mission_intents', [])}, "
+            f"ambiguities={len(requirements.get('ambiguities', []) or [])}, "
+            f"constraint_keys={sorted((requirements.get('constraints') or {}).keys())})"
+        )
         return response
 
     def _extract_requirements_via_llm(
@@ -653,6 +778,7 @@ class LLMInterfaceNode(Node):
         tree_catalog_json: str,
     ) -> Tuple[Optional[dict], str]:
         if not self._mission_requirements_llm_enabled:
+            self.get_logger().info('Mission requirement LLM extraction is disabled.')
             return None, 'Mission requirement LLM extraction is disabled.'
 
         try:
@@ -661,6 +787,18 @@ class LLMInterfaceNode(Node):
             self.get_logger().warning(str(exc))
             return None, str(exc)
 
+        provider_display = self._provider_display_name(
+            self._mission_requirements_provider,
+            self._mission_requirements_model_name,
+        )
+        self.get_logger().info(
+            'Invoking mission requirement LLM '
+            f"({provider_display}, "
+            f"command_bytes={len(user_command or '')}, "
+            f"context_bytes={len(context_json or '')}, "
+            f"capability_catalog_bytes={len(capability_catalog_json or '')}, "
+            f"tree_catalog_bytes={len(tree_catalog_json or '')})"
+        )
         try:
             llm_result = chain.invoke(
                 {
@@ -672,14 +810,18 @@ class LLMInterfaceNode(Node):
             )
         except Exception as exc:
             message = (
-                f"{self._provider_display_name(self._mission_requirements_provider, self._mission_requirements_model_name)} "
-                f"mission requirement extraction failed: {exc}"
+                f"{provider_display} mission requirement extraction failed: {exc}"
             )
             self.get_logger().warning(message)
             return None, message
 
         raw_content = getattr(llm_result, 'content', llm_result)
         cleaned = self._prepare_llm_json_text(raw_content)
+        self.get_logger().info(
+            'Mission requirement LLM returned content '
+            f"(raw_chars={len(self._llm_content_to_text(raw_content))}, "
+            f"json_candidate_chars={len(cleaned)})"
+        )
         try:
             parsed = json.loads(cleaned)
         except Exception as exc:
@@ -690,6 +832,13 @@ class LLMInterfaceNode(Node):
             return None, 'Mission requirements response was not a JSON object.'
 
         requirements = self._normalize_requirements_payload(parsed)
+        self.get_logger().info(
+            'Normalized mission requirements '
+            f"(required_capabilities={requirements['required_capabilities']}, "
+            f"mission_intents={requirements['mission_intents']}, "
+            f"ambiguities={requirements['ambiguities']}, "
+            f"constraints={requirements['constraints']})"
+        )
         reasoning = str(
             parsed.get('rationale')
             or parsed.get('reasoning')

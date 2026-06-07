@@ -31,6 +31,7 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | `require_operator_accept` | If true, wait for UI acknowledgement before running BT (can be bypassed per mission with `context_json.auto_execute=true`). | `true` |
 | `demo_mode` | Skip ROS calls and emit mock responses (dev aid). | `true` |
 | `llm_timeout_sec` | Timeout for LLM planning service. | `45.0` |
+| `selection_timeout_sec` | Timeout for behavior-tree selection service before local fallback. | `15.0` |
 | `bt_timeout_sec` | Timeout for BT executor action. | `120.0` |
 | `spin_period_sec` | Main executor spin period. | `0.1` |
 | `transcript_directory` | Directory for mission transcripts/logs. | `~/.generalist_bt/mission_logs` |

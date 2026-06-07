@@ -193,7 +193,7 @@ def test_build_context_gather_hint_preserves_existing_context_and_refinement():
 
     hint = json.loads(
         node._build_context_gather_hint(
-            'demo_tree.xml',
+            'temperature_logging.xml',
             goal,
             operator_feedback='focus on the marked loading bay',
             prior_payload_json='{"waypoints": "1.0,2.0,0.0"}',
@@ -211,7 +211,7 @@ def test_build_context_gather_hint_preserves_existing_context_and_refinement():
     assert hint['auto_execute'] is False
     assert hint['site'] == 'north-yard'
     assert hint['MISSION_REQUEST']['session_id'] == 'session-42'
-    assert hint['MISSION_REQUEST']['subtree_id'] == 'demo_tree.xml'
+    assert hint['MISSION_REQUEST']['subtree_id'] == 'temperature_logging.xml'
     assert hint['MISSION_REFINEMENT']['requested'] is True
     assert (
         hint['MISSION_REFINEMENT']['operator_feedback']
@@ -238,7 +238,7 @@ def test_append_refinement_history_entry_accumulates_session_history():
 
     first = node._append_refinement_history_entry(
         'session-42',
-        'demo_tree.xml',
+        'temperature_logging.xml',
         1,
         'missed waypoint 2',
         '{"waypoints": "1.0,2.0,0.0"}',
@@ -246,7 +246,7 @@ def test_append_refinement_history_entry_accumulates_session_history():
     )
     second = node._append_refinement_history_entry(
         'session-42',
-        'demo_tree.xml',
+        'temperature_logging.xml',
         2,
         'still too close to the obstacle',
         '{"waypoints": "1.0,2.0,0.0; 3.0,4.0,0.0"}',
@@ -264,11 +264,11 @@ def test_append_refinement_history_entry_accumulates_session_history():
 def test_build_reasoner_tree_catalog_includes_capability_metadata():
     node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
     node._tree_catalog = [
-        ('demo_tree.xml', 'Fallback demo tree.'),
+        ('temperature_logging.xml', 'Fallback temperature logging tree.'),
         ('navigate_and_photograph.xml', 'Navigate and take photos.'),
     ]
     node._tree_metadata = {
-        'demo_tree.xml': {
+        'temperature_logging.xml': {
             'description': 'Metadata description.',
             'mission_intents': ['navigate_waypoints'],
             'required_capabilities': ['navigation.waypoints'],
@@ -283,7 +283,7 @@ def test_build_reasoner_tree_catalog_includes_capability_metadata():
 
     catalog = json.loads(node._build_reasoner_tree_catalog_json())['trees']
 
-    assert catalog[0]['id'] == 'demo_tree.xml'
+    assert catalog[0]['id'] == 'temperature_logging.xml'
     assert catalog[0]['description'] == 'Metadata description.'
     assert catalog[0]['required_capabilities'] == ['navigation.waypoints']
     assert catalog[0]['selection_constraints']['max_range_m'] == 5000
@@ -291,3 +291,66 @@ def test_build_reasoner_tree_catalog_includes_capability_metadata():
         'navigation.waypoints',
         'sensing.rgb_image',
     ]
+
+
+def test_format_reasoner_rejection_includes_llm_requirements_and_ambiguities():
+    node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
+    response = SimpleNamespace(
+        message='No behavior tree in the catalogue satisfies the requested capabilities.',
+        reasoning_json=json.dumps(
+            {
+                'requested_capabilities': [
+                    'locomotion.ground',
+                    'navigation.waypoints',
+                    'sensing.temperature',
+                    'payload.parse_waypoints',
+                    'mapping.slam',
+                ],
+                'llm_requirements': {
+                    'required_capabilities': [
+                        'locomotion.ground',
+                        'navigation.waypoints',
+                        'sensing.temperature',
+                        'payload.parse_waypoints',
+                        'mapping.slam',
+                    ],
+                    'mission_intents': ['navigate_waypoints', 'log_temperature'],
+                    'ambiguities': [
+                        'The exact coordinates for the 3 waypoints are not specified.',
+                        'It is unclear if the robot should actively generate a map.',
+                    ],
+                    'constraints': {'range_m': None, 'duration_s': None},
+                },
+                'available_trees': [
+                    'temperature_logging.xml',
+                    'navigate_and_photograph.xml',
+                    'explore_area.xml',
+                ],
+            }
+        ),
+        matched_capabilities=[
+            'locomotion.ground',
+            'mapping.slam',
+            'navigation.waypoints',
+            'payload.parse_waypoints',
+            'sensing.temperature',
+        ],
+        missing_capabilities=[
+            'locomotion.ground',
+            'mapping.slam',
+            'navigation.waypoints',
+            'payload.parse_waypoints',
+            'sensing.temperature',
+        ],
+        candidate_trees=[],
+    )
+
+    message = node._format_reasoner_rejection(response)
+
+    assert 'Reasoner details:' in message
+    assert 'Required capabilities: locomotion.ground' in message
+    assert 'mapping.slam' in message
+    assert 'Candidate behavior trees: none' in message
+    assert 'temperature_logging.xml' in message
+    assert 'Mission intents inferred: navigate_waypoints, log_temperature' in message
+    assert 'The exact coordinates for the 3 waypoints are not specified.' in message
