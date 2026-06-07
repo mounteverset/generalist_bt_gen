@@ -33,15 +33,53 @@
       }
       main {
         display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: 1rem;
+        grid-template-columns:
+          minmax(24rem, calc(var(--chat-pane-percent, 66) * 1%))
+          0.7rem
+          minmax(22rem, 1fr);
+        gap: 0.35rem;
         flex: 1;
+      }
+      .splitter {
+        align-self: stretch;
+        min-height: 100%;
+        border: none;
+        border-radius: 0.35rem;
+        background: transparent;
+        cursor: col-resize;
+        padding: 0;
+        position: relative;
+      }
+      .splitter::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 0;
+        bottom: 0;
+        width: 0.18rem;
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.25);
+      }
+      .splitter:hover::before,
+      .splitter:focus-visible::before,
+      body.resizing-layout .splitter::before {
+        background: #38bdf8;
+      }
+      .splitter:focus-visible {
+        outline: 2px solid #38bdf8;
+        outline-offset: 0.1rem;
+      }
+      body.resizing-layout {
+        cursor: col-resize;
+        user-select: none;
       }
       .panel {
         background: #1e293b;
         border-radius: 0.75rem;
         padding: 1rem;
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+        min-width: 0;
       }
       .panel.awaiting-approval {
         border: 2px solid #f59e0b;
@@ -83,6 +121,11 @@
         font-size: 0.75rem;
         color: #94a3b8;
         margin-bottom: 0.2rem;
+      }
+      .messages li .content,
+      #status-text {
+        white-space: pre-wrap;
+        word-break: break-word;
       }
       form {
         display: flex;
@@ -245,6 +288,10 @@
       @media (max-width: 900px) {
         main {
           grid-template-columns: 1fr;
+          gap: 1rem;
+        }
+        .splitter {
+          display: none;
         }
         .pending-layout {
           grid-template-columns: 1fr;
@@ -264,7 +311,7 @@
       </div>
     </header>
 
-    <main>
+    <main id="app-layout">
       <section class="panel">
         <h2>Chat</h2>
         <ul class="messages" id="messages"></ul>
@@ -283,6 +330,17 @@
           <button type="submit" id="chat-submit">Send</button>
         </form>
       </section>
+      <button
+        type="button"
+        class="splitter"
+        id="layout-splitter"
+        role="separator"
+        aria-label="Resize chat and mission review panels"
+        aria-orientation="vertical"
+        aria-valuemin="25"
+        aria-valuemax="80"
+        aria-valuenow="66"
+      ></button>
       <section class="panel" id="pending-plan-panel">
         <h2>Status</h2>
         <p id="status-text">{{ status }}</p>
@@ -340,6 +398,8 @@
 
     <script>
       const messagesEl = document.getElementById("messages");
+      const layoutEl = document.getElementById("app-layout");
+      const splitterEl = document.getElementById("layout-splitter");
       const statusEl = document.getElementById("status-text");
       const subtreeEl = document.getElementById("active-subtree");
       const diagEl = document.getElementById("diag-grid");
@@ -364,6 +424,11 @@
       const feedbackEl = document.getElementById("feedback");
       let currentPendingPlan = null;
       let currentMapToken = 0;
+      const splitStorageKey = "generalist-bt-chat-pane-percent";
+      const minChatPercent = 25;
+      const maxChatPercent = 80;
+
+      initLayoutSplitter();
 
       async function fetchState() {
         const res = await fetch("/state");
@@ -382,10 +447,78 @@
           const li = document.createElement("li");
           li.innerHTML = `<div class="meta">${msg.ts} · ${
             msg.role
-          }</div><div>${escapeHtml(msg.content)}</div>`;
+          }</div><div class="content">${escapeHtml(msg.content)}</div>`;
           messagesEl.appendChild(li);
         });
         messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function initLayoutSplitter() {
+        const stored = Number(localStorage.getItem(splitStorageKey));
+        setChatPanePercent(Number.isFinite(stored) ? stored : 66, false);
+
+        splitterEl.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          splitterEl.setPointerCapture(event.pointerId);
+          document.body.classList.add("resizing-layout");
+        });
+
+        splitterEl.addEventListener("pointermove", (event) => {
+          if (!splitterEl.hasPointerCapture(event.pointerId)) return;
+          resizeFromClientX(event.clientX);
+        });
+
+        splitterEl.addEventListener("pointerup", (event) => {
+          finishResize(event.pointerId);
+        });
+
+        splitterEl.addEventListener("pointercancel", (event) => {
+          finishResize(event.pointerId);
+        });
+
+        splitterEl.addEventListener("dblclick", () => {
+          setChatPanePercent(66, true);
+        });
+
+        splitterEl.addEventListener("keydown", (event) => {
+          const current = Number(splitterEl.getAttribute("aria-valuenow")) || 66;
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            setChatPanePercent(current - 2, true);
+          } else if (event.key === "ArrowRight") {
+            event.preventDefault();
+            setChatPanePercent(current + 2, true);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            setChatPanePercent(minChatPercent, true);
+          } else if (event.key === "End") {
+            event.preventDefault();
+            setChatPanePercent(maxChatPercent, true);
+          }
+        });
+      }
+
+      function resizeFromClientX(clientX) {
+        const rect = layoutEl.getBoundingClientRect();
+        if (!rect.width) return;
+        const percent = ((clientX - rect.left) / rect.width) * 100;
+        setChatPanePercent(percent, true);
+      }
+
+      function finishResize(pointerId) {
+        if (splitterEl.hasPointerCapture(pointerId)) {
+          splitterEl.releasePointerCapture(pointerId);
+        }
+        document.body.classList.remove("resizing-layout");
+      }
+
+      function setChatPanePercent(percent, persist) {
+        const clamped = Math.min(maxChatPercent, Math.max(minChatPercent, percent));
+        document.documentElement.style.setProperty("--chat-pane-percent", clamped.toFixed(1));
+        splitterEl.setAttribute("aria-valuenow", String(Math.round(clamped)));
+        if (persist) {
+          localStorage.setItem(splitStorageKey, clamped.toFixed(1));
+        }
       }
 
       function renderDiagnostics(diag) {
