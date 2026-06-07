@@ -14,6 +14,7 @@ find_package(nav2_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(gen_bt_interfaces REQUIRED)
+find_package(btcpp_ros2_interfaces REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geographic_msgs REQUIRED)
@@ -33,6 +34,7 @@ ament_target_dependencies(context_gatherer_node
   rclcpp
   rclcpp_action
   gen_bt_interfaces
+  btcpp_ros2_interfaces
   sensor_msgs
   nav_msgs
   geographic_msgs
@@ -76,6 +78,7 @@ ament_export_dependencies(
   rclcpp
   rclcpp_action
   gen_bt_interfaces
+  btcpp_ros2_interfaces
   sensor_msgs
   nav_msgs
   geographic_msgs

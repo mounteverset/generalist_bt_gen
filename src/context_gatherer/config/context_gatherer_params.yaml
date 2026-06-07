@@ -12,6 +12,15 @@ context_gatherer:
     find_anything_service_name: "/language_processor/find_object_locations"
     find_anything_service_timeout_sec: 10.0
     find_anything_default_max_results: 5
+    bt_executor_action_name: "/bt_executor/execute_tree"
+    rgb360_sweep_tree_id: "360_rgb_sweep.xml"
+    rgb360_sweep_timeout_sec: 45.0
+    rgb360_sweep_camera_topic: "/a200_0000/sensors/camera_0/color/image"
+    rgb360_sweep_pose_topic: "/a200_0000/pose"
+    rgb360_sweep_odom_topic: "/a200_0000/platform/odom/filtered"
+    rgb360_sweep_image_timeout_ms: 1000
+    rgb360_sweep_pose_timeout_ms: 1000
+    rgb360_sweep_odom_timeout_ms: 1000
     maptiler_api_key: ""
     maptiler_api_mode: "maps" # tiles or maps
     maptiler_style_id: "openstreetmap" # openstreetmap or satellite-v2

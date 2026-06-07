@@ -1,0 +1,109 @@
+<?xml version="1.0"?>
+<!--
+Tree Name: 360_rgb_sweep.xml
+Description: Active context routine that rotates the robot in place and saves
+             RGB images at 60 degree increments. It captures five images at
+             60, 120, 180, 240, and 300 degrees, then returns to the starting
+             heading without taking a duplicate 360 degree image.
+Usage Instructions:
+  - Intended for context gathering, not direct mission selection.
+  - GetCurrentPose reads the current map-frame pose and creates fixed-yaw sweep
+    pose strings at the current x,y position.
+  - Optional payload fields: "pose_topic", "pose_timeout_ms", "odom_topic",
+    "odom_timeout_ms", "camera_topic", "photo_output_directory", and
+    "image_timeout_ms".
+-->
+<root BTCPP_format="4" main_tree_to_execute="360_rgb_sweep.xml">
+  <BehaviorTree ID="360_rgb_sweep.xml">
+    <Sequence name="Rgb360Sweep">
+      <GetCurrentPose
+        name="ReadSweepOrigin"
+        pose_topic="{pose_topic}"
+        pose_timeout_ms="{pose_timeout_ms}"
+        odom_topic="{odom_topic}"
+        odom_timeout_ms="{odom_timeout_ms}"
+        current_x="{current_x}"
+        current_y="{current_y}"
+        current_yaw="{current_yaw}"
+        current_pose="{current_pose}"
+        current_frame_id="{sweep_frame_id}"
+        sweep_pose_000="{sweep_pose_000}"
+        sweep_pose_060="{sweep_pose_060}"
+        sweep_pose_120="{sweep_pose_120}"
+        sweep_pose_180="{sweep_pose_180}"
+        sweep_pose_240="{sweep_pose_240}"
+        sweep_pose_300="{sweep_pose_300}"
+        sweep_pose_360="{sweep_pose_360}" />
+
+      <MoveTo
+        name="RotateTo000"
+        pose="{sweep_pose_000}"
+        action_name="/a200_0000/navigate_to_pose"/>
+      <TakePhoto
+        name="Capture000"
+        image_topic="{camera_topic}"
+        output_directory="{photo_output_directory}"
+        filename_prefix="sweep_000"
+        timeout_ms="{image_timeout_ms}"
+        filepath="{sweep_photo_000}" />
+
+      <MoveTo
+        name="RotateTo060"
+        pose="{sweep_pose_060}"
+        action_name="/a200_0000/navigate_to_pose"/>
+      <TakePhoto
+        name="Capture060"
+        image_topic="{camera_topic}"
+        output_directory="{photo_output_directory}"
+        filename_prefix="sweep_060"
+        timeout_ms="{image_timeout_ms}"
+        filepath="{sweep_photo_060}" />
+
+      <MoveTo
+        name="RotateTo120"
+        pose="{sweep_pose_120}"
+        action_name="/a200_0000/navigate_to_pose"/>
+      <TakePhoto
+        name="Capture120"
+        image_topic="{camera_topic}"
+        output_directory="{photo_output_directory}"
+        filename_prefix="sweep_120"
+        timeout_ms="{image_timeout_ms}"
+        filepath="{sweep_photo_120}" />
+
+      <MoveTo
+        name="RotateTo180"
+        pose="{sweep_pose_180}"
+        action_name="/a200_0000/navigate_to_pose"/>
+      <TakePhoto
+        name="Capture180"
+        image_topic="{camera_topic}"
+        output_directory="{photo_output_directory}"
+        filename_prefix="sweep_180"
+        timeout_ms="{image_timeout_ms}"
+        filepath="{sweep_photo_180}" />
+
+      <MoveTo
+        name="RotateTo240"
+        pose="{sweep_pose_240}"
+        action_name="/a200_0000/navigate_to_pose"/>
+      <TakePhoto
+        name="Capture240"
+        image_topic="{camera_topic}"
+        output_directory="{photo_output_directory}"
+        filename_prefix="sweep_240"
+        timeout_ms="{image_timeout_ms}"
+        filepath="{sweep_photo_240}" />
+
+      <MoveTo
+        name="RotateThrough300"
+        pose="{sweep_pose_300}"
+        action_name="/a200_0000/navigate_to_pose"/>
+
+      <MoveTo
+        name="ReturnToStartHeading"
+        pose="{sweep_pose_360}"
+        action_name="/a200_0000/navigate_to_pose"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

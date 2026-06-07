@@ -18,6 +18,8 @@
 #include <vector>
 
 #include <curl/curl.h>
+#include "btcpp_ros2_interfaces/action/execute_tree.hpp"
+#include "btcpp_ros2_interfaces/msg/node_status.hpp"
 #include "cv_bridge/cv_bridge.hpp"
 #include "gen_bt_interfaces/action/gather_context.hpp"
 #include "gen_bt_interfaces/srv/annotate_satellite_map.hpp"
@@ -46,6 +48,7 @@ public:
   using SaveMap = nav2_msgs::srv::SaveMap;
   using AnnotateSatelliteMap = gen_bt_interfaces::srv::AnnotateSatelliteMap;
   using FindObjectLocations = language_feature_msgs::srv::FindObjectLocations;
+  using ExecuteTree = btcpp_ros2_interfaces::action::ExecuteTree;
   using RequirementHandler = std::function<void(json&, std::vector<std::string>&)>;
 
   ContextGathererNode()
@@ -70,6 +73,24 @@ public:
       "find_anything_service_timeout_sec", 10.0);
     find_anything_default_max_results_ = this->declare_parameter<int>(
       "find_anything_default_max_results", 5);
+    bt_executor_action_name_ = this->declare_parameter<std::string>(
+      "bt_executor_action_name", "/bt_executor/execute_tree");
+    rgb360_sweep_tree_id_ = this->declare_parameter<std::string>(
+      "rgb360_sweep_tree_id", "360_rgb_sweep.xml");
+    rgb360_sweep_timeout_sec_ = this->declare_parameter<double>(
+      "rgb360_sweep_timeout_sec", 45.0);
+    rgb360_sweep_camera_topic_ = this->declare_parameter<std::string>(
+      "rgb360_sweep_camera_topic", "/a200_0000/sensors/camera_0/color/image");
+    rgb360_sweep_pose_topic_ = this->declare_parameter<std::string>(
+      "rgb360_sweep_pose_topic", "/a200_0000/pose");
+    rgb360_sweep_odom_topic_ = this->declare_parameter<std::string>(
+      "rgb360_sweep_odom_topic", "/odom");
+    rgb360_sweep_image_timeout_ms_ = this->declare_parameter<int>(
+      "rgb360_sweep_image_timeout_ms", 1000);
+    rgb360_sweep_pose_timeout_ms_ = this->declare_parameter<int>(
+      "rgb360_sweep_pose_timeout_ms", 1000);
+    rgb360_sweep_odom_timeout_ms_ = this->declare_parameter<int>(
+      "rgb360_sweep_odom_timeout_ms", 1000);
     maptiler_api_key_ = this->declare_parameter<std::string>(
       "maptiler_api_key",
       std::getenv("MAPTILER_API_KEY") ? std::getenv("MAPTILER_API_KEY") : "");
@@ -170,14 +191,17 @@ public:
     satellite_map_annotator_client_ = create_client<AnnotateSatelliteMap>(
       satellite_map_annotator_service_name_);
     find_anything_client_ = create_client<FindObjectLocations>(find_anything_service_name_);
+    bt_executor_client_ = rclcpp_action::create_client<ExecuteTree>(
+      this, bt_executor_action_name_);
 
     RCLCPP_INFO(
       get_logger(),
-      "Context gatherer ready with %zu requirement handlers, annotated map client %s, satellite annotator %s, FindAnything client %s",
+      "Context gatherer ready with %zu requirement handlers, annotated map client %s, satellite annotator %s, FindAnything client %s, BT executor %s",
       requirement_handlers_.size(),
       annotated_map_service_name_.c_str(),
       satellite_map_annotator_service_name_.c_str(),
-      find_anything_service_name_.c_str());
+      find_anything_service_name_.c_str(),
+      bt_executor_action_name_.c_str());
   }
 
   ~ContextGathererNode() override
@@ -246,6 +270,7 @@ private:
   rclcpp::Client<SaveMap>::SharedPtr annotated_map_client_;
   rclcpp::Client<AnnotateSatelliteMap>::SharedPtr satellite_map_annotator_client_;
   rclcpp::Client<FindObjectLocations>::SharedPtr find_anything_client_;
+  rclcpp_action::Client<ExecuteTree>::SharedPtr bt_executor_client_;
 
   std::string action_name_;
   std::string output_directory_;
@@ -259,6 +284,15 @@ private:
   std::string find_anything_service_name_;
   double find_anything_service_timeout_sec_;
   int find_anything_default_max_results_;
+  std::string bt_executor_action_name_;
+  std::string rgb360_sweep_tree_id_;
+  double rgb360_sweep_timeout_sec_;
+  std::string rgb360_sweep_camera_topic_;
+  std::string rgb360_sweep_pose_topic_;
+  std::string rgb360_sweep_odom_topic_;
+  int rgb360_sweep_image_timeout_ms_;
+  int rgb360_sweep_pose_timeout_ms_;
+  int rgb360_sweep_odom_timeout_ms_;
   std::string maptiler_api_key_;
   std::string maptiler_api_mode_;
   std::string maptiler_style_id_;
@@ -324,6 +358,10 @@ private:
 
     requirement_handlers_["FIND_ANYTHING"] = [this](json& ctx, std::vector<std::string>& /*uris*/) {
       handle_find_anything(ctx);
+    };
+
+    requirement_handlers_["RGB360SWEEP"] = [this](json& ctx, std::vector<std::string>& uris) {
+      handle_rgb360_sweep(ctx, uris);
     };
   }
 
@@ -705,6 +743,169 @@ private:
         get_logger(), "Captured FIND_ANYTHING for %zu query/queries via %s",
         queries.size(), find_anything_service_name_.c_str());
     }
+  }
+
+  void handle_rgb360_sweep(json& context_json, std::vector<std::string>& uris)
+  {
+    const std::string session_id = extract_mission_session_id(context_json);
+    const std::string safe_session = sanitize_path_token(
+      session_id.empty() ? "unknown" : session_id);
+    const std::string sweep_dir = output_directory_ + "/rgb360sweep_" +
+      safe_session + "_" + std::to_string(this->now().nanoseconds());
+    std::filesystem::create_directories(sweep_dir);
+
+    json payload = {
+      {"photo_output_directory", sweep_dir},
+      {"camera_topic", rgb360_sweep_camera_topic_},
+      {"pose_topic", rgb360_sweep_pose_topic_},
+      {"odom_topic", rgb360_sweep_odom_topic_},
+      {"image_timeout_ms", rgb360_sweep_image_timeout_ms_},
+      {"pose_timeout_ms", rgb360_sweep_pose_timeout_ms_},
+      {"odom_timeout_ms", rgb360_sweep_odom_timeout_ms_}
+    };
+
+    ExecuteTree::Result::SharedPtr bt_result;
+    std::string message;
+    const bool success = execute_sweep_tree(payload.dump(), bt_result, message);
+    json images = collect_rgb360_sweep_images(sweep_dir, uris);
+
+    context_json["RGB360SWEEP"] = {
+      {"success", success},
+      {"tree_id", rgb360_sweep_tree_id_},
+      {"bt_executor_action", bt_executor_action_name_},
+      {"output_directory", sweep_dir},
+      {"output_directory_uri", to_file_uri(sweep_dir)},
+      {"image_count", images.size()},
+      {"images", images},
+      {"message", message}
+    };
+
+    if (bt_result) {
+      context_json["RGB360SWEEP"]["bt_status"] = bt_result->node_status.status;
+      context_json["RGB360SWEEP"]["bt_return_message"] = bt_result->return_message;
+    }
+
+    if (!success) {
+      RCLCPP_WARN(get_logger(), "RGB360SWEEP failed: %s", message.c_str());
+      return;
+    }
+
+    if (debug_logging_) {
+      RCLCPP_INFO(
+        get_logger(), "Captured RGB360SWEEP with %zu images in %s",
+        images.size(), sweep_dir.c_str());
+    }
+  }
+
+  bool execute_sweep_tree(
+    const std::string& payload_json,
+    ExecuteTree::Result::SharedPtr& bt_result,
+    std::string& message)
+  {
+    if (!bt_executor_client_) {
+      message = "BT executor action client is unavailable";
+      return false;
+    }
+
+    const auto timeout = std::chrono::duration<double>(rgb360_sweep_timeout_sec_);
+    if (!bt_executor_client_->wait_for_action_server(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(timeout)))
+    {
+      message = "BT executor action server unavailable";
+      return false;
+    }
+
+    ExecuteTree::Goal goal;
+    goal.target_tree = rgb360_sweep_tree_id_;
+    goal.payload = payload_json;
+
+    auto goal_handle_future = bt_executor_client_->async_send_goal(goal);
+    if (goal_handle_future.wait_for(timeout) != std::future_status::ready) {
+      message = "Timed out sending RGB360SWEEP goal to BT executor";
+      return false;
+    }
+
+    auto goal_handle = goal_handle_future.get();
+    if (!goal_handle) {
+      message = "BT executor rejected RGB360SWEEP goal";
+      return false;
+    }
+
+    auto result_future = bt_executor_client_->async_get_result(goal_handle);
+    if (result_future.wait_for(timeout) != std::future_status::ready) {
+      message = "Timed out waiting for RGB360SWEEP BT result";
+      return false;
+    }
+
+    const auto wrapped_result = result_future.get();
+    bt_result = wrapped_result.result;
+    if (!bt_result) {
+      message = "BT executor returned no RGB360SWEEP result";
+      return false;
+    }
+
+    message = bt_result->return_message;
+    return wrapped_result.code == rclcpp_action::ResultCode::SUCCEEDED &&
+      bt_result->node_status.status == btcpp_ros2_interfaces::msg::NodeStatus::SUCCESS;
+  }
+
+  json collect_rgb360_sweep_images(
+    const std::string& sweep_dir,
+    std::vector<std::string>& uris)
+  {
+    json images = json::array();
+    const std::vector<std::pair<std::string, double>> expected = {
+      {"sweep_000", 0.0},
+      {"sweep_060", 1.046},
+      {"sweep_120", 2.093},
+      {"sweep_180", 3.14},
+      {"sweep_240", 4.186}
+    };
+
+    for (const auto& [prefix, yaw] : expected) {
+      const std::string path = find_first_file_with_prefix(sweep_dir, prefix);
+      if (path.empty()) {
+        images.push_back({
+          {"prefix", prefix},
+          {"yaw_rad", yaw},
+          {"available", false}
+        });
+        continue;
+      }
+      const std::string uri = to_file_uri(path);
+      uris.push_back(uri);
+      images.push_back({
+        {"prefix", prefix},
+        {"yaw_rad", yaw},
+        {"available", true},
+        {"path", path},
+        {"uri", uri}
+      });
+    }
+    return images;
+  }
+
+  std::string find_first_file_with_prefix(
+    const std::string& directory,
+    const std::string& prefix) const
+  {
+    if (!std::filesystem::exists(directory)) {
+      return "";
+    }
+
+    std::vector<std::filesystem::path> matches;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+      if (!entry.is_regular_file()) {
+        continue;
+      }
+      const auto path = entry.path();
+      const std::string filename = path.filename().string();
+      if (filename.rfind(prefix + "_", 0) == 0 && path.extension() == ".jpg") {
+        matches.push_back(path);
+      }
+    }
+    std::sort(matches.begin(), matches.end());
+    return matches.empty() ? "" : matches.front().string();
   }
 
   std::string save_image_to_disk(const sensor_msgs::msg::Image::SharedPtr& img, const std::string& prefix)
@@ -1597,6 +1798,19 @@ private:
     if (!trimmed.empty()) {
       vec.push_back(trimmed);
     }
+  }
+
+  static std::string sanitize_path_token(const std::string& raw)
+  {
+    std::string sanitized;
+    for (const char c : raw) {
+      if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-') {
+        sanitized.push_back(c);
+      } else {
+        sanitized.push_back('_');
+      }
+    }
+    return sanitized.empty() ? "unknown" : sanitized;
   }
 
   rclcpp_action::GoalResponse handle_goal(

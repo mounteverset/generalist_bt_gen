@@ -73,7 +73,7 @@ actions:
   - id: "log_temperature"
     capability: "sensing.temperature"
     type: "sensing"
-    ros_interface: "/temperature/log"
+    ros_interface: "/log_temperature"
     ros_type: "service"
     description: "Log temperature through the configured demo service."
   - id: "parse_waypoints"
@@ -127,6 +127,13 @@ command_capability_rules:
     keywords: ["dig", "soil sample", "soil sampling", "sample soil", "bore"]
   - capability: "sampling.water"
     keywords: ["water sample", "sample water", "measure water quality"]
+  - capability: "sensing.temperature"
+    keywords:
+      - "temperature"
+      - "ambient temperature"
+      - "measure temperature"
+      - "log temperature"
+      - "temperature logging"
   - capability: "sensing.rgb_image"
     keywords: ["photo", "photos", "picture", "pictures", "photograph", "document", "image", "images"]
   - capability: "navigation.waypoints"

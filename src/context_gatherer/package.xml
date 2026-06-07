@@ -14,6 +14,7 @@
   <build_depend>rclcpp</build_depend>
   <build_depend>rclcpp_action</build_depend>
   <build_depend>gen_bt_interfaces</build_depend>
+  <build_depend>btcpp_ros2_interfaces</build_depend>
   <build_depend>sensor_msgs</build_depend>
   <build_depend>nav_msgs</build_depend>
   <build_depend>geographic_msgs</build_depend>
@@ -28,6 +29,7 @@
   <exec_depend>rclcpp</exec_depend>
   <exec_depend>rclcpp_action</exec_depend>
   <exec_depend>gen_bt_interfaces</exec_depend>
+  <exec_depend>btcpp_ros2_interfaces</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>geographic_msgs</exec_depend>
