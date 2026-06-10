@@ -27,7 +27,20 @@ context_gatherer:
     maptiler_tile_zoom: 18
     maptiler_tile_radius: 1
     maptiler_request_timeout_sec: 10.0
-    default_timeout_sec: 10.0
+    dynamic_satellite_zoom_enabled: true
+    maptiler_overview_min_zoom: 13
+    maptiler_overview_max_zoom: 19
+    maptiler_detail_zoom: 18
+    maptiler_max_overview_tile_radius: 2
+    maptiler_max_map_artifacts: 5
+    maptiler_overview_target_max_m_per_px: 1.5
+    overpass_enabled: true
+    overpass_endpoint: "https://overpass-api.de/api/interpreter"
+    overpass_radius_m: 750.0
+    overpass_timeout_sec: 10.0
+    overpass_max_linear_features: 40
+    overpass_max_coordinates_per_feature: 80
+    default_timeout_sec: 120.0
     enable_debug_logging: true
     # Comma-separated fallback requirements when none are provided in the goal.
     default_requirements: "ROBOT_POSE,RGB_IMAGE,ANNOTATED_SLAM_MAP_IMAGE"

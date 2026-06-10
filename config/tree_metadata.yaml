@@ -19,7 +19,7 @@ trees:
       - "sampling.soil"
     selection_constraints:
       max_range_m: 5000
-    context_requirements: [ROBOT_POSE, ANNOTATED_SLAM_MAP_IMAGE, RGB360SWEEP] # , SATELLITE_MAP, GPS_FIX
+    context_requirements: [ROBOT_POSE, GPS_FIX, ANNOTATED_SLAM_MAP_IMAGE, OSM_CONTEXT, SATELLITE_MAP] #RGB360SWEEP
     blackboard_contract:
       waypoints:
         type: "string"

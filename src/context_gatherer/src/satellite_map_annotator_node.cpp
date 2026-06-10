@@ -58,6 +58,7 @@ private:
     double lat{0.0};
     double lon{0.0};
     std::string label;
+    json metadata{json::object()};
   };
 
   struct GeoBounds
@@ -783,6 +784,7 @@ private:
     GeoPoint point;
     point.lat = lat;
     point.lon = lon;
+    point.metadata = point_json;
     if (point_json.contains("label") && point_json["label"].is_string()) {
       point.label = point_json["label"].get<std::string>();
     } else if (point_json.contains("name") && point_json["name"].is_string()) {
@@ -862,11 +864,11 @@ private:
   {
     json array = json::array();
     for (const auto& point : points) {
-      array.push_back({
-        {"lat", point.lat},
-        {"lon", point.lon},
-        {"label", point.label}
-      });
+      json point_json = point.metadata.is_object() ? point.metadata : json::object();
+      point_json["lat"] = point.lat;
+      point_json["lon"] = point.lon;
+      point_json["label"] = point.label;
+      array.push_back(point_json);
     }
     return array;
   }

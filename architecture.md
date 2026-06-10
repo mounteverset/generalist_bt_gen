@@ -224,6 +224,12 @@ implemented requirements include:
 Unknown requirement strings are logged and skipped. The action result can still
 succeed with whatever context was collected.
 
+For `SATELLITE_MAP`, `context_gatherer` can dynamically choose an overview zoom
+and optional detail maps without an LLM call. It derives mission extent from
+GPS/request hints, deterministic mission-text keywords, and optional Overpass
+features, then returns the primary overview through the existing `uri` fields and
+all generated maps under `SATELLITE_MAP.map_artifacts`.
+
 ## Configuration and Observability
 
 - BehaviorTree.ROS2 parameters configure the executor action name, tick frequency,
