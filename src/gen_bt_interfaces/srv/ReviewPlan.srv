@@ -1,0 +1,24 @@
+# Service to review a generated blackboard payload before operator approval or
+# execution. Served by plan_reviewer.
+
+# Request
+string session_id
+string subtree_id
+string user_command
+string operator_feedback
+string payload_json
+string context_snapshot_json
+string[] attachment_uris
+string subtree_contract_json
+---
+# Response
+uint8 PASS=0
+uint8 WARN=1
+uint8 REJECT=2
+uint8 ERROR=3
+
+uint8 status_code
+string summary
+string findings_json
+string review_image_uri
+string recommended_action

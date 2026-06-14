@@ -117,6 +117,20 @@ def generate_launch_description():
         parameters=[LaunchConfiguration('mission_reasoner_params')]
     )
 
+    plan_reviewer_node = Node(
+        condition=IfCondition(NotSubstitution(LaunchConfiguration('demo_mode'))),
+        package='plan_reviewer',
+        executable='plan_reviewer_node',
+        name='plan_reviewer',
+        output='screen',
+        parameters=[
+            LaunchConfiguration('llm_interface_params'),
+            {
+                'review_artifact_directory': '/tmp/context_gatherer',
+            },
+        ]
+    )
+
     mission_coordinator_node = Node(
         package='mission_coordinator',
         executable='mission_coordinator_node',
@@ -170,6 +184,7 @@ def generate_launch_description():
         bt_executor_node,
         llm_interface_node,
         mission_reasoner_node,
+        plan_reviewer_node,
         annotated_map_saver_node,
         satellite_map_annotator_node,
         context_gatherer_node,

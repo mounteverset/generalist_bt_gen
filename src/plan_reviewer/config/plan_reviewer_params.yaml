@@ -1,0 +1,5 @@
+/**:
+  plan_reviewer:
+    ros__parameters:
+      review_service_name: "/plan_reviewer/review_plan"
+      review_artifact_directory: "/tmp/context_gatherer"

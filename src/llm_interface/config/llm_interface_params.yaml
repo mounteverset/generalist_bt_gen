@@ -11,7 +11,7 @@ llm_interface:
     model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
     selection_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'
     mission_requirements_model_name: 'google/gemini-3.5-flash'
-    payload_model_name: 'google/gemini-3.5-flash'  
+    payload_model_name: 'openai/gpt-5.5'  
     payload_normalizer_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free' 
     openrouter_app_url: ''  # optional OpenRouter attribution URL
     openrouter_app_title: 'generalist_bt_gen'  # optional OpenRouter attribution title
@@ -20,9 +20,17 @@ llm_interface:
     selection_temperature: 0.0
     selection_timeout_sec: 10.0
     mission_requirements_temperature: 0.0
+    selection_reasoning_effort: 'low'  # empty disables reasoning config
+    selection_reasoning_summary: ''  # optional: auto | detailed, when supported
+    mission_requirements_reasoning_effort: 'low'
+    mission_requirements_reasoning_summary: ''
+    payload_reasoning_effort: 'medium'
+    payload_reasoning_summary: ''
+    payload_normalizer_reasoning_effort: 'low'
+    payload_normalizer_reasoning_summary: ''
     payload_multimodal_enabled: true
     payload_max_attachment_bytes: 5000000
-    payload_max_attachments: 6
+    payload_max_attachments: 12
     payload_attachment_allowlist:
       - 'image/png'
       - 'image/jpeg'
@@ -83,6 +91,37 @@ llm_interface:
           6. Do NOT include markdown code fences
 
           OUTPUT (JSON only):
+        "explore_area.xml": |
+          You are planning a static exploration route for a Clearpath Husky A200 ground robot.
+          Generate the blackboard payload for explore_area.xml.
+
+          SUBTREE_ID: {subtree_id}
+          USER_COMMAND: {user_command}
+
+          CONTEXT (sensor/map data):
+          {context_json}
+
+          CONTRACT (required blackboard keys with types/defaults):
+          {contract_json}
+
+          ATTACHMENT_URIS: {attachment_uris}
+
+          Required output:
+          - "waypoints": executable map-frame route as "x,y,yaw; x,y,yaw".
+          - "area_polygon": operator-defined exploration polygon in the map frame as "x,y; x,y; x,y".
+          - "frontiers": selected frontier or coverage points in the map frame as "x,y,yaw; x,y,yaw".
+          - Optional "area_polygon_geo" and "frontiers_geo" are only for satellite/geographic preview as "lat,lon; lat,lon".
+          - Optional "exploration_strategy" should briefly name the ordering strategy.
+
+          Planning rules:
+          1. The operator must define the area in USER_COMMAND or REQUEST_HINTS; do not invent a mission area.
+          2. Use ANNOTATED_SLAM_MAP_IMAGE metadata and ROBOT_POSE to keep map-frame points inside traversable or useful unknown-boundary space.
+          3. Use SATELLITE_MAP, GPS_FIX, and OSM_CONTEXT only as reasoning context unless you can also convert the result into map-frame x,y,yaw.
+          4. Never put lat/lon coordinates in "waypoints", "area_polygon", or "frontiers".
+          5. If only geographic context is available and no map-frame conversion anchor is available, return an invalid empty JSON object rather than fake map-frame waypoints.
+          6. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
+
+          OUTPUT (JSON only):
       payload_normalizer: |
         You are a strict JSON schema enforcer for robot mission payloads.
         Compare MODEL_OUTPUT against CONTRACT_SCHEMA and correct/normalize it to strictly match.
@@ -109,3 +148,11 @@ llm_interface:
           </Sequence>
         </BehaviorTree>
       </root>
+
+plan_reviewer:
+  ros__parameters:
+    llm_enabled: true
+    provider: 'openrouter'  # options: gemini | openai | openrouter
+    model_name: 'google/gemini-3.5-flash'  # must be vision-capable for map review
+    temperature: 0.0
+    max_image_bytes: 5000000

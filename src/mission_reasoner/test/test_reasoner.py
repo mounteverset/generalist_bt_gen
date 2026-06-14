@@ -19,6 +19,27 @@ def _trees():
         return yaml.safe_load(handle)['trees']
 
 
+def test_explore_area_metadata_advertises_payload_and_context_contract():
+    tree = next(item for item in _trees() if item['id'] == 'explore_area.xml')
+
+    assert 'payload.parse_waypoints' in tree['required_capabilities']
+    assert tree['selection_constraints']['requires_target_area'] is True
+    assert set(tree['context_requirements']) >= {
+        'ROBOT_POSE',
+        'ANNOTATED_SLAM_MAP_IMAGE',
+        'GPS_FIX',
+        'SATELLITE_MAP',
+        'OSM_CONTEXT',
+        'BATTERY_STATE',
+    }
+    contract = tree['blackboard_contract']
+    assert contract['waypoints']['required'] is True
+    assert contract['area_polygon']['required'] is True
+    assert contract['frontiers']['required'] is True
+    assert contract['area_polygon_geo']['required'] is False
+    assert contract['frontiers_geo']['required'] is False
+
+
 def test_accepts_ground_navigation_and_photos():
     result = _reasoner().validate(
         'Drive to these waypoints and take photos.',
@@ -36,6 +57,24 @@ def test_clarifies_document_command_without_target():
 
     assert result.status_code == CLARIFY
     assert 'target area or route' in result.clarification_question
+
+
+def test_clarifies_explore_command_without_area_definition():
+    result = _reasoner().validate('Explore the area.', _trees())
+
+    assert result.status_code == CLARIFY
+    assert 'What area should the robot explore' in result.clarification_question
+
+
+def test_accepts_explore_command_with_polygon_area():
+    result = _reasoner().validate(
+        'Explore the polygon 0,0; 10,0; 10,5; 0,5.',
+        _trees(),
+    )
+
+    assert result.status_code == ACCEPT
+    assert 'explore_area.xml' in result.candidate_trees
+    assert 'mapping.slam' in result.matched_capabilities
 
 
 def test_refuses_aerial_mission():
