@@ -20,6 +20,7 @@ from gen_bt_interfaces.srv import (
     GetMissionState,
     MissionControl,
     OperatorDecision,
+    ReviewPlan,
     SelectBehaviorTree,
     ValidateMission,
 )
@@ -47,6 +48,7 @@ class CoordinatorParams:
     bt_executor_action: str
     context_gather_action: str
     create_payload_service: str
+    plan_review_service: str
     mission_reasoner_service: str
     context_snapshot_service: str
     status_topic: str
@@ -54,6 +56,7 @@ class CoordinatorParams:
     pending_plan_topic: str
     operator_decision_service: str
     enable_context_snapshot: bool
+    enable_plan_review: bool
     enable_mission_reasoner: bool
     require_operator_accept: bool
     demo_mode: bool
@@ -61,12 +64,14 @@ class CoordinatorParams:
     selection_timeout_sec: float
     gather_timeout_sec: float
     payload_timeout_sec: float
+    plan_review_timeout_sec: float
     bt_timeout_sec: float
     spin_period_sec: float
     transcript_directory: Path
     known_trees: list
     tree_metadata_file: str
     system_description_file: str
+    plan_review_max_refinements: int
     mission_namespace: str = 'mission_coordinator'
 
 
@@ -133,6 +138,9 @@ class MissionCoordinatorNode(Node):
         )
         self._create_payload_client = self.create_client(
             CreatePayload, self.params.create_payload_service
+        )
+        self._plan_review_client = self.create_client(
+            ReviewPlan, self.params.plan_review_service
         )
         self._mission_reasoner_client = self.create_client(
             ValidateMission, self.params.mission_reasoner_service
@@ -209,6 +217,9 @@ class MissionCoordinatorNode(Node):
             create_payload_service=declare(
                 'create_payload_service', '/llm_interface/create_payload'
             ),
+            plan_review_service=declare(
+                'plan_review_service', '/plan_reviewer/review_plan'
+            ),
             mission_reasoner_service=declare(
                 'mission_reasoner_service', '/mission_reasoner/validate_mission'
             ),
@@ -226,6 +237,7 @@ class MissionCoordinatorNode(Node):
                 'operator_decision_service', '/mission_coordinator/operator_decision'
             ),
             enable_context_snapshot=bool(declare('enable_context_snapshot', True)),
+            enable_plan_review=bool(declare('enable_plan_review', True)),
             enable_mission_reasoner=bool(declare('enable_mission_reasoner', True)),
             require_operator_accept=bool(declare('require_operator_accept', True)),
             demo_mode=bool(declare('demo_mode', True)),
@@ -233,12 +245,14 @@ class MissionCoordinatorNode(Node):
             selection_timeout_sec=float(declare('selection_timeout_sec', 15.0)),
             gather_timeout_sec=float(declare('gather_timeout_sec', 15.0)),
             payload_timeout_sec=float(declare('payload_timeout_sec', 20.0)),
+            plan_review_timeout_sec=float(declare('plan_review_timeout_sec', 45.0)),
             bt_timeout_sec=float(declare('bt_timeout_sec', 120.0)),
             spin_period_sec=float(declare('spin_period_sec', 0.1)),
             transcript_directory=transcript_dir,
             known_trees=declare('known_trees', known_trees_default) or known_trees_default,
             tree_metadata_file=declare('tree_metadata_file', ''),
             system_description_file=declare('system_description_file', ''),
+            plan_review_max_refinements=int(declare('plan_review_max_refinements', 1)),
         )
 
     # endregion
@@ -538,7 +552,48 @@ class MissionCoordinatorNode(Node):
 
             self._publish_active_subtree(selected_tree)
             refinement_iteration = 0
-            while self._requires_operator_accept(goal):
+            plan_review = await self._review_plan(
+                selected_tree,
+                goal,
+                gather_result,
+                payload_response,
+                operator_feedback=self._operator_feedback.get(session_id, ''),
+            )
+            auto_review_refinements = 0
+            while (
+                self._plan_review_status(plan_review) == 'reject'
+                and auto_review_refinements < self.params.plan_review_max_refinements
+            ):
+                auto_review_refinements += 1
+                refinement_iteration += 1
+                feedback_text = self._review_feedback_for_refinement(plan_review)
+                self._publish_status(
+                    'Plan reviewer rejected the generated payload; '
+                    f'auto-refining once (iteration={auto_review_refinements}).'
+                )
+                refined = await self._refine_rejected_plan(
+                    selected_tree,
+                    goal,
+                    gather_result,
+                    feedback_text,
+                    refinement_iteration,
+                    payload_response,
+                )
+                if refined is None:
+                    break
+                gather_result, payload_response = refined
+                plan_review = await self._review_plan(
+                    selected_tree,
+                    goal,
+                    gather_result,
+                    payload_response,
+                    operator_feedback=feedback_text,
+                )
+
+            while (
+                self._requires_operator_accept(goal)
+                or self._plan_review_requires_operator(plan_review)
+            ):
                 self._set_lifecycle_state(self.STATE_WAITING_APPROVAL)
                 plan = self._build_pending_plan(
                     selected_tree,
@@ -547,6 +602,7 @@ class MissionCoordinatorNode(Node):
                     payload_response,
                     operator_feedback=self._operator_feedback.get(session_id, ''),
                     refinement_iteration=refinement_iteration,
+                    plan_review=plan_review,
                 )
                 self._publish_pending_plan(plan)
                 should_execute = await self._await_operator_decision(
@@ -578,6 +634,7 @@ class MissionCoordinatorNode(Node):
                 refined = await self._refine_rejected_plan(
                     selected_tree,
                     goal,
+                    gather_result,
                     feedback_text,
                     refinement_iteration,
                     payload_response,
@@ -592,6 +649,13 @@ class MissionCoordinatorNode(Node):
                     self._publish_status(result.outcome_message)
                     return result
                 gather_result, payload_response = refined
+                plan_review = await self._review_plan(
+                    selected_tree,
+                    goal,
+                    gather_result,
+                    payload_response,
+                    operator_feedback=feedback_text,
+                )
 
             self._set_lifecycle_state(self.STATE_EXECUTING)
             self._log_debug(f'Selected tree {selected_tree}, dispatching to BT executor.')
@@ -1157,6 +1221,125 @@ class MissionCoordinatorNode(Node):
         self._log_debug(f'CreatePayload succeeded: {response.reasoning}')
         return response
 
+    async def _review_plan(
+        self,
+        tree_id: str,
+        goal: MissionCommand.Goal,
+        gather_result,
+        payload: CreatePayload.Response,
+        operator_feedback: str = '',
+    ) -> Optional[Dict[str, Any]]:
+        if not self.params.enable_plan_review:
+            return None
+        if not self._wait_for_service(
+            self._plan_review_client, self.params.plan_review_service
+        ):
+            return {
+                'status': 'error',
+                'summary': 'Plan review service unavailable.',
+                'findings': [],
+                'review_image_uri': '',
+                'recommended_action': 'submit_to_operator',
+            }
+
+        request = ReviewPlan.Request()
+        request.session_id = goal.session_id or 'unknown'
+        request.subtree_id = tree_id
+        request.user_command = goal.command or ''
+        request.operator_feedback = operator_feedback or ''
+        request.payload_json = payload.payload_json or '{}'
+        request.context_snapshot_json = getattr(gather_result, 'context_json', '')
+        request.attachment_uris = list(getattr(gather_result, 'attachment_uris', []) or [])
+        request.subtree_contract_json = self._subtree_contract_for_tree(tree_id)
+
+        self._publish_status(f'Reviewing generated plan for {tree_id}.')
+        try:
+            response = await self._call_service_with_timeout(
+                self._plan_review_client,
+                request,
+                self.params.plan_review_timeout_sec,
+            )
+        except TimeoutError:
+            self.get_logger().warn(
+                f'Plan review timed out after {self.params.plan_review_timeout_sec:.1f}s.'
+            )
+            return {
+                'status': 'error',
+                'summary': 'Plan review timed out.',
+                'findings': [],
+                'review_image_uri': '',
+                'recommended_action': 'submit_to_operator',
+            }
+
+        if response is None:
+            return {
+                'status': 'error',
+                'summary': 'Plan review returned no response.',
+                'findings': [],
+                'review_image_uri': '',
+                'recommended_action': 'submit_to_operator',
+            }
+
+        findings = []
+        try:
+            parsed_findings = json.loads(response.findings_json or '[]')
+            if isinstance(parsed_findings, list):
+                findings = parsed_findings
+        except Exception:
+            self._log_debug('Failed to parse plan review findings_json.')
+
+        review = {
+            'status': self._status_from_plan_review_response(response),
+            'summary': response.summary,
+            'findings': findings,
+            'review_image_uri': response.review_image_uri,
+            'recommended_action': response.recommended_action,
+        }
+        self._publish_status(
+            f"Plan review {review['status']}: {review['summary']}"
+        )
+        return review
+
+    @staticmethod
+    def _status_from_plan_review_response(response: ReviewPlan.Response) -> str:
+        if response.status_code == response.PASS:
+            return 'pass'
+        if response.status_code == response.WARN:
+            return 'warn'
+        if response.status_code == response.REJECT:
+            return 'reject'
+        return 'error'
+
+    @staticmethod
+    def _plan_review_status(plan_review: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(plan_review, dict):
+            return ''
+        return str(plan_review.get('status') or '').lower()
+
+    def _plan_review_requires_operator(
+        self,
+        plan_review: Optional[Dict[str, Any]],
+    ) -> bool:
+        status = self._plan_review_status(plan_review)
+        return status in ('warn', 'reject', 'error')
+
+    @staticmethod
+    def _review_feedback_for_refinement(plan_review: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(plan_review, dict):
+            return 'Plan reviewer rejected the payload.'
+        lines = [
+            'PLAN_REVIEW_REJECTION:',
+            str(plan_review.get('summary') or 'Plan reviewer rejected the payload.'),
+        ]
+        findings = plan_review.get('findings')
+        if isinstance(findings, list) and findings:
+            lines.append('PLAN_REVIEW_FINDINGS_JSON:')
+            lines.append(json.dumps(findings, ensure_ascii=False, indent=2))
+        action = plan_review.get('recommended_action')
+        if action:
+            lines.extend(['PLAN_REVIEW_RECOMMENDED_ACTION:', str(action)])
+        return '\n'.join(lines)
+
     def _requires_operator_accept(self, goal: MissionCommand.Goal) -> bool:
         if not self.params.require_operator_accept:
             return False
@@ -1177,6 +1360,7 @@ class MissionCoordinatorNode(Node):
         payload: CreatePayload.Response,
         operator_feedback: str = '',
         refinement_iteration: int = 0,
+        plan_review: Optional[Dict[str, Any]] = None,
     ) -> dict:
         return {
             'session_id': goal.session_id or 'unknown',
@@ -1189,6 +1373,7 @@ class MissionCoordinatorNode(Node):
             'attachment_uris': list(getattr(gather_result, 'attachment_uris', []) or []),
             'operator_feedback': operator_feedback,
             'refinement_iteration': int(refinement_iteration),
+            'plan_review': plan_review or {},
             'operator_decision_service': self._operator_service_name,
         }
 
@@ -1217,6 +1402,7 @@ class MissionCoordinatorNode(Node):
         self,
         tree_id: str,
         goal: MissionCommand.Goal,
+        gather_result,
         operator_feedback: str,
         refinement_iteration: int,
         prior_payload: CreatePayload.Response,
@@ -1234,23 +1420,14 @@ class MissionCoordinatorNode(Node):
         )
         self._publish_status(
             f'Refining rejected plan for session={session_id} '
-            f'(iteration={refinement_iteration}).'
+            f'(iteration={refinement_iteration}) using existing context.'
         )
 
-        self._set_lifecycle_state(self.STATE_GATHERING_CONTEXT)
-        gather_result = await self._gather_context(
-            tree_id,
-            goal,
-            operator_feedback=operator_feedback,
-            prior_payload_json=prior_payload_json,
-            prior_reasoning=prior_reasoning,
-            refinement_history=history,
-        )
         if not gather_result or not gather_result.success:
             self._publish_status(
-                'Refinement context gather failed.'
+                'Refinement cannot reuse the original context.'
                 if not gather_result
-                else f'Refinement context gather failed: {gather_result.message}'
+                else f'Refinement cannot reuse original context: {gather_result.message}'
             )
             return None
 

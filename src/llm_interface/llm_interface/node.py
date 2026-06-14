@@ -211,6 +211,22 @@ class LLMInterfaceNode(Node):
             self.declare_parameter('selection_timeout_sec', 10.0)
         if not self.has_parameter('mission_requirements_temperature'):
             self.declare_parameter('mission_requirements_temperature', 0.0)
+        if not self.has_parameter('selection_reasoning_effort'):
+            self.declare_parameter('selection_reasoning_effort', '')
+        if not self.has_parameter('selection_reasoning_summary'):
+            self.declare_parameter('selection_reasoning_summary', '')
+        if not self.has_parameter('mission_requirements_reasoning_effort'):
+            self.declare_parameter('mission_requirements_reasoning_effort', '')
+        if not self.has_parameter('mission_requirements_reasoning_summary'):
+            self.declare_parameter('mission_requirements_reasoning_summary', '')
+        if not self.has_parameter('payload_reasoning_effort'):
+            self.declare_parameter('payload_reasoning_effort', '')
+        if not self.has_parameter('payload_reasoning_summary'):
+            self.declare_parameter('payload_reasoning_summary', '')
+        if not self.has_parameter('payload_normalizer_reasoning_effort'):
+            self.declare_parameter('payload_normalizer_reasoning_effort', '')
+        if not self.has_parameter('payload_normalizer_reasoning_summary'):
+            self.declare_parameter('payload_normalizer_reasoning_summary', '')
         if not self.has_parameter('payload_multimodal_enabled'):
             self.declare_parameter('payload_multimodal_enabled', True)
         if not self.has_parameter('payload_max_attachment_bytes'):
@@ -286,6 +302,30 @@ class LLMInterfaceNode(Node):
         self._mission_requirements_temperature = float(
             self.get_parameter('mission_requirements_temperature').value
         )
+        self._selection_reasoning_effort = str(
+            self.get_parameter('selection_reasoning_effort').value or ''
+        ).strip()
+        self._selection_reasoning_summary = str(
+            self.get_parameter('selection_reasoning_summary').value or ''
+        ).strip()
+        self._mission_requirements_reasoning_effort = str(
+            self.get_parameter('mission_requirements_reasoning_effort').value or ''
+        ).strip()
+        self._mission_requirements_reasoning_summary = str(
+            self.get_parameter('mission_requirements_reasoning_summary').value or ''
+        ).strip()
+        self._payload_reasoning_effort = str(
+            self.get_parameter('payload_reasoning_effort').value or ''
+        ).strip()
+        self._payload_reasoning_summary = str(
+            self.get_parameter('payload_reasoning_summary').value or ''
+        ).strip()
+        self._payload_normalizer_reasoning_effort = str(
+            self.get_parameter('payload_normalizer_reasoning_effort').value or ''
+        ).strip()
+        self._payload_normalizer_reasoning_summary = str(
+            self.get_parameter('payload_normalizer_reasoning_summary').value or ''
+        ).strip()
         self._payload_multimodal_enabled = bool(
             self.get_parameter('payload_multimodal_enabled').value
         )
@@ -361,7 +401,13 @@ class LLMInterfaceNode(Node):
             f"payload_provider={self._payload_provider}, "
             f"payload_model={self._payload_model_name}, "
             f"payload_normalizer_provider={self._payload_normalizer_provider}, "
-            f"payload_normalizer_model={self._payload_normalizer_model_name})"
+            f"payload_normalizer_model={self._payload_normalizer_model_name}, "
+            f"selection_reasoning_effort={self._selection_reasoning_effort or '<disabled>'}, "
+            "mission_requirements_reasoning_effort="
+            f"{self._mission_requirements_reasoning_effort or '<disabled>'}, "
+            f"payload_reasoning_effort={self._payload_reasoning_effort or '<disabled>'}, "
+            "payload_normalizer_reasoning_effort="
+            f"{self._payload_normalizer_reasoning_effort or '<disabled>'})"
         )
 
     @staticmethod
@@ -384,6 +430,18 @@ class LLMInterfaceNode(Node):
     def _provider_display_name(self, provider_name: str, model_name: str) -> str:
         return f"{provider_name}:{model_name}"
 
+    def _reasoning_config(
+        self, reasoning_effort: str = '', reasoning_summary: str = ''
+    ) -> Optional[dict]:
+        reasoning = {}
+        effort = (reasoning_effort or '').strip()
+        summary = (reasoning_summary or '').strip()
+        if effort:
+            reasoning['effort'] = effort
+        if summary:
+            reasoning['summary'] = summary
+        return reasoning or None
+
     def _json_collection_count(self, payload: str, key: str = '') -> int:
         if not payload:
             return 0
@@ -404,9 +462,16 @@ class LLMInterfaceNode(Node):
         return normalized[: limit - 3] + '...'
 
     def _create_chat_llm(
-        self, provider_name: str, model_name: str, temperature: float, purpose: str
+        self,
+        provider_name: str,
+        model_name: str,
+        temperature: float,
+        purpose: str,
+        reasoning_effort: str = '',
+        reasoning_summary: str = '',
     ):
         provider_name = self._normalize_provider_name(provider_name)
+        reasoning = self._reasoning_config(reasoning_effort, reasoning_summary)
 
         if provider_name == 'gemini':
             if ChatGoogleGenerativeAI is None:
@@ -433,10 +498,13 @@ class LLMInterfaceNode(Node):
                 raise RuntimeError(
                     f"OPENAI_API_KEY not set; export it to use the {purpose} openai model."
                 )
-            return ChatOpenAI(
-                model=model_name,
-                temperature=temperature,
-            )
+            kwargs = {
+                'model': model_name,
+                'temperature': temperature,
+            }
+            if reasoning:
+                kwargs['reasoning'] = reasoning
+            return ChatOpenAI(**kwargs)
 
         if ChatOpenRouter is None:
             raise RuntimeError(
@@ -450,6 +518,8 @@ class LLMInterfaceNode(Node):
             'model': model_name,
             'temperature': temperature,
         }
+        if reasoning:
+            kwargs['reasoning'] = reasoning
         if self._openrouter_app_url:
             kwargs['app_url'] = self._openrouter_app_url
         if self._openrouter_app_title:
@@ -678,6 +748,8 @@ class LLMInterfaceNode(Node):
                 model_name=self._selection_model_name,
                 temperature=self._selection_temperature,
                 purpose='selection',
+                reasoning_effort=self._selection_reasoning_effort,
+                reasoning_summary=self._selection_reasoning_summary,
             )
             template = PromptTemplate.from_template(self._selection_prompt_template)
             self._selection_chain = template | llm
@@ -880,6 +952,8 @@ class LLMInterfaceNode(Node):
                 model_name=self._mission_requirements_model_name,
                 temperature=self._mission_requirements_temperature,
                 purpose='mission requirement extraction',
+                reasoning_effort=self._mission_requirements_reasoning_effort,
+                reasoning_summary=self._mission_requirements_reasoning_summary,
             )
             template = PromptTemplate.from_template(
                 self._mission_requirements_prompt_template
@@ -911,6 +985,19 @@ class LLMInterfaceNode(Node):
                 user_command=request.user_command,
                 attachment_uris=list(request.attachment_uris)
             )
+            payload_errors = self._generated_payload_errors(
+                request.subtree_id,
+                payload_dict,
+                contract,
+                context,
+            )
+            if payload_errors:
+                response.status_code = response.ERROR
+                response.payload_json = "{}"
+                response.reasoning = "Generated payload failed validation: " + "; ".join(payload_errors)
+                response.tool_trace_json = "[]"
+                self.get_logger().warning(response.reasoning)
+                return response
             refinement_notes = self._extract_refinement_notes(context, request.user_command)
             refinement_history_json = self._extract_refinement_history_json(
                 context, request.user_command
@@ -1047,6 +1134,16 @@ class LLMInterfaceNode(Node):
             converted = self._coerce_waypoints_field(coerced)
             if converted is not None:
                 coerced['waypoints'] = converted
+        for key in ('frontiers',):
+            if isinstance(contract.get(key), dict):
+                converted = self._coerce_waypoints_value(coerced.get(key))
+                if converted is not None:
+                    coerced[key] = converted
+        for key in ('area_polygon', 'area_polygon_geo', 'frontiers_geo'):
+            if isinstance(contract.get(key), dict):
+                converted = self._coerce_point_list_value(coerced.get(key))
+                if converted is not None:
+                    coerced[key] = converted
         return coerced
 
     def _coerce_waypoints_field(self, payload: dict) -> Optional[str]:
@@ -1148,6 +1245,70 @@ class LLMInterfaceNode(Node):
             return str(x), str(y), str(yaw)
         return None
 
+    def _coerce_point_list_value(self, value) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            pairs: List[str] = []
+            for token in text.replace('\n', ';').replace('|', ';').split(';'):
+                pair = self._point_pair_from_item(token)
+                if pair is not None:
+                    pairs.append(f"{pair[0]},{pair[1]}")
+            return '; '.join(pairs) if pairs else None
+        if isinstance(value, dict):
+            nested = value.get('points') or value.get('vertices') or value.get('coordinates')
+            if nested is not None:
+                return self._coerce_point_list_value(nested)
+            pair = self._point_pair_from_item(value)
+            if pair is None:
+                return None
+            return f"{pair[0]},{pair[1]}"
+        if isinstance(value, list):
+            pairs: List[str] = []
+            for item in value:
+                pair = self._point_pair_from_item(item)
+                if pair is not None:
+                    pairs.append(f"{pair[0]},{pair[1]}")
+            return '; '.join(pairs) if pairs else None
+        return None
+
+    def _point_pair_from_item(self, item) -> Optional[Tuple[str, str]]:
+        if isinstance(item, str):
+            values = re.findall(r'-?\d+(?:\.\d+)?', item)
+            if len(values) < 2:
+                return None
+            return str(self._as_float(values[0], 0.0)), str(self._as_float(values[1], 0.0))
+        if isinstance(item, dict):
+            source = item
+            if isinstance(item.get('position'), dict):
+                source = item['position']
+            elif isinstance(item.get('pose'), dict):
+                pose = item['pose']
+                if isinstance(pose.get('position'), dict):
+                    source = pose['position']
+                else:
+                    source = pose
+            x = source.get('x', source.get('X'))
+            y = source.get('y', source.get('Y'))
+            if x is None or y is None:
+                x = item.get('lat', item.get('latitude', source.get('lat', source.get('latitude'))))
+                y = item.get(
+                    'lon',
+                    item.get(
+                        'longitude',
+                        item.get('lng', source.get('lon', source.get('longitude', source.get('lng')))),
+                    ),
+                )
+            if x is None or y is None:
+                return None
+            return str(self._as_float(x, 0.0)), str(self._as_float(y, 0.0))
+        if isinstance(item, list) and len(item) >= 2:
+            return str(self._as_float(item[0], 0.0)), str(self._as_float(item[1], 0.0))
+        return None
+
     @staticmethod
     def _as_float(value, default: float = 0.0) -> float:
         try:
@@ -1177,6 +1338,8 @@ class LLMInterfaceNode(Node):
                 model_name=self._payload_model_name,
                 temperature=0.0,
                 purpose='payload',
+                reasoning_effort=self._payload_reasoning_effort,
+                reasoning_summary=self._payload_reasoning_summary,
             )
             template = PromptTemplate.from_template("""{prompt}""")
             self._payload_chain = template | llm
@@ -1190,6 +1353,8 @@ class LLMInterfaceNode(Node):
                 model_name=self._payload_normalizer_model_name,
                 temperature=0.0,
                 purpose='payload normalization',
+                reasoning_effort=self._payload_normalizer_reasoning_effort,
+                reasoning_summary=self._payload_normalizer_reasoning_summary,
             )
             template = PromptTemplate.from_template(self._payload_normalizer_prompt)
             self._payload_normalizer_chain = template | llm
@@ -1202,6 +1367,8 @@ class LLMInterfaceNode(Node):
                 model_name=self._payload_model_name,
                 temperature=0.0,
                 purpose='payload',
+                reasoning_effort=self._payload_reasoning_effort,
+                reasoning_summary=self._payload_reasoning_summary,
             )
         return self._payload_llm
 
@@ -1215,6 +1382,96 @@ class LLMInterfaceNode(Node):
             self.get_logger().warning("Payload is not a JSON object.")
             return None
         return payload
+
+    def _generated_payload_errors(
+        self,
+        subtree_id: str,
+        payload: dict,
+        contract: dict,
+        context: dict,
+    ) -> List[str]:
+        matches, errors = self._payload_matches_contract(payload, contract)
+        validation_errors = list(errors if not matches else [])
+        if subtree_id == 'explore_area.xml':
+            validation_errors.extend(self._explore_area_payload_errors(payload, context))
+        return validation_errors
+
+    def _explore_area_payload_errors(self, payload: dict, context: dict) -> List[str]:
+        errors: List[str] = []
+        if not isinstance(payload, dict):
+            return ["explore_area payload is not an object"]
+        if (
+            self._has_satellite_context(context)
+            and not isinstance(context.get('ANNOTATED_SLAM_MAP_IMAGE'), dict)
+            and not self._has_map_execution_anchor(context)
+        ):
+            errors.append(
+                "satellite-only exploration payloads require both GPS_FIX and ROBOT_POSE to anchor map-frame waypoints"
+            )
+        if self._coordinate_string_looks_geographic(payload.get('waypoints'), context):
+            errors.append(
+                "explore_area waypoints appear to be lat/lon values; waypoints must be executable map-frame x,y,yaw"
+            )
+        return errors
+
+    @staticmethod
+    def _has_satellite_context(context: dict) -> bool:
+        return isinstance(context, dict) and isinstance(context.get('SATELLITE_MAP'), dict)
+
+    @staticmethod
+    def _has_map_execution_anchor(context: dict) -> bool:
+        if not isinstance(context, dict):
+            return False
+        return isinstance(context.get('ROBOT_POSE'), dict) and isinstance(context.get('GPS_FIX'), dict)
+
+    def _coordinate_string_looks_geographic(self, raw_points, context: dict) -> bool:
+        bounds = self._satellite_bounds(context)
+        if not bounds:
+            return False
+        points = self._parse_coordinate_pairs(raw_points)
+        if not points:
+            return False
+        north, south, east, west = bounds
+        return all(south <= x <= north and west <= y <= east for x, y in points)
+
+    @staticmethod
+    def _satellite_bounds(context: dict) -> Optional[Tuple[float, float, float, float]]:
+        if not isinstance(context, dict):
+            return None
+        satellite = context.get('SATELLITE_MAP')
+        if not isinstance(satellite, dict):
+            return None
+        metadata = satellite.get('map_metadata')
+        if not isinstance(metadata, dict):
+            metadata = {}
+        bounds = metadata.get('bounds') or satellite.get('bounds')
+        if not isinstance(bounds, dict):
+            return None
+        try:
+            north = float(bounds.get('north'))
+            south = float(bounds.get('south'))
+            east = float(bounds.get('east'))
+            west = float(bounds.get('west'))
+        except (TypeError, ValueError):
+            return None
+        if north <= south or east <= west:
+            return None
+        return north, south, east, west
+
+    def _parse_coordinate_pairs(self, raw_points) -> List[Tuple[float, float]]:
+        normalized = self._coerce_point_list_value(raw_points)
+        if not normalized:
+            return []
+        points: List[Tuple[float, float]] = []
+        for token in normalized.split(';'):
+            values = [part.strip() for part in token.split(',')]
+            if len(values) < 2:
+                continue
+            try:
+                points.append((float(values[0]), float(values[1])))
+            except ValueError:
+                continue
+        return points
 
     def _payload_matches_contract(self, payload: dict, contract: dict) -> Tuple[bool, List[str]]:
         if not isinstance(contract, dict) or not contract:

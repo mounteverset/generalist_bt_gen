@@ -9,6 +9,15 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
+# This workspace does not consume Rust message bindings, and the installed
+# rosidl_generator_rs currently fails while expanding templates for this package.
+if(AMENT_EXTENSIONS_rosidl_generate_idl_interfaces)
+  list(
+    FILTER AMENT_EXTENSIONS_rosidl_generate_idl_interfaces
+    EXCLUDE REGEX "^rosidl_generator_rs:"
+  )
+endif()
+
 set(action_files
   "action/GatherContext.action"
   "action/MissionCommand.action"
@@ -22,6 +31,7 @@ set(service_files
   "srv/MissionControl.srv"
   "srv/OperatorDecision.srv"
   "srv/PlanSubtree.srv"
+  "srv/ReviewPlan.srv"
   "srv/SelectBehaviorTree.srv"
   "srv/ValidateMission.srv"
 )

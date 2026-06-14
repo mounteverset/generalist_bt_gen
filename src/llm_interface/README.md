@@ -17,6 +17,12 @@ The active provider is selected via ROS parameters in `config/llm_interface_para
 - `selection_provider`: provider for behavior-tree selection.
 - `payload_provider`: provider for payload generation.
 - `payload_normalizer_provider`: provider for payload schema correction.
+- `selection_reasoning_effort`, `mission_requirements_reasoning_effort`,
+  `payload_reasoning_effort`, `payload_normalizer_reasoning_effort`: optional
+  reasoning effort strings passed to OpenAI/OpenRouter LangChain clients. Empty
+  values disable reasoning configuration for that purpose.
+- Matching `*_reasoning_summary` parameters can request provider-supported
+  reasoning summaries, for example `auto` or `detailed`.
 
 Supported providers:
 

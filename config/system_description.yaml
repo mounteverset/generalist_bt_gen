@@ -138,10 +138,16 @@ command_capability_rules:
     keywords: ["photo", "photos", "picture", "pictures", "photograph", "document", "image", "images"]
   - capability: "navigation.waypoints"
     keywords: ["drive", "navigate", "go to", "patrol", "survey", "explore", "waypoint", "waypoints", "route"]
+  - capability: "mapping.slam"
+    keywords: ["explore", "frontier", "frontiers", "coverage", "cover the area", "unknown area"]
   - capability: "perception.object_location"
     keywords: ["find object", "find the", "locate object", "locate the", "where is", "object location"]
 
 clarification_rules:
+  - intent: "explore_area"
+    keywords: ["explore", "frontier", "frontiers", "coverage", "cover"]
+    question: "What area should the robot explore? Provide a map-frame polygon, lat/lon polygon, radius, bounds, or a named area visible in the provided context."
+    requires_area_definition: true
   - intent: "document"
     keywords: ["document", "inspect", "survey"]
     question: "What target area or route should the robot document?"

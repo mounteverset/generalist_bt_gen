@@ -10,6 +10,7 @@
       bt_executor_action: "/bt_executor/execute_tree"
       context_gather_action: "/context_gatherer/gather"
       create_payload_service: "/llm_interface/create_payload"
+      plan_review_service: "/plan_reviewer/review_plan"
       mission_reasoner_service: "/mission_reasoner/validate_mission"
       context_snapshot_service: "/context_gatherer/snapshot"
       status_topic: "/mission_coordinator/status_text"
@@ -17,6 +18,7 @@
 
       # Behavior flags
       enable_context_snapshot: true
+      enable_plan_review: true
       enable_mission_reasoner: true
       require_operator_accept: true
       demo_mode: false  # When true, skip ROS calls and emit mock status.
@@ -25,8 +27,9 @@
       # Timing
       llm_timeout_sec: 45.0
       selection_timeout_sec: 15.0
-      gather_timeout_sec: 15.0
+      gather_timeout_sec: 120.0
       payload_timeout_sec: 20.0
+      plan_review_timeout_sec: 45.0
       bt_timeout_sec: 120.0
       spin_period_sec: 0.1
 
@@ -35,8 +38,11 @@
       tree_metadata_file: "/home/luke/generalist_bt_gen/config/tree_metadata.yaml"
       system_description_file: "/home/luke/generalist_bt_gen/config/system_description.yaml"
 
+      # Reviewer parameters
+      plan_review_max_refinements: 1
+
       # Tree catalog for selection service
       known_trees:
         - "temperature_logging.xml::Navigate through waypoints and log temperature."
         - "navigate_and_photograph.xml::Navigate to waypoints and take RGB photos."
-        - "explore_area.xml::Explore a ground area with obstacle avoidance."
+        - "explore_area.xml::Explore an operator-defined ground area with LLM-generated frontier waypoints."

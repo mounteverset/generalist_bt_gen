@@ -65,4 +65,8 @@ which has a longer runtime but may produce better results because it is able to 
 
 - Scenario A: Die Stammdicke messen als exemplarisches Beispiel um zu zeigen 
 
-- 
+- [ ] on a plan rejection, we do not need fetch all of the context sources again, we just send the additional rejection reason with the original context and URI to the payload_generation service
+
+- [ ] the automatic map scaling doesnt work for the plan preview. on a very local plan it shows the zoom level z=15 when it should be much more detailed to show the plan. 
+
+- [ ] the automatic review and reject doesn't loop forever, it just does it once and then even though it rejects the generated payload it gets transfered for the human approval step

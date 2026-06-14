@@ -231,11 +231,66 @@ class MissionReasoner:
             keywords = rule.get('keywords', []) or []
             if not any(self._keyword_matches(normalized, keyword) for keyword in keywords):
                 continue
+            if bool(rule.get('requires_area_definition', False)):
+                if self._has_area_definition(command, context):
+                    continue
+                return str(rule.get('question', '')).strip()
             required_keys = set(rule.get('requires_any_context_keys', []) or [])
             if required_keys and context_keys.intersection(required_keys):
                 continue
             return str(rule.get('question', '')).strip()
         return ''
+
+    def _has_area_definition(self, command: str, context: Any) -> bool:
+        if isinstance(context, Mapping):
+            area_keys = {
+                'target_area',
+                'area_polygon',
+                'area_polygon_geo',
+                'field_boundary',
+                'mission_boundary',
+                'boundary',
+                'bounds',
+                'bbox',
+                'geo_hint',
+            }
+            if any(key in context for key in area_keys):
+                return True
+            request_hints = context.get('REQUEST_HINTS')
+            if isinstance(request_hints, Mapping) and any(key in request_hints for key in area_keys):
+                return True
+
+        normalized = self._normalize(command)
+        coordinate_pairs = re.findall(
+            r'-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?',
+            command or '',
+        )
+        if len(coordinate_pairs) >= 3:
+            return True
+        if re.search(r'\b\d+(?:\.\d+)?\s*(m|meter|meters)\s*(radius|around|from|within)\b', normalized):
+            return True
+        if re.search(r'\b(radius|within|inside)\s+\d+(?:\.\d+)?\s*(m|meter|meters)\b', normalized):
+            return True
+        if any(
+            phrase in normalized
+            for phrase in (
+                'polygon',
+                'rectangle',
+                'bounded by',
+                'inside the',
+                'within the',
+                'around the',
+                'field',
+                'parking lot',
+                'courtyard',
+                'orchard',
+                'garden',
+                'loading bay',
+                'zone',
+            )
+        ):
+            return True
+        return False
 
     def _validate_static_limits(
         self, command: str, extracted_requirements: Mapping[str, Any]

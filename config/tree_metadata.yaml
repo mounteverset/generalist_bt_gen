@@ -8,6 +8,7 @@ trees:
       - "navigate_waypoints"
       - "log_temperature"
     required_capabilities:
+      - "localization.gps"
       - "locomotion.ground"
       - "navigation.waypoints"
       - "sensing.temperature"
@@ -96,7 +97,7 @@ trees:
         default: 50
 
   - id: "explore_area.xml"
-    description: "Autonomous exploration of an unknown area with obstacle avoidance"
+    description: "Explore an operator-defined ground area by executing LLM-generated map-frame frontier or coverage waypoints."
     mission_intents:
       - "explore_area"
       - "survey_area"
@@ -105,6 +106,7 @@ trees:
       - "navigation.waypoints"
       - "localization.odometry"
       - "mapping.slam"
+      - "payload.parse_waypoints"
     unsupported_requirements:
       - "locomotion.flight"
       - "sensing.thermal_image"
@@ -113,15 +115,60 @@ trees:
     selection_constraints:
       max_radius_m: 50
       min_battery_percent: 20
+      requires_target_area: true
     context_requirements:
       - ROBOT_POSE
-      - POINTCLOUD
+      - ANNOTATED_SLAM_MAP_IMAGE
+      - GPS_FIX
+      - SATELLITE_MAP
+      - OSM_CONTEXT
       - BATTERY_STATE
     blackboard_contract:
-      exploration_radius_m:
-        type: "double"
+      waypoints:
+        type: "string"
+        required: true
+        schema:
+          type: "string"
+          description: "Executable semicolon-separated map-frame route. Each waypoint is 'x,y,yaw' in meters/meters/radians."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
+          examples:
+            - "1.0,2.0,0.0; 4.0,2.0,1.57; 4.0,5.0,3.14"
+      area_polygon:
+        type: "string"
+        required: true
+        schema:
+          type: "string"
+          description: "Operator-defined exploration polygon in the map frame. Each vertex is 'x,y'. At least three vertices are required."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?){2,}$'
+          examples:
+            - "0.0,0.0; 8.0,0.0; 8.0,6.0; 0.0,6.0"
+      frontiers:
+        type: "string"
+        required: true
+        schema:
+          type: "string"
+          description: "Selected frontier or coverage points in the map frame. Each point is 'x,y,yaw'."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
+          examples:
+            - "2.0,1.0,0.0; 6.0,3.0,1.57"
+      area_polygon_geo:
+        type: "string"
         required: false
-        default: 50.0
+        schema:
+          type: "string"
+          description: "Optional satellite/geographic polygon vertices formatted as 'lat,lon'."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?){2,}$'
+      frontiers_geo:
+        type: "string"
+        required: false
+        schema:
+          type: "string"
+          description: "Optional satellite/geographic frontier points formatted as 'lat,lon'."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
+      exploration_strategy:
+        type: "string"
+        required: false
+        default: "frontier_coverage"
       min_battery_percent:
         type: "double"
         required: false

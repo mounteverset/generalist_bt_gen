@@ -1,6 +1,7 @@
 import json
 import sys
 import types
+import asyncio
 from types import SimpleNamespace
 
 
@@ -122,23 +123,25 @@ def _install_ros_stubs() -> None:
         gen_action_module.GatherContext = DummyGatherContext
         sys.modules['gen_bt_interfaces.action'] = gen_action_module
 
-    if 'gen_bt_interfaces.srv' not in sys.modules:
+    gen_srv_module = sys.modules.get('gen_bt_interfaces.srv')
+    if gen_srv_module is None:
         gen_srv_module = types.ModuleType('gen_bt_interfaces.srv')
-
-        class DummySrv:
-            class Request:
-                pass
-
-            class Response:
-                pass
-
-        gen_srv_module.CreatePayload = DummySrv
-        gen_srv_module.GetMissionState = DummySrv
-        gen_srv_module.MissionControl = DummySrv
-        gen_srv_module.OperatorDecision = DummySrv
-        gen_srv_module.SelectBehaviorTree = DummySrv
-        gen_srv_module.ValidateMission = DummySrv
         sys.modules['gen_bt_interfaces.srv'] = gen_srv_module
+
+    class DummySrv:
+        class Request:
+            pass
+
+        class Response:
+            pass
+
+    gen_srv_module.CreatePayload = DummySrv
+    gen_srv_module.GetMissionState = DummySrv
+    gen_srv_module.MissionControl = DummySrv
+    gen_srv_module.OperatorDecision = DummySrv
+    gen_srv_module.ReviewPlan = getattr(gen_srv_module, 'ReviewPlan', DummySrv)
+    gen_srv_module.SelectBehaviorTree = DummySrv
+    gen_srv_module.ValidateMission = DummySrv
 
     if 'std_msgs.msg' not in sys.modules:
         std_msgs_module = types.ModuleType('std_msgs.msg')
@@ -354,3 +357,137 @@ def test_format_reasoner_rejection_includes_llm_requirements_and_ambiguities():
     assert 'temperature_logging.xml' in message
     assert 'Mission intents inferred: navigate_waypoints, log_temperature' in message
     assert 'The exact coordinates for the 3 waypoints are not specified.' in message
+
+
+def test_build_pending_plan_includes_plan_review():
+    node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
+    node._operator_service_name = '/mission_coordinator/operator_decision_test'
+    goal = SimpleNamespace(session_id='session-42', command='inspect the bay')
+    gather_result = SimpleNamespace(context_json='{}', attachment_uris=[])
+    payload = SimpleNamespace(
+        reasoning='Generated a route.',
+        payload_json='{"waypoints": "1.0,2.0,0.0"}',
+        tool_trace_json='[]',
+    )
+    review = {
+        'status': 'warn',
+        'summary': 'Waypoint 1 is close to unknown space.',
+        'findings': [{'severity': 'warning'}],
+        'review_image_uri': 'file:///tmp/context_gatherer/plan_review.png',
+        'recommended_action': 'submit_to_operator',
+    }
+
+    plan = node._build_pending_plan(
+        'temperature_logging.xml',
+        goal,
+        gather_result,
+        payload,
+        plan_review=review,
+    )
+
+    assert plan['plan_review']['status'] == 'warn'
+    assert plan['plan_review']['review_image_uri'].endswith('plan_review.png')
+
+
+def test_review_feedback_for_refinement_includes_findings():
+    review = {
+        'summary': 'Waypoint 2 crosses water.',
+        'findings': [
+            {
+                'severity': 'critical',
+                'category': 'robot_safety',
+                'waypoint_indices': [2],
+                'description': 'Route segment enters water.',
+                'recommended_fix': 'Move waypoint 2 onto the service path.',
+            }
+        ],
+        'recommended_action': 'regenerate',
+    }
+
+    feedback = MissionCoordinatorNode._review_feedback_for_refinement(review)
+
+    assert 'PLAN_REVIEW_REJECTION:' in feedback
+    assert 'Waypoint 2 crosses water.' in feedback
+    assert 'PLAN_REVIEW_FINDINGS_JSON:' in feedback
+    assert '"robot_safety"' in feedback
+
+
+def test_refine_rejected_plan_reuses_existing_context_without_regather():
+    node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
+    node._refinement_history = {}
+    node.STATE_BUILDING_PAYLOAD = 'BUILDING_PAYLOAD'
+    statuses = []
+    lifecycle_states = []
+    create_payload_calls = []
+
+    def publish_status(message):
+        statuses.append(message)
+
+    def set_lifecycle_state(state):
+        lifecycle_states.append(state)
+
+    async def gather_context(*_args, **_kwargs):
+        raise AssertionError('refinement should not re-gather context')
+
+    async def create_payload(
+        tree_id,
+        goal,
+        gather_result,
+        operator_feedback='',
+        prior_payload_json='',
+        prior_reasoning='',
+        refinement_history=None,
+    ):
+        create_payload_calls.append(
+            {
+                'tree_id': tree_id,
+                'goal': goal,
+                'gather_result': gather_result,
+                'operator_feedback': operator_feedback,
+                'prior_payload_json': prior_payload_json,
+                'prior_reasoning': prior_reasoning,
+                'refinement_history': refinement_history,
+            }
+        )
+        return SimpleNamespace(
+            payload_json='{"waypoints": "3.0,4.0,0.0"}',
+            reasoning='Refined payload.',
+            tool_trace_json='[]',
+        )
+
+    node._publish_status = publish_status
+    node._set_lifecycle_state = set_lifecycle_state
+    node._gather_context = gather_context
+    node._create_payload = create_payload
+    node._normalize_session_id = lambda session_id: session_id or 'unknown'
+
+    goal = SimpleNamespace(session_id='session-42', command='inspect the bay')
+    original_context = SimpleNamespace(
+        success=True,
+        context_json='{"SATELLITE_MAP": {"uri": "file:///tmp/map.png"}}',
+        attachment_uris=['file:///tmp/map.png'],
+    )
+    prior_payload = SimpleNamespace(
+        payload_json='{"waypoints": "1.0,2.0,0.0"}',
+        reasoning='Original payload.',
+    )
+
+    refined_context, refined_payload = asyncio.run(
+        node._refine_rejected_plan(
+            'temperature_logging.xml',
+            goal,
+            original_context,
+            'move waypoint away from the curb',
+            1,
+            prior_payload,
+        )
+    )
+
+    assert refined_context is original_context
+    assert refined_payload.reasoning == 'Refined payload.'
+    assert lifecycle_states == ['BUILDING_PAYLOAD']
+    assert create_payload_calls[0]['gather_result'] is original_context
+    assert create_payload_calls[0]['operator_feedback'] == 'move waypoint away from the curb'
+    assert create_payload_calls[0]['prior_payload_json'] == '{"waypoints": "1.0,2.0,0.0"}'
+    assert create_payload_calls[0]['prior_reasoning'] == 'Original payload.'
+    assert 'using existing context' in statuses[0]

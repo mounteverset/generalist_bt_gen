@@ -28,15 +28,35 @@ def extract_waypoints(payload_value: Any) -> List[Dict[str, Any]]:
     return _extract_waypoint_list(payload.get('waypoints'))
 
 
+def extract_area_polygon(payload_value: Any) -> List[Dict[str, Any]]:
+    payload = load_json_value(payload_value)
+    if not isinstance(payload, dict):
+        return []
+    return _extract_waypoint_list(payload.get('area_polygon'))
+
+
+def extract_frontiers(payload_value: Any) -> List[Dict[str, Any]]:
+    payload = load_json_value(payload_value)
+    if not isinstance(payload, dict):
+        return []
+    return _extract_waypoint_list(payload.get('frontiers'))
+
+
 def build_map_preview(
     context_value: Any,
     attachment_uris: Iterable[str],
     artifact_url_builder: Callable[[str], str],
+    waypoints: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:
     context = load_json_value(context_value)
     if isinstance(context, dict):
         for key in MAP_CONTEXT_KEYS:
-            candidate = _map_preview_from_entry(context.get(key), key, artifact_url_builder)
+            candidate = _map_preview_from_context_entry(
+                context.get(key),
+                key,
+                artifact_url_builder,
+                waypoints or [],
+            )
             if candidate:
                 return candidate
 
@@ -78,21 +98,58 @@ def normalize_pending_plan(
         attachment_uris = []
     normalized['attachment_uris'] = [uri for uri in attachment_uris if isinstance(uri, str)]
 
+    payload_for_preview = payload_object or normalized.get('payload_json')
+    raw_waypoints = extract_waypoints(payload_for_preview)
+    raw_area_polygon = _extract_payload_point_list(payload_for_preview, 'area_polygon')
+    raw_area_polygon_geo = _extract_payload_point_list(payload_for_preview, 'area_polygon_geo')
+    raw_frontiers = _extract_payload_point_list(payload_for_preview, 'frontiers')
+    raw_frontiers_geo = _extract_payload_point_list(payload_for_preview, 'frontiers_geo')
+    map_selection_points = raw_waypoints
+    if raw_area_polygon_geo or raw_frontiers_geo:
+        map_selection_points = raw_area_polygon_geo + raw_frontiers_geo
     map_preview = build_map_preview(
         context_object or normalized.get('context_snapshot_json'),
         normalized['attachment_uris'],
         artifact_url_builder,
+        map_selection_points,
     )
     if map_preview:
         normalized['map_preview'] = map_preview
 
     normalized['waypoints'] = _normalize_waypoints_for_preview(
-        extract_waypoints(payload_object or normalized.get('payload_json')),
+        raw_waypoints,
         map_preview,
     )
     normalized['waypoint_count'] = len(normalized['waypoints'])
+    normalized['area_polygon'] = _normalize_waypoints_for_preview(
+        _select_overlay_points(raw_area_polygon, raw_area_polygon_geo, map_preview),
+        map_preview,
+    )
+    normalized['frontiers'] = _normalize_waypoints_for_preview(
+        _select_overlay_points(raw_frontiers, raw_frontiers_geo, map_preview),
+        map_preview,
+    )
+    normalized['area_polygon_count'] = len(normalized['area_polygon'])
+    normalized['frontier_count'] = len(normalized['frontiers'])
 
     return normalized
+
+
+def _extract_payload_point_list(payload_value: Any, key: str) -> List[Dict[str, Any]]:
+    payload = load_json_value(payload_value)
+    if not isinstance(payload, dict):
+        return []
+    return _extract_waypoint_list(payload.get(key))
+
+
+def _select_overlay_points(
+    planar_points: List[Dict[str, Any]],
+    geographic_points: List[Dict[str, Any]],
+    map_preview: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if (map_preview or {}).get('coordinate_mode') == 'geographic' and geographic_points:
+        return geographic_points
+    return planar_points or geographic_points
 
 
 def _extract_waypoint_list(raw_waypoints: Any) -> List[Dict[str, Any]]:
@@ -229,6 +286,31 @@ def _coerce_float(value: Any) -> Optional[float]:
         return None
 
 
+def _map_preview_from_context_entry(
+    entry: Any,
+    source_key: str,
+    artifact_url_builder: Callable[[str], str],
+    waypoints: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    primary = _map_preview_from_entry(entry, source_key, artifact_url_builder)
+    if source_key != 'SATELLITE_MAP' or not isinstance(entry, dict):
+        return primary
+
+    artifacts = entry.get('map_artifacts')
+    if not isinstance(artifacts, list) or not waypoints:
+        return primary
+
+    candidates: List[Dict[str, Any]] = []
+    if primary:
+        candidates.append(primary)
+    for artifact in artifacts:
+        candidate = _map_preview_from_entry(artifact, source_key, artifact_url_builder)
+        if candidate:
+            candidates.append(candidate)
+
+    return _best_satellite_artifact_for_waypoints(candidates, waypoints) or primary
+
+
 def _map_preview_from_entry(
     entry: Any,
     source_key: str,
@@ -260,7 +342,65 @@ def _map_preview_from_entry(
         'map_metadata': map_metadata,
         'coordinate_mode': coordinate_mode,
         'robot_pose': map_metadata.get('robot_pose', {}),
+        'role': entry.get('role'),
+        'reason': entry.get('reason'),
     }
+
+
+def _best_satellite_artifact_for_waypoints(
+    candidates: List[Dict[str, Any]],
+    waypoints: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    scored: List[tuple] = []
+    for order, candidate in enumerate(candidates):
+        metadata = candidate.get('map_metadata')
+        if not isinstance(metadata, dict) or not _has_valid_bounds(metadata.get('bounds')):
+            continue
+        normalized_waypoints = _normalize_waypoints_for_preview(waypoints, candidate)
+        if not normalized_waypoints:
+            continue
+        if not all(
+            _waypoint_in_geographic_bounds(waypoint, metadata.get('bounds'))
+            for waypoint in normalized_waypoints
+        ):
+            continue
+        zoom = _coerce_float(candidate.get('zoom')) or -1.0
+        meters_per_px = (
+            _coerce_float(candidate.get('resolution'))
+            or _coerce_float(metadata.get('meters_per_px'))
+            or _coerce_float(metadata.get('resolution_m_per_px'))
+            or _bounds_area_degrees(metadata.get('bounds'))
+        )
+        scored.append((zoom, -float(meters_per_px), -order, candidate))
+    if not scored:
+        return None
+    return max(scored, key=lambda item: item[:3])[3]
+
+
+def _waypoint_in_geographic_bounds(waypoint: Dict[str, Any], bounds: Any) -> bool:
+    if not isinstance(bounds, dict):
+        return False
+    latitude = _coerce_float(waypoint.get('lat'))
+    longitude = _coerce_float(waypoint.get('lon'))
+    north = _coerce_float(bounds.get('north'))
+    south = _coerce_float(bounds.get('south'))
+    east = _coerce_float(bounds.get('east'))
+    west = _coerce_float(bounds.get('west'))
+    if None in (latitude, longitude, north, south, east, west):
+        return False
+    return south <= latitude <= north and west <= longitude <= east
+
+
+def _bounds_area_degrees(bounds: Any) -> float:
+    if not isinstance(bounds, dict):
+        return float('inf')
+    north = _coerce_float(bounds.get('north'))
+    south = _coerce_float(bounds.get('south'))
+    east = _coerce_float(bounds.get('east'))
+    west = _coerce_float(bounds.get('west'))
+    if None in (north, south, east, west):
+        return float('inf')
+    return abs((north - south) * (east - west))
 
 
 def _normalize_waypoints_for_preview(

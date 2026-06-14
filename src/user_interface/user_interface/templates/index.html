@@ -197,6 +197,57 @@
         color: #cbd5e1;
         font-size: 0.75rem;
       }
+      .review-panel {
+        display: none;
+        margin-bottom: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .review-panel.has-review {
+        display: block;
+      }
+      .review-panel.review-pass {
+        border-color: rgba(34, 197, 94, 0.45);
+      }
+      .review-panel.review-warn,
+      .review-panel.review-error {
+        border-color: rgba(245, 158, 11, 0.55);
+      }
+      .review-panel.review-reject {
+        border-color: rgba(248, 113, 113, 0.65);
+      }
+      .review-summary {
+        margin: 0 0 0.75rem 0;
+        color: #e2e8f0;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .review-findings {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.5rem;
+      }
+      .review-finding {
+        padding: 0.55rem 0.65rem;
+        border-radius: 0.6rem;
+        background: rgba(15, 23, 42, 0.8);
+        font-size: 0.8rem;
+      }
+      .review-finding strong {
+        color: #f8fafc;
+      }
+      .review-finding div {
+        margin-top: 0.25rem;
+        color: #cbd5e1;
+      }
+      .review-link {
+        display: inline-block;
+        margin-top: 0.75rem;
+        color: #7dd3fc;
+        font-size: 0.82rem;
+      }
       .map-stage {
         position: relative;
         border-radius: 0.6rem;
@@ -358,6 +409,13 @@
           <strong>Summary:</strong>
           <div class="pending-block" id="pending-summary">-</div>
         </div>
+        <div class="preview-panel review-panel" id="plan-review-panel">
+          <h4>Plan Review</h4>
+          <div class="preview-meta" id="review-meta"></div>
+          <p class="review-summary" id="review-summary"></p>
+          <ul class="review-findings" id="review-findings"></ul>
+          <a class="review-link" id="review-image-link" href="#" target="_blank" rel="noreferrer">Open review image</a>
+        </div>
         <div class="pending-layout">
           <div class="preview-panel">
             <h4>Map Preview</h4>
@@ -413,6 +471,11 @@
       const pendingPayloadEl = document.getElementById("pending-payload");
       const pendingSummaryEl = document.getElementById("pending-summary");
       const planNoteEl = document.getElementById("plan-note");
+      const planReviewPanelEl = document.getElementById("plan-review-panel");
+      const reviewMetaEl = document.getElementById("review-meta");
+      const reviewSummaryEl = document.getElementById("review-summary");
+      const reviewFindingsEl = document.getElementById("review-findings");
+      const reviewImageLinkEl = document.getElementById("review-image-link");
       const payloadMetaEl = document.getElementById("payload-meta");
       const mapMetaEl = document.getElementById("map-meta");
       const mapStageEl = document.getElementById("map-stage");
@@ -548,10 +611,11 @@
           pendingSummaryEl.textContent = "-";
           planNoteEl.textContent = "Awaiting operator approval";
           payloadMetaEl.innerHTML = "";
+          renderPlanReview(null);
           pendingPanelEl.classList.remove("awaiting-approval");
           pendingPanelEl.classList.remove("executing-plan");
           renderWaypointList([]);
-          renderMapPreview(null, []);
+          renderMapPreview(null, [], [], []);
           setPlanButtonsEnabled(false);
           return;
         }
@@ -571,8 +635,9 @@
           ? "Awaiting operator approval"
           : "Plan approved. Preview remains visible during execution.";
         renderPayloadMeta(plan);
+        renderPlanReview(plan.plan_review || null);
         renderWaypointList(plan.waypoints || []);
-        renderMapPreview(plan.map_preview || null, plan.waypoints || []);
+        renderMapPreview(plan.map_preview || null, plan.waypoints || [], plan.area_polygon || [], plan.frontiers || []);
         pendingPanelEl.classList.toggle("awaiting-approval", approvalRequired);
         pendingPanelEl.classList.toggle("executing-plan", !approvalRequired);
         setPlanButtonsEnabled(approvalRequired);
@@ -590,9 +655,16 @@
       function renderPayloadMeta(plan) {
         const chips = [];
         const waypoints = Array.isArray(plan.waypoints) ? plan.waypoints.length : 0;
+        const areaVertices = Array.isArray(plan.area_polygon) ? plan.area_polygon.length : 0;
+        const frontiers = Array.isArray(plan.frontiers) ? plan.frontiers.length : 0;
         chips.push(makeChip(`${waypoints} waypoint${waypoints === 1 ? "" : "s"}`));
+        if (areaVertices) chips.push(makeChip(`${areaVertices} area vertices`));
+        if (frontiers) chips.push(makeChip(`${frontiers} frontiers`));
         if (plan.tree_id) chips.push(makeChip(plan.tree_id));
         if (plan.preview_state) chips.push(makeChip(plan.preview_state));
+        if (plan.plan_review && plan.plan_review.status) {
+          chips.push(makeChip(`review ${plan.plan_review.status}`));
+        }
         if (plan.map_preview && plan.map_preview.frame_id) {
           chips.push(makeChip(`frame ${plan.map_preview.frame_id}`));
         }
@@ -601,6 +673,57 @@
         }
         payloadMetaEl.innerHTML = "";
         chips.forEach((chip) => payloadMetaEl.appendChild(chip));
+      }
+
+      function renderPlanReview(review) {
+        const validReview = review && typeof review === "object" && String(review.status || "").trim();
+        planReviewPanelEl.classList.toggle("has-review", !!validReview);
+        planReviewPanelEl.classList.remove("review-pass", "review-warn", "review-reject", "review-error");
+        reviewMetaEl.innerHTML = "";
+        reviewSummaryEl.textContent = "";
+        reviewFindingsEl.innerHTML = "";
+        reviewImageLinkEl.style.display = "none";
+        reviewImageLinkEl.removeAttribute("href");
+        if (!validReview) return;
+
+        const status = String(review.status || "").toLowerCase();
+        planReviewPanelEl.classList.add(`review-${status}`);
+        reviewMetaEl.appendChild(makeChip(status));
+        if (review.recommended_action) {
+          reviewMetaEl.appendChild(makeChip(String(review.recommended_action)));
+        }
+        reviewSummaryEl.textContent = review.summary || "-";
+
+        const findings = Array.isArray(review.findings) ? review.findings : [];
+        if (!findings.length) {
+          const li = document.createElement("li");
+          li.className = "review-finding";
+          li.textContent = "No detailed findings.";
+          reviewFindingsEl.appendChild(li);
+        } else {
+          findings.forEach((finding) => {
+            const li = document.createElement("li");
+            li.className = "review-finding";
+            const severity = escapeHtml(String(finding.severity || "info"));
+            const category = escapeHtml(String(finding.category || "general"));
+            const indices = Array.isArray(finding.waypoint_indices) && finding.waypoint_indices.length
+              ? ` waypoint ${finding.waypoint_indices.map((idx) => escapeHtml(String(idx))).join(", ")}`
+              : "";
+            const description = escapeHtml(String(finding.description || ""));
+            const fix = escapeHtml(String(finding.recommended_fix || ""));
+            li.innerHTML = `
+              <strong>${severity} · ${category}${indices}</strong>
+              ${description ? `<div>${description}</div>` : ""}
+              ${fix ? `<div>Fix: ${fix}</div>` : ""}
+            `;
+            reviewFindingsEl.appendChild(li);
+          });
+        }
+
+        if (review.review_image_uri) {
+          reviewImageLinkEl.href = `/artifacts?uri=${encodeURIComponent(String(review.review_image_uri))}`;
+          reviewImageLinkEl.style.display = "inline-block";
+        }
       }
 
       function renderWaypointList(waypoints) {
@@ -635,8 +758,8 @@
         });
       }
 
-      function renderMapPreview(mapPreview, waypoints) {
-        renderMapMeta(mapPreview, waypoints);
+      function renderMapPreview(mapPreview, waypoints, areaPolygon = [], frontiers = []) {
+        renderMapMeta(mapPreview, waypoints, areaPolygon, frontiers);
         if (!mapPreview || !mapPreview.image_url) {
           setMapEmpty("No map artifact is attached to this pending plan.");
           return;
@@ -646,7 +769,7 @@
         const image = new Image();
         image.onload = () => {
           if (token !== currentMapToken) return;
-          drawMapPreview(image, mapPreview, waypoints);
+          drawMapPreview(image, mapPreview, waypoints, areaPolygon, frontiers);
         };
         image.onerror = () => {
           if (token !== currentMapToken) return;
@@ -655,7 +778,7 @@
         image.src = mapPreview.image_url;
       }
 
-      function renderMapMeta(mapPreview, waypoints) {
+      function renderMapMeta(mapPreview, waypoints, areaPolygon = [], frontiers = []) {
         mapMetaEl.innerHTML = "";
         if (mapPreview && mapPreview.source_key) {
           mapMetaEl.appendChild(makeChip(mapPreview.source_key.replaceAll("_", " ")));
@@ -664,6 +787,12 @@
           mapMetaEl.appendChild(
             makeChip(`${waypoints.length} overlay point${waypoints.length === 1 ? "" : "s"}`)
           );
+        }
+        if (Array.isArray(areaPolygon) && areaPolygon.length) {
+          mapMetaEl.appendChild(makeChip(`${areaPolygon.length} polygon vertices`));
+        }
+        if (Array.isArray(frontiers) && frontiers.length) {
+          mapMetaEl.appendChild(makeChip(`${frontiers.length} frontiers`));
         }
         if (mapPreview && mapPreview.coordinate_mode === "geographic") {
           mapMetaEl.appendChild(makeChip("geographic"));
@@ -694,7 +823,7 @@
         mapEmptyEl.textContent = message;
       }
 
-      function drawMapPreview(image, mapPreview, waypoints) {
+      function drawMapPreview(image, mapPreview, waypoints, areaPolygon = [], frontiers = []) {
         const width = image.naturalWidth || image.width || 1;
         const height = image.naturalHeight || image.height || 1;
         mapCanvasEl.width = width;
@@ -708,6 +837,20 @@
               .map((waypoint) => mapPointToPixel(waypoint, mapPreview, width, height))
               .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))
           : [];
+        const drawablePolygon = Array.isArray(areaPolygon)
+          ? areaPolygon
+              .map((point) => mapPointToPixel(point, mapPreview, width, height))
+              .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+          : [];
+        const drawableFrontiers = Array.isArray(frontiers)
+          ? frontiers
+              .map((point) => mapPointToPixel(point, mapPreview, width, height))
+              .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y))
+          : [];
+
+        if (drawablePolygon.length > 2) {
+          drawPolygonOverlay(ctx, drawablePolygon, width, height);
+        }
 
         if (drawableWaypoints.length > 1) {
           ctx.save();
@@ -726,9 +869,29 @@
           drawWaypointMarker(ctx, point, idx + 1, width, height);
         });
 
+        drawableFrontiers.forEach((point, idx) => {
+          drawFrontierMarker(ctx, point, idx + 1, width, height);
+        });
+
         drawRobotMarker(ctx, mapPreview, width, height);
         mapStageEl.classList.add("has-map");
         mapEmptyEl.textContent = "";
+      }
+
+      function drawPolygonOverlay(ctx, points, width, height) {
+        ctx.save();
+        ctx.fillStyle = "rgba(14, 165, 233, 0.16)";
+        ctx.strokeStyle = "rgba(14, 165, 233, 0.95)";
+        ctx.lineWidth = Math.max(2, Math.min(width, height) / 180);
+        ctx.beginPath();
+        points.forEach((point, idx) => {
+          if (idx === 0) ctx.moveTo(point.x, point.y);
+          else ctx.lineTo(point.x, point.y);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
       }
 
       function drawWaypointMarker(ctx, point, index, width, height) {
@@ -747,6 +910,29 @@
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(String(index), point.x, point.y + 0.5);
+        ctx.restore();
+      }
+
+      function drawFrontierMarker(ctx, point, index, width, height) {
+        const size = Math.max(6, Math.min(width, height) / 75);
+        ctx.save();
+        ctx.translate(point.x, point.y);
+        ctx.fillStyle = "#2dd4bf";
+        ctx.strokeStyle = "#020617";
+        ctx.lineWidth = Math.max(1.5, size / 4);
+        ctx.beginPath();
+        ctx.moveTo(0, -size);
+        ctx.lineTo(size, 0);
+        ctx.lineTo(0, size);
+        ctx.lineTo(-size, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#020617";
+        ctx.font = `${Math.max(9, size * 0.95)}px IBM Plex Sans, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(index), 0, 0.5);
         ctx.restore();
       }
 

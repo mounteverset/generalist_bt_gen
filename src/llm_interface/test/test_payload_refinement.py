@@ -31,6 +31,9 @@ def _install_ros_stubs() -> None:
             ERROR = 2
 
     gen_srv_module.CreatePayload = getattr(gen_srv_module, 'CreatePayload', DummySrv)
+    gen_srv_module.ExtractMissionRequirements = getattr(
+        gen_srv_module, 'ExtractMissionRequirements', DummySrv
+    )
     gen_srv_module.PlanSubtree = getattr(gen_srv_module, 'PlanSubtree', DummySrv)
     gen_srv_module.SelectBehaviorTree = getattr(
         gen_srv_module, 'SelectBehaviorTree', DummySrv
@@ -242,6 +245,40 @@ def test_create_chat_llm_supports_openrouter_provider():
     ]
 
 
+def test_create_chat_llm_passes_openrouter_reasoning_config():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    node._openrouter_app_url = ''
+    node._openrouter_app_title = ''
+    openrouter_cls = sys.modules['langchain_openrouter'].ChatOpenRouter
+    openrouter_cls.init_calls.clear()
+    original_key = os.environ.get('OPENROUTER_API_KEY')
+    os.environ['OPENROUTER_API_KEY'] = 'test-openrouter-key'
+
+    try:
+        llm = node._create_chat_llm(
+            provider_name='openrouter',
+            model_name='openai/gpt-5.5',
+            temperature=0.0,
+            purpose='payload',
+            reasoning_effort='medium',
+            reasoning_summary='auto',
+        )
+    finally:
+        if original_key is None:
+            os.environ.pop('OPENROUTER_API_KEY', None)
+        else:
+            os.environ['OPENROUTER_API_KEY'] = original_key
+
+    assert isinstance(llm, openrouter_cls)
+    assert openrouter_cls.init_calls == [
+        {
+            'model': 'openai/gpt-5.5',
+            'temperature': 0.0,
+            'reasoning': {'effort': 'medium', 'summary': 'auto'},
+        }
+    ]
+
+
 def test_create_chat_llm_supports_openai_provider():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     node._openrouter_app_url = ''
@@ -273,7 +310,154 @@ def test_create_chat_llm_supports_openai_provider():
     ]
 
 
+def test_create_chat_llm_passes_openai_reasoning_config():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    node._openrouter_app_url = ''
+    node._openrouter_app_title = ''
+    openai_cls = sys.modules['langchain_openai'].ChatOpenAI
+    openai_cls.init_calls.clear()
+    original_key = os.environ.get('OPENAI_API_KEY')
+    os.environ['OPENAI_API_KEY'] = 'test-openai-key'
+
+    try:
+        llm = node._create_chat_llm(
+            provider_name='openai',
+            model_name='gpt-5.5',
+            temperature=0.0,
+            purpose='payload',
+            reasoning_effort='high',
+        )
+    finally:
+        if original_key is None:
+            os.environ.pop('OPENAI_API_KEY', None)
+        else:
+            os.environ['OPENAI_API_KEY'] = original_key
+
+    assert isinstance(llm, openai_cls)
+    assert openai_cls.init_calls == [
+        {
+            'model': 'gpt-5.5',
+            'temperature': 0.0,
+            'reasoning': {'effort': 'high'},
+        }
+    ]
+
+
 def test_normalize_provider_name_accepts_openrouter_aliases():
     assert LLMInterfaceNode._normalize_provider_name('google') == 'gemini'
     assert LLMInterfaceNode._normalize_provider_name('open_ai') == 'openai'
     assert LLMInterfaceNode._normalize_provider_name('open_router') == 'openrouter'
+
+
+def test_coerce_explore_area_payload_fields_to_contract_strings():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    payload = {
+        'waypoints': [{'x': 1, 'y': 2, 'yaw': 0}],
+        'area_polygon': [
+            {'x': 0, 'y': 0},
+            {'x': 5, 'y': 0},
+            {'x': 5, 'y': 4},
+            {'x': 0, 'y': 4},
+        ],
+        'frontiers': [{'x': 2, 'y': 1, 'yaw': 1.57}],
+        'area_polygon_geo': [
+            {'lat': 48.1, 'lon': 11.5},
+            {'lat': 48.1, 'lon': 11.6},
+            {'lat': 48.2, 'lon': 11.6},
+        ],
+        'frontiers_geo': [{'lat': 48.15, 'lon': 11.55}],
+    }
+    contract = {
+        'waypoints': {'type': 'string'},
+        'area_polygon': {'type': 'string'},
+        'frontiers': {'type': 'string'},
+        'area_polygon_geo': {'type': 'string'},
+        'frontiers_geo': {'type': 'string'},
+    }
+
+    coerced = node._coerce_payload_to_contract(payload, contract)
+
+    assert coerced['waypoints'] == '1.0,2.0,0.0'
+    assert coerced['area_polygon'] == '0.0,0.0; 5.0,0.0; 5.0,4.0; 0.0,4.0'
+    assert coerced['frontiers'] == '2.0,1.0,1.57'
+    assert coerced['area_polygon_geo'] == '48.1,11.5; 48.1,11.6; 48.2,11.6'
+    assert coerced['frontiers_geo'] == '48.15,11.55'
+
+
+def test_explore_payload_validation_rejects_missing_required_polygon():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    contract = {
+        'waypoints': {'type': 'string', 'required': True},
+        'area_polygon': {'type': 'string', 'required': True},
+        'frontiers': {'type': 'string', 'required': True},
+    }
+    payload = {
+        'waypoints': '1.0,2.0,0.0',
+        'frontiers': '1.0,2.0,0.0',
+    }
+
+    errors = node._generated_payload_errors('explore_area.xml', payload, contract, {})
+
+    assert "missing required key 'area_polygon'" in errors
+
+
+def test_explore_payload_validation_rejects_lat_lon_waypoints():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    contract = {
+        'waypoints': {'type': 'string', 'required': True},
+        'area_polygon': {'type': 'string', 'required': True},
+        'frontiers': {'type': 'string', 'required': True},
+    }
+    context = {
+        'SATELLITE_MAP': {
+            'map_metadata': {
+                'bounds': {
+                    'north': 48.3,
+                    'south': 48.0,
+                    'east': 11.8,
+                    'west': 11.4,
+                }
+            }
+        },
+        'GPS_FIX': {'latitude': 48.1, 'longitude': 11.5},
+        'ROBOT_POSE': {'x': 0.0, 'y': 0.0},
+    }
+    payload = {
+        'waypoints': '48.2,11.5,0.0; 48.21,11.51,1.57',
+        'area_polygon': '0.0,0.0; 5.0,0.0; 5.0,5.0; 0.0,5.0',
+        'frontiers': '1.0,1.0,0.0',
+    }
+
+    errors = node._generated_payload_errors('explore_area.xml', payload, contract, context)
+
+    assert any('lat/lon' in error for error in errors)
+
+
+def test_explore_payload_validation_rejects_satellite_without_map_anchor():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    contract = {
+        'waypoints': {'type': 'string', 'required': True},
+        'area_polygon': {'type': 'string', 'required': True},
+        'frontiers': {'type': 'string', 'required': True},
+    }
+    payload = {
+        'waypoints': '1.0,1.0,0.0',
+        'area_polygon': '0.0,0.0; 5.0,0.0; 5.0,5.0; 0.0,5.0',
+        'frontiers': '1.0,1.0,0.0',
+    }
+    context = {
+        'SATELLITE_MAP': {
+            'map_metadata': {
+                'bounds': {
+                    'north': 48.3,
+                    'south': 48.0,
+                    'east': 11.8,
+                    'west': 11.4,
+                }
+            }
+        }
+    }
+
+    errors = node._generated_payload_errors('explore_area.xml', payload, contract, context)
+
+    assert any('GPS_FIX and ROBOT_POSE' in error for error in errors)
