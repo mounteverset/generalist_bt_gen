@@ -276,6 +276,54 @@
         font-size: 0.85rem;
         max-width: 20rem;
       }
+      .map-gallery {
+        margin-top: 0.75rem;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+        gap: 0.65rem;
+      }
+      .map-card {
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 0.65rem;
+        background: rgba(15, 23, 42, 0.72);
+        padding: 0.55rem;
+      }
+      .map-card-title {
+        margin: 0 0 0.4rem 0;
+        color: #f8fafc;
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+      .map-card-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+        margin-bottom: 0.5rem;
+      }
+      .map-card-stage {
+        position: relative;
+        min-height: 7rem;
+        border-radius: 0.5rem;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #020617;
+      }
+      .map-card-canvas {
+        display: none;
+        width: 100%;
+        height: auto;
+      }
+      .map-card-stage.has-map .map-card-canvas {
+        display: block;
+      }
+      .map-card-empty {
+        padding: 0.65rem;
+        color: #94a3b8;
+        text-align: center;
+        font-size: 0.75rem;
+      }
       .waypoint-list {
         list-style: none;
         margin: 0.75rem 0 0 0;
@@ -426,6 +474,7 @@
                 Waiting for a pending plan with a map preview.
               </div>
             </div>
+            <div class="map-gallery" id="map-gallery"></div>
             <ul class="waypoint-list" id="waypoint-list"></ul>
           </div>
           <div class="preview-panel">
@@ -481,6 +530,7 @@
       const mapStageEl = document.getElementById("map-stage");
       const mapCanvasEl = document.getElementById("map-canvas");
       const mapEmptyEl = document.getElementById("map-empty");
+      const mapGalleryEl = document.getElementById("map-gallery");
       const waypointListEl = document.getElementById("waypoint-list");
       const approveBtn = document.getElementById("approve-btn");
       const cancelBtn = document.getElementById("cancel-btn");
@@ -615,7 +665,7 @@
           pendingPanelEl.classList.remove("awaiting-approval");
           pendingPanelEl.classList.remove("executing-plan");
           renderWaypointList([]);
-          renderMapPreview(null, [], [], []);
+          renderMapPreview(null, [], [], [], []);
           setPlanButtonsEnabled(false);
           return;
         }
@@ -637,7 +687,13 @@
         renderPayloadMeta(plan);
         renderPlanReview(plan.plan_review || null);
         renderWaypointList(plan.waypoints || []);
-        renderMapPreview(plan.map_preview || null, plan.waypoints || [], plan.area_polygon || [], plan.frontiers || []);
+        renderMapPreview(
+          plan.map_preview || null,
+          plan.waypoints || [],
+          plan.area_polygon || [],
+          plan.frontiers || [],
+          plan.map_previews || []
+        );
         pendingPanelEl.classList.toggle("awaiting-approval", approvalRequired);
         pendingPanelEl.classList.toggle("executing-plan", !approvalRequired);
         setPlanButtonsEnabled(approvalRequired);
@@ -758,14 +814,15 @@
         });
       }
 
-      function renderMapPreview(mapPreview, waypoints, areaPolygon = [], frontiers = []) {
+      function renderMapPreview(mapPreview, waypoints, areaPolygon = [], frontiers = [], mapPreviews = []) {
+        const token = ++currentMapToken;
+        renderMapGallery(mapPreviews, waypoints, areaPolygon, frontiers, token);
         renderMapMeta(mapPreview, waypoints, areaPolygon, frontiers);
         if (!mapPreview || !mapPreview.image_url) {
           setMapEmpty("No map artifact is attached to this pending plan.");
           return;
         }
 
-        const token = ++currentMapToken;
         const image = new Image();
         image.onload = () => {
           if (token !== currentMapToken) return;
@@ -776,6 +833,54 @@
           setMapEmpty("Failed to load the map preview artifact.");
         };
         image.src = mapPreview.image_url;
+      }
+
+      function renderMapGallery(mapPreviews, waypoints, areaPolygon, frontiers, token) {
+        mapGalleryEl.innerHTML = "";
+        const previews = Array.isArray(mapPreviews) ? mapPreviews : [];
+        if (previews.length <= 1) return;
+
+        previews.forEach((preview, index) => {
+          if (!preview || typeof preview !== "object" || !preview.image_url) return;
+          const card = document.createElement("article");
+          card.className = "map-card";
+
+          const title = document.createElement("h5");
+          title.className = "map-card-title";
+          title.textContent = preview.role || preview.source_key || `Map ${index + 1}`;
+          card.appendChild(title);
+
+          const meta = document.createElement("div");
+          meta.className = "map-card-meta";
+          appendMapPreviewChips(meta, preview);
+          card.appendChild(meta);
+
+          const stage = document.createElement("div");
+          stage.className = "map-card-stage";
+          const canvas = document.createElement("canvas");
+          canvas.className = "map-card-canvas";
+          const empty = document.createElement("div");
+          empty.className = "map-card-empty";
+          empty.textContent = "Loading map preview.";
+          stage.appendChild(canvas);
+          stage.appendChild(empty);
+          card.appendChild(stage);
+          mapGalleryEl.appendChild(card);
+
+          const image = new Image();
+          image.onload = () => {
+            if (token !== currentMapToken) return;
+            const counts = drawMapCanvas(image, preview, canvas, waypoints, areaPolygon, frontiers);
+            appendChip(meta, `${counts.total} visible`);
+            stage.classList.add("has-map");
+            empty.textContent = "";
+          };
+          image.onerror = () => {
+            if (token !== currentMapToken) return;
+            empty.textContent = "Failed to load this map.";
+          };
+          image.src = preview.image_url;
+        });
       }
 
       function renderMapMeta(mapPreview, waypoints, areaPolygon = [], frontiers = []) {
@@ -814,6 +919,31 @@
         }
       }
 
+      function appendMapPreviewChips(container, mapPreview) {
+        if (mapPreview.source_key) {
+          appendChip(container, String(mapPreview.source_key).replaceAll("_", " "));
+        }
+        if (mapPreview.role) {
+          appendChip(container, String(mapPreview.role));
+        }
+        const zoom = Number((mapPreview.zoom ?? (mapPreview.map_metadata || {}).zoom) ?? NaN);
+        if (Number.isFinite(zoom)) {
+          appendChip(container, `z${zoom}`);
+        }
+        const resolution = Number(
+          (mapPreview.map_metadata || {}).meters_per_px ||
+          (mapPreview.map_metadata || {}).resolution_m_per_px ||
+          mapPreview.resolution
+        );
+        if (Number.isFinite(resolution) && resolution > 0) {
+          appendChip(container, `${resolution.toFixed(3)} m/px`);
+        }
+      }
+
+      function appendChip(container, text) {
+        container.appendChild(makeChip(text));
+      }
+
       function setMapEmpty(message) {
         mapStageEl.classList.remove("has-map");
         mapCanvasEl.width = 1;
@@ -824,11 +954,17 @@
       }
 
       function drawMapPreview(image, mapPreview, waypoints, areaPolygon = [], frontiers = []) {
+        drawMapCanvas(image, mapPreview, mapCanvasEl, waypoints, areaPolygon, frontiers);
+        mapStageEl.classList.add("has-map");
+        mapEmptyEl.textContent = "";
+      }
+
+      function drawMapCanvas(image, mapPreview, canvas, waypoints, areaPolygon = [], frontiers = []) {
         const width = image.naturalWidth || image.width || 1;
         const height = image.naturalHeight || image.height || 1;
-        mapCanvasEl.width = width;
-        mapCanvasEl.height = height;
-        const ctx = mapCanvasEl.getContext("2d");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(image, 0, 0, width, height);
 
@@ -874,8 +1010,12 @@
         });
 
         drawRobotMarker(ctx, mapPreview, width, height);
-        mapStageEl.classList.add("has-map");
-        mapEmptyEl.textContent = "";
+        return {
+          waypoints: drawableWaypoints.length,
+          polygon: drawablePolygon.length,
+          frontiers: drawableFrontiers.length,
+          total: drawableWaypoints.length + drawablePolygon.length + drawableFrontiers.length,
+        };
       }
 
       function drawPolygonOverlay(ctx, points, width, height) {

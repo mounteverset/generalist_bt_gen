@@ -77,6 +77,8 @@ def test_normalize_pending_plan_builds_map_preview():
     assert normalized['map_preview']['image_url'].startswith('/artifacts?uri=')
     assert normalized['map_preview']['frame_id'] == 'map'
     assert normalized['map_preview']['map_metadata']['origin']['x'] == -10.0
+    assert len(normalized['map_previews']) == 1
+    assert normalized['map_previews'][0]['frame_id'] == 'map'
 
 
 def test_extract_waypoints_from_lat_lon_dicts():
@@ -224,6 +226,9 @@ def test_satellite_preview_prefers_detail_artifact_containing_all_waypoints():
     assert normalized['map_preview']['zoom'] == 18
     assert normalized['map_preview']['role'] == 'detail_start'
     assert normalized['map_preview']['uri'].endswith('satellite_detail.png')
+    assert [preview['zoom'] for preview in normalized['map_previews']] == [18, 15]
+    assert normalized['map_previews'][0]['role'] == 'detail_start'
+    assert normalized['map_previews'][1]['role'] == 'overview'
 
 
 def test_normalize_explore_preview_uses_geo_overlays_for_satellite_map():
@@ -336,3 +341,4 @@ def test_satellite_preview_falls_back_when_detail_misses_waypoints():
     assert normalized is not None
     assert normalized['map_preview']['zoom'] == 15
     assert normalized['map_preview']['uri'].endswith('satellite_overview.png')
+    assert len(normalized['map_previews']) == 2

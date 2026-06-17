@@ -74,6 +74,41 @@ def build_map_preview(
     return None
 
 
+def build_map_previews(
+    context_value: Any,
+    attachment_uris: Iterable[str],
+    artifact_url_builder: Callable[[str], str],
+) -> List[Dict[str, Any]]:
+    context = load_json_value(context_value)
+    previews: List[Dict[str, Any]] = []
+    if isinstance(context, dict):
+        for key in MAP_CONTEXT_KEYS:
+            previews.extend(
+                _map_previews_from_context_entry(
+                    context.get(key),
+                    key,
+                    artifact_url_builder,
+                )
+            )
+        if previews:
+            return _dedupe_map_previews(previews)
+
+    for uri in attachment_uris:
+        if not isinstance(uri, str):
+            continue
+        lowered = uri.lower()
+        if lowered.endswith('.png') and ('slam_map' in lowered or 'satellite_map' in lowered):
+            previews.append(
+                {
+                    'source_key': 'attachment',
+                    'uri': uri,
+                    'image_url': artifact_url_builder(uri),
+                    'map_metadata': {},
+                }
+            )
+    return _dedupe_map_previews(previews)
+
+
 def normalize_pending_plan(
     plan: Any,
     artifact_url_builder: Callable[[str], str],
@@ -113,8 +148,15 @@ def normalize_pending_plan(
         artifact_url_builder,
         map_selection_points,
     )
+    map_previews = build_map_previews(
+        context_object or normalized.get('context_snapshot_json'),
+        normalized['attachment_uris'],
+        artifact_url_builder,
+    )
     if map_preview:
         normalized['map_preview'] = map_preview
+    if map_previews:
+        normalized['map_previews'] = _primary_first_map_previews(map_preview, map_previews)
 
     normalized['waypoints'] = _normalize_waypoints_for_preview(
         raw_waypoints,
@@ -311,6 +353,27 @@ def _map_preview_from_context_entry(
     return _best_satellite_artifact_for_waypoints(candidates, waypoints) or primary
 
 
+def _map_previews_from_context_entry(
+    entry: Any,
+    source_key: str,
+    artifact_url_builder: Callable[[str], str],
+) -> List[Dict[str, Any]]:
+    primary = _map_preview_from_entry(entry, source_key, artifact_url_builder)
+    if source_key != 'SATELLITE_MAP' or not isinstance(entry, dict):
+        return [primary] if primary else []
+
+    previews: List[Dict[str, Any]] = []
+    if primary:
+        previews.append(primary)
+    artifacts = entry.get('map_artifacts')
+    if isinstance(artifacts, list):
+        for artifact in artifacts:
+            candidate = _map_preview_from_entry(artifact, source_key, artifact_url_builder)
+            if candidate:
+                previews.append(candidate)
+    return _dedupe_map_previews(previews)
+
+
 def _map_preview_from_entry(
     entry: Any,
     source_key: str,
@@ -345,6 +408,42 @@ def _map_preview_from_entry(
         'role': entry.get('role'),
         'reason': entry.get('reason'),
     }
+
+
+def _dedupe_map_previews(previews: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    deduped: List[Dict[str, Any]] = []
+    seen: Dict[str, int] = {}
+    for preview in previews:
+        uri = preview.get('uri')
+        if not isinstance(uri, str) or not uri.strip():
+            continue
+        if uri in seen:
+            existing = deduped[seen[uri]]
+            for key in ('role', 'reason', 'zoom'):
+                if existing.get(key) in (None, '') and preview.get(key) not in (None, ''):
+                    existing[key] = preview[key]
+            continue
+        seen[uri] = len(deduped)
+        item = dict(preview)
+        item['preview_index'] = len(deduped) + 1
+        deduped.append(item)
+    return deduped
+
+
+def _primary_first_map_previews(
+    primary: Optional[Dict[str, Any]],
+    previews: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not primary:
+        return _dedupe_map_previews(previews)
+
+    primary_uri = primary.get('uri')
+    ordered: List[Dict[str, Any]] = [primary]
+    for preview in previews:
+        if preview.get('uri') == primary_uri:
+            continue
+        ordered.append(preview)
+    return _dedupe_map_previews(ordered)
 
 
 def _best_satellite_artifact_for_waypoints(

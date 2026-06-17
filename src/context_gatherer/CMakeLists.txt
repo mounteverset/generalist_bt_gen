@@ -72,6 +72,14 @@ install(TARGETS context_gatherer_node annotated_map_saver_node satellite_map_ann
 install(DIRECTORY launch config
   DESTINATION share/${PROJECT_NAME})
 
+if(BUILD_TESTING)
+  find_program(PYTEST_EXECUTABLE pytest REQUIRED)
+  add_test(
+    NAME test_osm_context
+    COMMAND ${PYTEST_EXECUTABLE} -q ${CMAKE_CURRENT_SOURCE_DIR}/test/test_osm_context.py
+  )
+endif()
+
 ament_export_dependencies(
   geometry_msgs
   nav2_msgs

@@ -119,8 +119,8 @@ trees:
     context_requirements:
       - ROBOT_POSE
       - ANNOTATED_SLAM_MAP_IMAGE
-      - GPS_FIX
-      - SATELLITE_MAP
+      # - GPS_FIX
+      # - SATELLITE_MAP
       - OSM_CONTEXT
       - BATTERY_STATE
     blackboard_contract:

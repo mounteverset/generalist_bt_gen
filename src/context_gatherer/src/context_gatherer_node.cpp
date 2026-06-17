@@ -1896,7 +1896,7 @@ private:
     query << "way(around:" << radius_m << "," << lat << "," << lon << ")[\"leisure\"=\"park\"];";
     query << "node(around:" << radius_m << "," << lat << "," << lon << ")[\"amenity\"];";
     query << "node(around:" << radius_m << "," << lat << "," << lon << ")[\"emergency\"];";
-    query << ");out geom center;";
+    query << ");out geom;";
 
     CURL* escape_curl = curl_easy_init();
     if (!escape_curl) {
