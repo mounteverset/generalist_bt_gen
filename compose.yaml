@@ -1,0 +1,29 @@
+name: generalist-bt
+
+services:
+  workspace:
+    image: generalist-bt-gen:jazzy-cu126
+    build:
+      context: .
+      additional_contexts:
+        okvis_src: ../okvis_ws/src
+      args:
+        BUILD_JOBS: ${BUILD_JOBS:-4}
+        CUDA_ARCHITECTURES: ${CUDA_ARCHITECTURES:-86}
+    init: true
+    network_mode: host
+    ipc: host
+    environment:
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    volumes:
+      - context-artifacts:/tmp/context_gatherer
+      - chat-logs:/root/.generalist_bt/chat_logs
+    stdin_open: true
+    tty: true
+    command: ["sleep", "infinity"]
+    stop_grace_period: 10s
+
+volumes:
+  context-artifacts:
+  chat-logs:

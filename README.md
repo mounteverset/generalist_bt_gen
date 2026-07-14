@@ -86,6 +86,44 @@ source /opt/ros/jazzy/setup.bash && source install/setup.bash
 python3 -c "import fastapi; import langchain; from langchain_google_genai import ChatGoogleGenerativeAI; print('✅ All dependencies OK')"
 ```
 
+## Docker
+
+The Docker image contains two ROS 2 overlays, built in dependency order:
+
+1. `/opt/ws/okvis_ws` contains OKVIS2-X, FindAnything, and the language feature packages from `../okvis_ws/src`.
+2. `/opt/ws/generalist_bt_gen` contains this workspace and is built on top of the OKVIS overlay.
+
+Build and start the base development container:
+
+```bash
+docker compose build workspace
+docker compose up -d workspace
+docker compose exec workspace bash
+```
+
+Forward only the API keys required by a shell instead of storing them in Compose:
+
+```bash
+docker compose exec -e OPENAI_API_KEY -e OPENROUTER_API_KEY -e GOOGLE_API_KEY workspace bash
+```
+
+The image is CUDA-enabled and defaults to CUDA compute capability `8.6`. Override the build settings when needed:
+
+```bash
+CUDA_ARCHITECTURES=89 BUILD_JOBS=8 docker compose build workspace
+```
+
+The base Compose file intentionally does not require attached hardware. When an NVIDIA GPU and RealSense camera are available, enable the hardware override. This requires a working host NVIDIA driver, NVIDIA Container Toolkit, and an attached camera that provides `/dev/bus/usb`:
+
+```bash
+xhost +si:localuser:root
+docker compose -f compose.yaml -f compose.hardware.yaml up -d workspace
+```
+
+Open separate shells with `docker compose exec workspace bash` to launch OKVIS and the generalist stack. The entrypoint automatically sources ROS 2 Jazzy, then `okvis_ws`, then `generalist_bt_gen`. Host networking lets the container join the same ROS domain as the Husky; set `ROS_DOMAIN_ID` in the shell that invokes Compose if the robot uses a nonzero domain.
+
+API keys forwarded with `docker compose exec -e` exist only in that process; they are not copied into the image or stored in Compose. Rebuild the image after source changes because both workspaces are copied into it. Existing `build`, `install`, `log`, bag files, and Git metadata are excluded.
+
 ## Simulation Setup (Clearpath Husky A200)
 
 For testing behavior trees without physical hardware, use the Clearpath Husky A200 simulation with Gazebo Harmonic.

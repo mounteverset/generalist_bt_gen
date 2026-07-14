@@ -282,11 +282,42 @@
         grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
         gap: 0.65rem;
       }
+      .map-navigation {
+        margin-top: 0.65rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.65rem;
+      }
+      .map-navigation[hidden] {
+        display: none;
+      }
+      .map-navigation button {
+        padding: 0.45rem 0.8rem;
+        font-size: 0.78rem;
+      }
+      .map-navigation-status {
+        min-width: 4rem;
+        text-align: center;
+        color: #cbd5e1;
+        font-size: 0.8rem;
+      }
       .map-card {
+        width: 100%;
+        color: inherit;
+        text-align: left;
         border: 1px solid rgba(148, 163, 184, 0.2);
         border-radius: 0.65rem;
         background: rgba(15, 23, 42, 0.72);
         padding: 0.55rem;
+      }
+      .map-card:hover,
+      .map-card:focus-visible {
+        border-color: #38bdf8;
+      }
+      .map-card.is-active {
+        border-color: #fbbf24;
+        box-shadow: 0 0 0 1px #fbbf24;
       }
       .map-card-title {
         margin: 0 0 0.4rem 0;
@@ -474,6 +505,11 @@
                 Waiting for a pending plan with a map preview.
               </div>
             </div>
+            <div class="map-navigation" id="map-navigation" hidden>
+              <button type="button" id="map-previous-btn">Previous</button>
+              <span class="map-navigation-status" id="map-navigation-status"></span>
+              <button type="button" id="map-next-btn">Next</button>
+            </div>
             <div class="map-gallery" id="map-gallery"></div>
             <ul class="waypoint-list" id="waypoint-list"></ul>
           </div>
@@ -530,6 +566,10 @@
       const mapStageEl = document.getElementById("map-stage");
       const mapCanvasEl = document.getElementById("map-canvas");
       const mapEmptyEl = document.getElementById("map-empty");
+      const mapNavigationEl = document.getElementById("map-navigation");
+      const mapPreviousBtn = document.getElementById("map-previous-btn");
+      const mapNavigationStatusEl = document.getElementById("map-navigation-status");
+      const mapNextBtn = document.getElementById("map-next-btn");
       const mapGalleryEl = document.getElementById("map-gallery");
       const waypointListEl = document.getElementById("waypoint-list");
       const approveBtn = document.getElementById("approve-btn");
@@ -537,6 +577,7 @@
       const feedbackEl = document.getElementById("feedback");
       let currentPendingPlan = null;
       let currentMapToken = 0;
+      let selectedMapPreviewIndex = 0;
       const splitStorageKey = "generalist-bt-chat-pane-percent";
       const minChatPercent = 25;
       const maxChatPercent = 80;
@@ -654,6 +695,7 @@
         currentPendingPlan = validPlan ? plan : null;
         if (!validPlan) {
           currentPendingPlan = null;
+          selectedMapPreviewIndex = 0;
           feedbackEl.value = "";
           pendingTreeEl.textContent = "No pending plan.";
           pendingMissionEl.textContent = "-";
@@ -673,6 +715,7 @@
         const currentSessionId = String(plan.session_id || "").trim();
         if (previousSessionId && previousSessionId !== currentSessionId) {
           feedbackEl.value = "";
+          selectedMapPreviewIndex = 0;
         }
         if (!approvalRequired) {
           feedbackEl.value = "";
@@ -816,9 +859,15 @@
 
       function renderMapPreview(mapPreview, waypoints, areaPolygon = [], frontiers = [], mapPreviews = []) {
         const token = ++currentMapToken;
-        renderMapGallery(mapPreviews, waypoints, areaPolygon, frontiers, token);
-        renderMapMeta(mapPreview, waypoints, areaPolygon, frontiers);
-        if (!mapPreview || !mapPreview.image_url) {
+        const previews = (Array.isArray(mapPreviews) ? mapPreviews : []).filter(
+          (preview) => preview && typeof preview === "object" && preview.image_url
+        );
+        selectedMapPreviewIndex = Math.min(selectedMapPreviewIndex, Math.max(previews.length - 1, 0));
+        const selectedPreview = previews[selectedMapPreviewIndex] || mapPreview;
+        renderMapNavigation(previews, waypoints, areaPolygon, frontiers);
+        renderMapGallery(previews, waypoints, areaPolygon, frontiers, token);
+        renderMapMeta(selectedPreview, waypoints, areaPolygon, frontiers);
+        if (!selectedPreview || !selectedPreview.image_url) {
           setMapEmpty("No map artifact is attached to this pending plan.");
           return;
         }
@@ -826,13 +875,31 @@
         const image = new Image();
         image.onload = () => {
           if (token !== currentMapToken) return;
-          drawMapPreview(image, mapPreview, waypoints, areaPolygon, frontiers);
+          drawMapPreview(image, selectedPreview, waypoints, areaPolygon, frontiers);
         };
         image.onerror = () => {
           if (token !== currentMapToken) return;
           setMapEmpty("Failed to load the map preview artifact.");
         };
-        image.src = mapPreview.image_url;
+        image.src = selectedPreview.image_url;
+      }
+
+      function renderMapNavigation(previews, waypoints, areaPolygon, frontiers) {
+        const hasMultiplePreviews = previews.length > 1;
+        mapNavigationEl.hidden = !hasMultiplePreviews;
+        if (!hasMultiplePreviews) return;
+
+        mapNavigationStatusEl.textContent = `${selectedMapPreviewIndex + 1} of ${previews.length}`;
+        mapPreviousBtn.disabled = selectedMapPreviewIndex === 0;
+        mapNextBtn.disabled = selectedMapPreviewIndex === previews.length - 1;
+        mapPreviousBtn.onclick = () => {
+          selectedMapPreviewIndex -= 1;
+          renderMapPreview(previews[selectedMapPreviewIndex], waypoints, areaPolygon, frontiers, previews);
+        };
+        mapNextBtn.onclick = () => {
+          selectedMapPreviewIndex += 1;
+          renderMapPreview(previews[selectedMapPreviewIndex], waypoints, areaPolygon, frontiers, previews);
+        };
       }
 
       function renderMapGallery(mapPreviews, waypoints, areaPolygon, frontiers, token) {
@@ -842,8 +909,16 @@
 
         previews.forEach((preview, index) => {
           if (!preview || typeof preview !== "object" || !preview.image_url) return;
-          const card = document.createElement("article");
+          const card = document.createElement("button");
+          card.type = "button";
           card.className = "map-card";
+          card.classList.toggle("is-active", index === selectedMapPreviewIndex);
+          card.setAttribute("aria-label", `Show ${preview.role || preview.source_key || `map ${index + 1}`} as main map`);
+          card.setAttribute("aria-pressed", String(index === selectedMapPreviewIndex));
+          card.addEventListener("click", () => {
+            selectedMapPreviewIndex = index;
+            renderMapPreview(preview, waypoints, areaPolygon, frontiers, previews);
+          });
 
           const title = document.createElement("h5");
           title.className = "map-card-title";

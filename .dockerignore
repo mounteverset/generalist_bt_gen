@@ -1,0 +1,14 @@
+.git
+.github
+.cache
+.vscode
+build
+install
+log
+**/.git
+**/__pycache__
+**/*.pyc
+*.bag
+*.db3
+*.mcap
+.env
