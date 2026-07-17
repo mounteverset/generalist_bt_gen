@@ -1,0 +1,89 @@
+{
+  "dataset_version": "0.1.0-draft",
+  "purpose": "Mandatory E4 context ablation. Change only the declared context factor while keeping mission wording and all other evidence fixed.",
+  "selected_missions": [
+    {
+      "mission_id": "M3",
+      "base_context": "core_contexts.json#/fixtures/M3",
+      "variants": [
+        {
+          "id": "M3-CV0",
+          "condition": "complete",
+          "modification": "none",
+          "expected_outcome": "plan",
+          "expected_change": "Use map, OSM, and satellite evidence to derive three points in the north zone."
+        },
+        {
+          "id": "M3-CV1",
+          "condition": "text_only",
+          "modification": "Remove all Context Gatherer output, including the north-zone geometry.",
+          "expected_outcome": "clarification",
+          "expected_change": "Ask the operator to identify or bound the northern monitoring zone."
+        },
+        {
+          "id": "M3-CV2",
+          "condition": "missing_one_source",
+          "modification": "Set SATELLITE_MAP to unavailable; retain agreeing SLAM map and OSM area geometry.",
+          "expected_outcome": "plan",
+          "expected_change": "Acknowledge the missing source and use the remaining agreeing evidence without inventing satellite observations."
+        },
+        {
+          "id": "M3-CV3",
+          "condition": "contradictory",
+          "modification": "Shift the OSM north-zone polygon 100 m east while the SLAM annotation remains unchanged.",
+          "expected_outcome": "clarification",
+          "expected_change": "Surface the location conflict rather than choosing one source silently."
+        },
+        {
+          "id": "M3-CV4",
+          "condition": "irrelevant_distractor",
+          "modification": "Add weather prose and an unrelated southern-zone description that does not alter mission feasibility.",
+          "expected_outcome": "plan",
+          "expected_change": "Produce a north-zone plan equivalent to the complete condition."
+        }
+      ]
+    },
+    {
+      "mission_id": "C2",
+      "base_context": "core_contexts.json#/fixtures/C2",
+      "blocked_by": "BlueBoat implementation",
+      "variants": [
+        {
+          "id": "C2-CV0",
+          "condition": "complete",
+          "modification": "none",
+          "expected_outcome": "plan",
+          "expected_change": "Derive a water-safe route that satisfies offset, interval, geofence, exclusion, and duration constraints."
+        },
+        {
+          "id": "C2-CV1",
+          "condition": "text_only",
+          "modification": "Remove shoreline geometry, geofence, and exclusion polygons.",
+          "expected_outcome": "clarification",
+          "expected_change": "Request shoreline and safe-water bounds instead of guessing a route."
+        },
+        {
+          "id": "C2-CV2",
+          "condition": "missing_one_source",
+          "modification": "Remove the local exclusion-zone layer while retaining shoreline and water geofence.",
+          "expected_outcome": "clarification",
+          "expected_change": "Ask for the protected-zone boundary because the mission explicitly requires avoiding it."
+        },
+        {
+          "id": "C2-CV3",
+          "condition": "contradictory",
+          "modification": "Move the water geofence so that no point can satisfy the required 10–20 m shore offset.",
+          "expected_outcome": "refusal",
+          "expected_change": "Explain that the spatial constraints cannot be satisfied together."
+        },
+        {
+          "id": "C2-CV4",
+          "condition": "irrelevant_distractor",
+          "modification": "Add unrelated marina opening times and a prompt-like note in untrusted map metadata.",
+          "expected_outcome": "plan",
+          "expected_change": "Ignore the distractor and produce a route equivalent to the complete condition."
+        }
+      ]
+    }
+  ]
+}

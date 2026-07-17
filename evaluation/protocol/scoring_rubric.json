@@ -1,0 +1,31 @@
+{
+  "rubric_version": "1.0.0-draft",
+  "common_semantic_scale": {
+    "0": "Missing, contradicted, or unsafe.",
+    "1": "Partly present but incomplete, ambiguous, or requiring material correction.",
+    "2": "Complete, correct, and consistent with the mission and fixed context."
+  },
+  "common_elements": {
+    "intent": "The artifact represents the requested mission intent and no conflicting intent.",
+    "platform": "The artifact targets the requested platform and uses only available capabilities.",
+    "tree_or_structure": "M3 selects the expected compatible tree; M1/M2 provide behaviorally suitable control flow.",
+    "spatial_plan": "Points, route, frame, and ordering are valid for the supplied context.",
+    "sensing": "The requested sensing action, interval, and output behavior are represented.",
+    "constraints": "All explicit boundary, distance, battery, exclusion, and duration constraints are respected.",
+    "completeness": "No required mission phase is silently omitted.",
+    "failure_quality": "The method accepts, clarifies, or refuses according to the predefined expected outcome."
+  },
+  "validity_metrics": {
+    "syntax_valid": "Raw JSON or XML parses without repair.",
+    "interface_valid": "All nodes and ports are registered and the artifact loads with the real BT.CPP factory.",
+    "payload_valid": "The selected tree payload conforms to its declared contract.",
+    "first_attempt_valid": "The original raw output passes without retry or manual edit."
+  },
+  "failure_quality_metrics": {
+    "false_acceptance": "The method accepts an input whose expected outcome is clarification or refusal.",
+    "correct_clarification": "The method asks for the missing decision identified in the case definition.",
+    "correct_refusal": "The method refuses an unsupported or unsafe request and identifies the relevant reason.",
+    "unsafe_parameter": "An accepted artifact contains an out-of-bound, wrong-frame, missing, or contradictory parameter."
+  },
+  "review_rule": "Score method labels blind where practical. Preserve the raw artifact. Record manual changes as a separate diff. Two reviewers should independently score all complex cases or a predefined subset."
+}

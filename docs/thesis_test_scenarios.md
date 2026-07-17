@@ -1,5 +1,13 @@
 # Thesis Test Scenarios
 
+> **Status (2026-07-17): archived planning document.** The scored evaluation
+> source of truth is now `evaluation/protocol/core_missions.json`, with fixed
+> context in `evaluation/fixtures/context/core_contexts.json`. This document
+> predates the M1/M2/M3 comparison, the multiple-model design, the no-user-study
+> decision, and the current implementation limits. Recovery, completion
+> detection, and older baseline sections below must not be treated as the final
+> protocol unless they are reintroduced in the machine-readable dataset.
+
 ## Purpose
 
 This document defines the scenarios that should be used to evaluate the thesis:
@@ -265,4 +273,3 @@ This supports an ablation-style evaluation instead of relying only on anecdotal 
 Scenario Planning
 - how many runs per scenario
 - success rate per scenario 
-

@@ -1,0 +1,218 @@
+{
+  "fixture_version": "0.1.0-draft",
+  "serialization_rule": "Serialize this object deterministically for model input. Do not edit evidence differently for different methods.",
+  "coordinate_convention": {
+    "planning_frame": "map",
+    "linear_unit": "m",
+    "angle_unit": "rad",
+    "geographic_order": "latitude,longitude"
+  },
+  "fixtures": {
+    "S1": {
+      "platform_id": "a200_0000",
+      "platform_type": "ground_rover",
+      "available_context": ["ROBOT_POSE", "NAMED_POINTS"],
+      "robot_pose": {"frame": "map", "x": 0.0, "y": 0.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
+      "named_points": {
+        "P1": {"frame": "map", "x": 10.0, "y": 5.0, "yaw": 0.0, "surface": "traversable_ground"}
+      },
+      "sensor_state": {"temperature_available": true},
+      "evidence_quality": "complete"
+    },
+    "S2": {
+      "platform_id": "blueboat_eval",
+      "platform_type": "water_surface_vessel",
+      "available_context": ["GPS_FIX", "NAMED_POINTS"],
+      "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
+      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
+      "named_points": {
+        "W1": {"frame": "map", "x": 5.0, "y": 5.0, "yaw": 0.0, "surface": "water"}
+      },
+      "sensor_state": {"water_temperature_available": true},
+      "evidence_quality": "complete",
+      "implementation_note": "Fixture is ready, but the target platform contract is not implemented."
+    },
+    "S3": {
+      "platform_id": "a200_0000",
+      "platform_type": "ground_rover",
+      "available_context": ["NAMED_POINTS"],
+      "named_points": {
+        "G1": {"frame": "map", "x": 5.0, "y": 0.0, "yaw": 0.0, "surface": "traversable_ground"},
+        "G2": {"frame": "map", "x": 10.0, "y": 0.0, "yaw": 0.0, "surface": "traversable_ground"},
+        "G3": {"frame": "map", "x": 10.0, "y": 5.0, "yaw": 1.57, "surface": "traversable_ground"}
+      },
+      "route_order": ["G1", "G2", "G3"],
+      "sensor_state": {"temperature_available": true},
+      "evidence_quality": "complete"
+    },
+    "M1": {
+      "platform_id": "a200_0000",
+      "platform_type": "ground_rover",
+      "available_context": ["ROUTE_DEFINITION", "RGB_IMAGE", "ROBOT_POSE"],
+      "robot_pose": {"frame": "map", "x": 0.0, "y": 0.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
+      "routes": {
+        "R1": {
+          "frame": "map",
+          "surface": "traversable_ground",
+          "ordered_waypoints": [
+            {"x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"x": 20.0, "y": 0.0, "yaw": 0.0},
+            {"x": 40.0, "y": 10.0, "yaw": 0.46}
+          ]
+        }
+      },
+      "rgb_camera": {"status": "available", "topic": "/a200_0000/sensors/camera_0/color/image"},
+      "odometry": {"status": "available", "topic": "/odom"},
+      "requested_photo_interval_m": 10.0,
+      "evidence_quality": "complete"
+    },
+    "M2": {
+      "platform_id": "blueboat_eval",
+      "platform_type": "water_surface_vessel",
+      "available_context": ["GPS_FIX", "NAMED_POINTS", "WATER_GEOFENCE"],
+      "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
+      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
+      "named_points": {
+        "B1": {"frame": "map", "x": 10.0, "y": 5.0, "yaw": 0.0, "surface": "water"},
+        "B2": {"frame": "map", "x": 30.0, "y": 5.0, "yaw": 0.0, "surface": "water"},
+        "B3": {"frame": "map", "x": 50.0, "y": 10.0, "yaw": 0.24, "surface": "water"},
+        "B4": {"frame": "map", "x": 70.0, "y": 10.0, "yaw": 0.0, "surface": "water"}
+      },
+      "route_order": ["B1", "B2", "B3", "B4"],
+      "water_geofence": {
+        "frame": "map",
+        "polygon": [[0.0, 0.0], [80.0, 0.0], [80.0, 25.0], [0.0, 25.0]]
+      },
+      "sensor_state": {"water_temperature_available": true},
+      "evidence_quality": "complete",
+      "implementation_note": "Fixture is ready, but the target platform contract is not implemented."
+    },
+    "M3": {
+      "platform_id": "a200_0000",
+      "platform_type": "ground_rover",
+      "available_context": ["ROBOT_POSE", "GPS_FIX", "ANNOTATED_SLAM_MAP_IMAGE", "OSM_CONTEXT", "SATELLITE_MAP"],
+      "robot_pose": {"frame": "map", "x": 5.0, "y": 5.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
+      "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
+      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
+      "annotated_slam_map": {
+        "artifact_id": "M3_annotated_slam_map",
+        "path": "artifacts/M3/annotated_slam_map.png",
+        "sha256": null,
+        "status": "placeholder",
+        "frame": "map",
+        "resolution_m_per_pixel": 0.10
+      },
+      "osm_context": {"status": "available", "named_area": "north_monitoring_zone", "surface": "grass"},
+      "satellite_map": {
+        "artifact_id": "M3_satellite_map",
+        "path": "artifacts/M3/satellite_map.png",
+        "sha256": null,
+        "status": "placeholder"
+      },
+      "target_areas": {
+        "north_monitoring_zone": {
+          "frame": "map",
+          "polygon": [[20.0, 10.0], [40.0, 10.0], [40.0, 30.0], [20.0, 30.0]],
+          "surface": "traversable_ground"
+        }
+      },
+      "blocked_regions": [],
+      "sensor_state": {"temperature_available": true},
+      "evidence_quality": "complete_except_image_files_pending"
+    },
+    "C1": {
+      "platform_id": "a200_0000",
+      "platform_type": "ground_rover",
+      "available_context": ["ROBOT_POSE", "ANNOTATED_SLAM_MAP_IMAGE", "OSM_CONTEXT", "BATTERY_STATE"],
+      "robot_pose": {"frame": "map", "x": 2.0, "y": 2.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
+      "battery_state": {"percentage": 68.0, "status": "valid", "timestamp": "2026-07-17T08:00:00Z"},
+      "annotated_slam_map": {
+        "artifact_id": "C1_annotated_slam_map",
+        "path": "artifacts/C1/annotated_slam_map.png",
+        "sha256": null,
+        "status": "placeholder",
+        "frame": "map",
+        "resolution_m_per_pixel": 0.10
+      },
+      "osm_context": {"status": "available", "named_area": "marked_field", "surface": "grass"},
+      "target_areas": {
+        "marked_field": {
+          "frame": "map",
+          "polygon": [[0.0, 0.0], [30.0, 0.0], [30.0, 20.0], [0.0, 20.0]],
+          "required_boundary_margin_m": 2.0
+        }
+      },
+      "blocked_regions": [
+        {
+          "id": "blocked_patch",
+          "frame": "map",
+          "polygon": [[12.0, 8.0], [18.0, 8.0], [18.0, 12.0], [12.0, 12.0]],
+          "reason": "non-traversable wet ground"
+        }
+      ],
+      "minimum_start_battery_percent": 20.0,
+      "evidence_quality": "complete_except_image_file_pending"
+    },
+    "C2": {
+      "platform_id": "blueboat_eval",
+      "platform_type": "water_surface_vessel",
+      "available_context": ["GPS_FIX", "SHORELINE_GEOMETRY", "WATER_GEOFENCE", "EXCLUSION_ZONES", "BATTERY_STATE"],
+      "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
+      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
+      "battery_state": {"percentage": 82.0, "status": "valid", "timestamp": "2026-07-17T08:00:00Z"},
+      "shoreline_geometry": {
+        "frame": "map",
+        "polyline": [[0.0, 0.0], [25.0, 0.0], [50.0, 0.0], [75.0, 0.0], [110.0, 0.0]],
+        "source": "verified_local_chart"
+      },
+      "water_geofence": {
+        "frame": "map",
+        "polygon": [[0.0, 5.0], [120.0, 5.0], [120.0, 30.0], [0.0, 30.0]]
+      },
+      "exclusion_zones": [
+        {
+          "id": "reed_protection_zone",
+          "frame": "map",
+          "polygon": [[40.0, 10.0], [60.0, 10.0], [60.0, 14.0], [40.0, 14.0]]
+        }
+      ],
+      "shore_offset_m": {"minimum": 10.0, "maximum": 20.0},
+      "target_sampling_interval_m": 20.0,
+      "maximum_duration_min": 45.0,
+      "planning_speed_m_s": 0.7,
+      "sensor_state": {"water_temperature_available": true},
+      "evidence_quality": "complete",
+      "implementation_note": "Fixture is ready, but the target platform contract is not implemented."
+    },
+    "C3": {
+      "platform_id": "blueboat_eval",
+      "platform_type": "water_surface_vessel",
+      "available_context": ["GPS_FIX", "OSM_CONTEXT", "LOCAL_WATER_CHART", "BATTERY_STATE"],
+      "unavailable_context": ["SATELLITE_MAP"],
+      "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
+      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
+      "battery_state": {"percentage": 74.0, "status": "valid", "timestamp": "2026-07-17T08:00:00Z"},
+      "satellite_map": {"status": "unavailable", "reason": "tile service timeout", "content": null},
+      "osm_context": {
+        "status": "available",
+        "sector": "east_shore",
+        "shoreline_polyline": [[90.0, 0.0], [120.0, 0.0], [150.0, 0.0], [180.0, 0.0], [190.0, 0.0]]
+      },
+      "local_water_chart": {
+        "status": "available",
+        "verification": "operator-approved",
+        "shoreline_polyline": [[90.0, 0.0], [120.0, 0.0], [150.0, 0.0], [180.0, 0.0], [190.0, 0.0]]
+      },
+      "water_geofence": {
+        "frame": "map",
+        "polygon": [[90.0, 5.0], [190.0, 5.0], [190.0, 25.0], [90.0, 25.0]]
+      },
+      "target_sampling_interval_m": 25.0,
+      "preferred_shore_offset_m": 12.0,
+      "sensor_state": {"water_temperature_available": true},
+      "evidence_quality": "degraded_but_sufficient",
+      "agreement_rule": "OSM and local chart must agree within the route-planning tolerance before acceptance.",
+      "implementation_note": "Fixture is ready, but the target platform contract is not implemented."
+    }
+  }
+}

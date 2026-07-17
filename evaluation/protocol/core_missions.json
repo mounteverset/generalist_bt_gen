@@ -1,0 +1,473 @@
+{
+  "dataset_version": "0.1.0-draft",
+  "freeze_status": "draft",
+  "source_snapshot": {
+    "repository_commit": "2bd1af9689b48008a5cc5a1ba65446c79c9bafbe",
+    "tree_metadata_sha256": "4f11e3bad8dd467890e352a83c0a3f82635a7bbd9dc7abcaf3ca8c5b6542ce5d",
+    "system_description_sha256": "bec9424d1279ef274d279fb0f9a20edcb5b5355822d68703eb3b52fb8e2190fc",
+    "captured_on": "2026-07-17",
+    "note": "Snapshot is informative while draft. Recompute immediately before freeze."
+  },
+  "design": {
+    "mission_count": 9,
+    "paraphrases_per_mission": 3,
+    "platform_distribution": {"husky": 5, "blueboat": 4},
+    "complexity_distribution": {"simple": 3, "medium": 3, "complex": 3},
+    "primary_conditions": 7,
+    "planned_primary_outputs": 189,
+    "condition_explanation": "Three general-purpose models each run M1 and M3; BTGenBot-2 adds one M2 condition."
+  },
+  "missions": [
+    {
+      "id": "S1",
+      "title": "Husky single-point temperature reading",
+      "platform": "husky",
+      "support_status": "implemented_catalogue",
+      "complexity": {
+        "label": "simple",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 0,
+          "context_sources": 0,
+          "constraints": 0,
+          "control_flow": 0,
+          "spatial_reasoning": 0
+        },
+        "total": 1,
+        "rationale": "Navigate and sense at one supplied point with no route derivation."
+      },
+      "paraphrases": [
+        {"id": "S1-P1", "text": "Drive the Husky to inspection point P1 and log the temperature there."},
+        {"id": "S1-P2", "text": "Go to P1 with the ground robot, then record one temperature measurement."},
+        {"id": "S1-P3", "text": "Take a temperature reading at the marked ground inspection point P1."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/S1",
+      "requirements": {
+        "intents": ["navigate_waypoints", "log_temperature"],
+        "required_capabilities": ["locomotion.ground", "navigation.waypoints", "sensing.temperature", "payload.parse_waypoints"],
+        "required_context": ["ROBOT_POSE", "NAMED_POINTS"],
+        "constraints": ["Use point P1 in the map frame."],
+        "forbidden_assumptions": ["Do not replace P1 with a guessed location."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "temperature_logging.xml",
+        "canonical_payload": {
+          "waypoints": "10.0,5.0,0.0",
+          "logfile_path": "/tmp/evaluation/S1_temperature.txt"
+        },
+        "equivalent_output_rule": "One map-frame waypoint at P1 and one temperature log action is acceptable."
+      },
+      "reference_behavior": [
+        "Parse or otherwise represent the supplied point.",
+        "Navigate to P1.",
+        "Log one temperature measurement after arrival."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "sensing", "completeness"],
+      "execution_subset_candidate": true
+    },
+    {
+      "id": "S2",
+      "title": "BlueBoat single-point water temperature reading",
+      "platform": "blueboat",
+      "support_status": "blocked_blueboat_implementation",
+      "complexity": {
+        "label": "simple",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 0,
+          "context_sources": 0,
+          "constraints": 0,
+          "control_flow": 0,
+          "spatial_reasoning": 0
+        },
+        "total": 1,
+        "rationale": "Navigate and sense at one supplied water point."
+      },
+      "paraphrases": [
+        {"id": "S2-P1", "text": "Take the BlueBoat to water station W1 and record the water temperature."},
+        {"id": "S2-P2", "text": "Sail to W1 and log one water-temperature measurement there."},
+        {"id": "S2-P3", "text": "Measure the water temperature at the marked BlueBoat station W1."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/S2",
+      "requirements": {
+        "intents": ["navigate_waypoints", "log_temperature"],
+        "required_capabilities": ["locomotion.water_surface", "navigation.waypoints", "localization.gps", "sensing.temperature", "payload.parse_waypoints"],
+        "required_context": ["GPS_FIX", "NAMED_POINTS"],
+        "constraints": ["Use water station W1 in the map frame."],
+        "forbidden_assumptions": ["Do not use the Husky ground tree or its navigation action name."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "blueboat_temperature_logging.xml",
+        "canonical_payload": {
+          "waypoints": "5.0,5.0,0.0",
+          "logfile_path": "/tmp/evaluation/S2_water_temperature.txt"
+        },
+        "equivalent_output_rule": "One map-frame waypoint at W1 and one water-temperature log action is acceptable."
+      },
+      "reference_behavior": [
+        "Use the BlueBoat navigation interface.",
+        "Navigate to W1.",
+        "Log one water-temperature measurement after arrival."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "sensing", "completeness"],
+      "execution_subset_candidate": true,
+      "blocking_requirement": "Implement and validate the BlueBoat capability model, navigation adapter, temperature interface, tree XML, and metadata."
+    },
+    {
+      "id": "S3",
+      "title": "Husky supplied route with temperature logging",
+      "platform": "husky",
+      "support_status": "implemented_catalogue",
+      "complexity": {
+        "label": "simple",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 0,
+          "context_sources": 0,
+          "constraints": 0,
+          "control_flow": 1,
+          "spatial_reasoning": 1
+        },
+        "total": 3,
+        "rationale": "A supplied three-point route requires repetition but no route derivation."
+      },
+      "paraphrases": [
+        {"id": "S3-P1", "text": "Visit ground waypoints G1, G2, and G3 in that order and log temperature at each."},
+        {"id": "S3-P2", "text": "Drive the Husky through G1 to G3 and record one temperature value at every point."},
+        {"id": "S3-P3", "text": "Follow the supplied route G1–G2–G3, measuring temperature after each arrival."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/S3",
+      "requirements": {
+        "intents": ["navigate_waypoints", "log_temperature"],
+        "required_capabilities": ["locomotion.ground", "navigation.waypoints", "sensing.temperature", "payload.parse_waypoints"],
+        "required_context": ["NAMED_POINTS"],
+        "constraints": ["Preserve the order G1, G2, G3."],
+        "forbidden_assumptions": ["Do not omit a supplied point or reorder the route."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "temperature_logging.xml",
+        "canonical_payload": {
+          "waypoints": "5.0,0.0,0.0; 10.0,0.0,0.0; 10.0,5.0,1.57",
+          "logfile_path": "/tmp/evaluation/S3_temperature.txt"
+        },
+        "equivalent_output_rule": "The exact supplied coordinates and order must be preserved."
+      },
+      "reference_behavior": [
+        "Represent all three supplied points in order.",
+        "Repeat navigation for each point.",
+        "Log temperature after each successful arrival."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "sensing", "constraints", "completeness"],
+      "execution_subset_candidate": false
+    },
+    {
+      "id": "M1",
+      "title": "Husky route photography at a fixed distance interval",
+      "platform": "husky",
+      "support_status": "implemented_catalogue",
+      "complexity": {
+        "label": "medium",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 1,
+          "context_sources": 1,
+          "constraints": 1,
+          "control_flow": 1,
+          "spatial_reasoning": 1
+        },
+        "total": 6,
+        "rationale": "A supplied route combines navigation with distance-triggered photography and explicit output settings."
+      },
+      "paraphrases": [
+        {"id": "M1-P1", "text": "Follow inspection route R1 with the Husky and take a photograph every 10 metres."},
+        {"id": "M1-P2", "text": "Drive along R1 and save route photos at 10 m travel intervals."},
+        {"id": "M1-P3", "text": "Document the supplied ground route R1 by capturing an image after each 10 metres travelled."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/M1",
+      "requirements": {
+        "intents": ["navigate_waypoints", "photograph_route"],
+        "required_capabilities": ["locomotion.ground", "navigation.waypoints", "sensing.rgb_image", "localization.odometry"],
+        "required_context": ["ROUTE_DEFINITION", "RGB_IMAGE", "ROBOT_POSE"],
+        "constraints": ["Follow R1 in order.", "Use a 10 m photo interval.", "Write images to the evaluation output directory."],
+        "forbidden_assumptions": ["Do not change the requested interval to the tree default."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "navigate_and_photograph.xml",
+        "canonical_payload": {
+          "waypoints": "0.0,0.0,0.0; 20.0,0.0,0.0; 40.0,10.0,0.46",
+          "photo_interval_m": 10.0,
+          "camera_topic": "/a200_0000/sensors/camera_0/color/image",
+          "odom_topic": "/odom",
+          "photo_output_directory": "/tmp/evaluation/M1_photos",
+          "photo_filename_prefix": "M1_route",
+          "image_timeout_ms": 1000,
+          "odom_timeout_ms": 50
+        },
+        "equivalent_output_rule": "The supplied route and 10 m interval are fixed; equivalent file naming is acceptable if auditable."
+      },
+      "reference_behavior": [
+        "Follow all R1 waypoints in order.",
+        "Monitor travelled odometry distance while navigating.",
+        "Capture and save RGB images at approximately 10 m intervals."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "sensing", "constraints", "completeness"],
+      "execution_subset_candidate": true
+    },
+    {
+      "id": "M2",
+      "title": "BlueBoat supplied shoreline stations with temperature logging",
+      "platform": "blueboat",
+      "support_status": "blocked_blueboat_implementation",
+      "complexity": {
+        "label": "medium",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 0,
+          "context_sources": 1,
+          "constraints": 1,
+          "control_flow": 1,
+          "spatial_reasoning": 1
+        },
+        "total": 5,
+        "rationale": "A supplied water route combines repeated navigation and sensing with route and geofence constraints."
+      },
+      "paraphrases": [
+        {"id": "M2-P1", "text": "Take the BlueBoat through shoreline stations B1 to B4 and log water temperature at each station."},
+        {"id": "M2-P2", "text": "Follow the supplied B1–B4 water route, recording temperature after every arrival."},
+        {"id": "M2-P3", "text": "Survey the four marked shoreline points in order and save one water-temperature reading per point."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/M2",
+      "requirements": {
+        "intents": ["navigate_waypoints", "log_temperature"],
+        "required_capabilities": ["locomotion.water_surface", "navigation.waypoints", "localization.gps", "sensing.temperature", "payload.parse_waypoints"],
+        "required_context": ["GPS_FIX", "NAMED_POINTS", "WATER_GEOFENCE"],
+        "constraints": ["Preserve B1–B4 order.", "Remain inside the water geofence.", "Log at every station."],
+        "forbidden_assumptions": ["Do not use ground-only navigation interfaces."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "blueboat_temperature_logging.xml",
+        "canonical_payload": {
+          "waypoints": "10.0,5.0,0.0; 30.0,5.0,0.0; 50.0,10.0,0.24; 70.0,10.0,0.0",
+          "logfile_path": "/tmp/evaluation/M2_water_temperature.txt"
+        },
+        "equivalent_output_rule": "The supplied coordinates and station order must be preserved."
+      },
+      "reference_behavior": [
+        "Use the BlueBoat navigation interface.",
+        "Visit B1 through B4 in order within the water geofence.",
+        "Log water temperature after each arrival."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "sensing", "constraints", "completeness"],
+      "execution_subset_candidate": false,
+      "blocking_requirement": "Implement and validate the BlueBoat capability model, navigation adapter, temperature interface, tree XML, and metadata."
+    },
+    {
+      "id": "M3",
+      "title": "Husky context-derived temperature route",
+      "platform": "husky",
+      "support_status": "implemented_catalogue",
+      "complexity": {
+        "label": "medium",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 0,
+          "context_sources": 2,
+          "constraints": 1,
+          "control_flow": 1,
+          "spatial_reasoning": 2
+        },
+        "total": 7,
+        "rationale": "Three measurement points must be derived from a mapped zone using several context sources."
+      },
+      "paraphrases": [
+        {"id": "M3-P1", "text": "Choose three valid points in the northern monitoring zone and log temperature at each with the Husky."},
+        {"id": "M3-P2", "text": "Use the map context to plan three ground temperature readings across the north zone."},
+        {"id": "M3-P3", "text": "Sample temperature at three well-spaced locations inside the marked northern area."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/M3",
+      "requirements": {
+        "intents": ["navigate_waypoints", "log_temperature"],
+        "required_capabilities": ["locomotion.ground", "navigation.waypoints", "sensing.temperature", "localization.gps", "payload.parse_waypoints"],
+        "required_context": ["ROBOT_POSE", "GPS_FIX", "ANNOTATED_SLAM_MAP_IMAGE", "OSM_CONTEXT", "SATELLITE_MAP"],
+        "constraints": ["Choose exactly three points.", "Keep every point inside the north zone.", "Spread points across the zone rather than clustering them."],
+        "forbidden_assumptions": ["Do not use geographic coordinates directly as map-frame x,y values."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "temperature_logging.xml",
+        "canonical_payload": {
+          "waypoints": "25.0,15.0,0.0; 35.0,15.0,1.57; 30.0,25.0,3.14",
+          "logfile_path": "/tmp/evaluation/M3_temperature.txt"
+        },
+        "equivalent_output_rule": "Any three traversable, well-spaced map-frame points inside the declared zone are acceptable."
+      },
+      "reference_behavior": [
+        "Derive three traversable points inside the north-zone polygon.",
+        "Navigate to all selected points.",
+        "Log temperature after each arrival."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "sensing", "constraints", "completeness"],
+      "execution_subset_candidate": false
+    },
+    {
+      "id": "C1",
+      "title": "Husky bounded field coverage",
+      "platform": "husky",
+      "support_status": "implemented_catalogue",
+      "complexity": {
+        "label": "complex",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 0,
+          "context_sources": 2,
+          "constraints": 2,
+          "control_flow": 1,
+          "spatial_reasoning": 2
+        },
+        "total": 8,
+        "rationale": "Coverage waypoints must be derived from a field polygon while respecting obstacles, boundary margin, and battery admission."
+      },
+      "paraphrases": [
+        {"id": "C1-P1", "text": "Cover the marked field with the Husky, stay inside its boundary, avoid the blocked patch, and only start with at least 20 percent battery."},
+        {"id": "C1-P2", "text": "Plan a ground coverage route for the whole field while respecting the boundary margin, mapped obstacle, and 20% battery minimum."},
+        {"id": "C1-P3", "text": "Explore the defined field using safe coverage waypoints that remain inside the polygon and outside the blocked area."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/C1",
+      "requirements": {
+        "intents": ["explore_area", "survey_area"],
+        "required_capabilities": ["locomotion.ground", "navigation.waypoints", "localization.odometry", "mapping.slam", "payload.parse_waypoints"],
+        "required_context": ["ROBOT_POSE", "ANNOTATED_SLAM_MAP_IMAGE", "OSM_CONTEXT", "BATTERY_STATE"],
+        "constraints": ["Remain inside the field polygon.", "Keep a 2 m boundary margin.", "Avoid the blocked patch.", "Do not start below 20% battery.", "Use map-frame waypoints."],
+        "forbidden_assumptions": ["Do not claim that the current tree performs online frontier planning or runtime return-home behavior."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "explore_area.xml",
+        "canonical_payload": {
+          "waypoints": "3.0,3.0,0.0; 27.0,3.0,0.0; 27.0,7.0,3.14; 3.0,7.0,3.14; 3.0,15.0,0.0; 27.0,15.0,0.0; 27.0,18.0,3.14; 3.0,18.0,3.14",
+          "area_polygon": "0.0,0.0; 30.0,0.0; 30.0,20.0; 0.0,20.0",
+          "frontiers": "3.0,3.0,0.0; 27.0,3.0,0.0; 27.0,7.0,3.14; 3.0,7.0,3.14; 3.0,15.0,0.0; 27.0,15.0,0.0; 27.0,18.0,3.14; 3.0,18.0,3.14",
+          "exploration_strategy": "coverage_waypoints",
+          "min_battery_percent": 20.0,
+          "return_home_on_low_battery": true
+        },
+        "equivalent_output_rule": "An alternate route is acceptable if every segment stays in the inset polygon, avoids the blocked patch, and provides comparable field coverage.",
+        "safety_note": "Battery is an admission/review condition. The current XML does not implement a runtime low-battery or return-home guard."
+      },
+      "reference_behavior": [
+        "Check the current battery against the 20% admission threshold before approval.",
+        "Derive a coverage route in the map frame.",
+        "Keep route segments inside the inset boundary and outside the blocked patch.",
+        "Execute the fixed route; do not claim online frontier computation."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "constraints", "completeness"],
+      "execution_subset_candidate": true
+    },
+    {
+      "id": "C2",
+      "title": "BlueBoat context-derived shoreline temperature survey",
+      "platform": "blueboat",
+      "support_status": "blocked_blueboat_implementation",
+      "complexity": {
+        "label": "complex",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 0,
+          "context_sources": 2,
+          "constraints": 2,
+          "control_flow": 1,
+          "spatial_reasoning": 2
+        },
+        "total": 8,
+        "rationale": "The route must be derived from shoreline geometry while satisfying interval, offset, geofence, exclusion-zone, and duration constraints."
+      },
+      "paraphrases": [
+        {"id": "C2-P1", "text": "Survey water temperature along the marked shoreline about every 20 metres, staying 10–20 m from shore and outside the reed protection zone."},
+        {"id": "C2-P2", "text": "Use the BlueBoat to profile shoreline temperature at roughly 20 m spacing without entering the exclusion area or leaving the water geofence."},
+        {"id": "C2-P3", "text": "Plan a shoreline water-temperature route that keeps the required shore offset, avoids protected reeds, and finishes within 45 minutes."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/C2",
+      "requirements": {
+        "intents": ["navigate_waypoints", "log_temperature", "shoreline_survey"],
+        "required_capabilities": ["locomotion.water_surface", "navigation.waypoints", "localization.gps", "sensing.temperature", "payload.parse_waypoints"],
+        "required_context": ["GPS_FIX", "SHORELINE_GEOMETRY", "WATER_GEOFENCE", "EXCLUSION_ZONES", "BATTERY_STATE"],
+        "constraints": ["Target approximately 20 m sampling spacing.", "Stay 10–20 m from shore.", "Remain inside the water geofence.", "Avoid the reed protection zone.", "Keep the estimated mission duration within 45 minutes."],
+        "forbidden_assumptions": ["Do not place waypoints on land or inside the reed protection polygon."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "blueboat_temperature_logging.xml",
+        "canonical_payload": {
+          "waypoints": "10.0,15.0,0.0; 30.0,15.0,0.0; 45.0,18.0,0.20; 60.0,18.0,-0.20; 80.0,15.0,0.0; 100.0,15.0,0.0",
+          "logfile_path": "/tmp/evaluation/C2_water_temperature.txt"
+        },
+        "equivalent_output_rule": "An alternate route is acceptable if samples remain approximately 20 m apart, 10–20 m from shore, inside the geofence, and outside the exclusion polygon."
+      },
+      "reference_behavior": [
+        "Derive water-safe waypoints from shoreline and geofence context.",
+        "Avoid the protected reed polygon while maintaining the allowed shore offset.",
+        "Navigate with BlueBoat and log temperature at each waypoint.",
+        "Reject or clarify if the constraints cannot be satisfied together."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "sensing", "constraints", "completeness"],
+      "execution_subset_candidate": true,
+      "blocking_requirement": "Implement and validate the BlueBoat capability model, navigation adapter, temperature interface, tree XML, metadata, and plan-review rules for water geometry."
+    },
+    {
+      "id": "C3",
+      "title": "BlueBoat shoreline survey with one unavailable context source",
+      "platform": "blueboat",
+      "support_status": "blocked_blueboat_implementation",
+      "complexity": {
+        "label": "complex",
+        "scores": {
+          "mission_phases": 1,
+          "action_types": 0,
+          "context_sources": 2,
+          "constraints": 2,
+          "control_flow": 1,
+          "spatial_reasoning": 2
+        },
+        "total": 8,
+        "rationale": "The route is context-derived under degraded satellite input, using independent OSM and local-chart evidence plus safety constraints."
+      },
+      "paraphrases": [
+        {"id": "C3-P1", "text": "Profile water temperature along the east shoreline every 25 metres; use the chart and OSM data because the satellite image is unavailable."},
+        {"id": "C3-P2", "text": "With no satellite map, plan the BlueBoat temperature route for the eastern shore from the remaining verified context."},
+        {"id": "C3-P3", "text": "Survey the east-shore sector at 25 m spacing using the local water chart and OSM shoreline, or ask if that evidence is insufficient."}
+      ],
+      "context_fixture": "core_contexts.json#/fixtures/C3",
+      "requirements": {
+        "intents": ["navigate_waypoints", "log_temperature", "shoreline_survey"],
+        "required_capabilities": ["locomotion.water_surface", "navigation.waypoints", "localization.gps", "sensing.temperature", "payload.parse_waypoints"],
+        "required_context": ["GPS_FIX", "OSM_CONTEXT", "LOCAL_WATER_CHART", "BATTERY_STATE"],
+        "degraded_context": ["SATELLITE_MAP"],
+        "constraints": ["Use only the east-shore sector.", "Target 25 m sampling spacing.", "Stay inside the water geofence.", "Do not invent satellite evidence.", "Clarify if OSM and chart evidence disagree."],
+        "forbidden_assumptions": ["Do not describe the unavailable satellite map as observed or validated."]
+      },
+      "expected": {
+        "outcome": "plan",
+        "tree_id": "blueboat_temperature_logging.xml",
+        "canonical_payload": {
+          "waypoints": "100.0,12.0,0.0; 125.0,12.0,0.0; 150.0,12.0,0.0; 175.0,12.0,0.0",
+          "logfile_path": "/tmp/evaluation/C3_water_temperature.txt"
+        },
+        "equivalent_output_rule": "A route based only on the agreeing OSM and local-chart shoreline is acceptable if it remains in the east sector, inside the geofence, and near 25 m spacing."
+      },
+      "reference_behavior": [
+        "Acknowledge that satellite context is unavailable.",
+        "Cross-check the agreeing OSM and local-chart shoreline evidence.",
+        "Derive east-sector water-safe waypoints at approximately 25 m spacing.",
+        "Navigate with BlueBoat and log temperature at each waypoint."
+      ],
+      "semantic_rubric_elements": ["intent", "platform", "tree_or_structure", "spatial_plan", "sensing", "constraints", "completeness"],
+      "execution_subset_candidate": false,
+      "blocking_requirement": "Implement BlueBoat support and verify that the context pipeline represents unavailable sources without fabricating content."
+    }
+  ]
+}

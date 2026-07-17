@@ -1,0 +1,41 @@
+{
+  "rubric_version": "1.0.0",
+  "assignment_rule": "Assign all dimension scores before inspecting model output. Sum the six dimensions and map the total to a label.",
+  "dimensions": {
+    "mission_phases": {
+      "0": "One mission phase.",
+      "1": "Two or three mission phases.",
+      "2": "Four or more phases, or conditional phases."
+    },
+    "action_types": {
+      "0": "One or two distinct action types.",
+      "1": "Three or four distinct action types.",
+      "2": "Five or more distinct action types."
+    },
+    "context_sources": {
+      "0": "Zero or one context source.",
+      "1": "Two or three context sources.",
+      "2": "Four or more sources, or intentionally degraded or conflicting context."
+    },
+    "constraints": {
+      "0": "Zero or one explicit constraint.",
+      "1": "Two or three explicit constraints.",
+      "2": "Four or more constraints, or interacting constraints."
+    },
+    "control_flow": {
+      "0": "A simple sequence is sufficient.",
+      "1": "Repetition or parallel behavior is required.",
+      "2": "Fallback, recovery, or conditional behavior is required."
+    },
+    "spatial_reasoning": {
+      "0": "A supplied point is sufficient.",
+      "1": "A supplied route or bounded area is used.",
+      "2": "A route, coverage plan, or target must be derived from context."
+    }
+  },
+  "labels": {
+    "simple": {"min_total": 0, "max_total": 3},
+    "medium": {"min_total": 4, "max_total": 7},
+    "complex": {"min_total": 8, "max_total": 12}
+  }
+}
