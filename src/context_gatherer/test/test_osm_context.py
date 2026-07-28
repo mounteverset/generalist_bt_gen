@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -44,15 +45,61 @@ def element_center_point(element):
         return {'lat': center['lat'], 'lon': center['lon']}
     if 'lat' in element and 'lon' in element:
         return {'lat': element['lat'], 'lon': element['lon']}
-    geometry = element.get('geometry')
-    if isinstance(geometry, list) and geometry:
-        points = [point for point in geometry if 'lat' in point and 'lon' in point]
-        if points:
-            return {
-                'lat': sum(point['lat'] for point in points) / len(points),
-                'lon': sum(point['lon'] for point in points) / len(points),
-            }
+    bounds = element.get('bounds')
+    if isinstance(bounds, dict) and all(
+        key in bounds for key in ('minlat', 'maxlat', 'minlon', 'maxlon')
+    ):
+        return {
+            'lat': (bounds['minlat'] + bounds['maxlat']) / 2.0,
+            'lon': (bounds['minlon'] + bounds['maxlon']) / 2.0,
+        }
+    points = element_geometry_points(element)
+    if points:
+        return {
+            'lat': sum(point['lat'] for point in points) / len(points),
+            'lon': sum(point['lon'] for point in points) / len(points),
+        }
     return None
+
+
+def element_geometry_points(element):
+    points = []
+    geometry = element.get('geometry')
+    if isinstance(geometry, list):
+        points.extend(
+            point for point in geometry if 'lat' in point and 'lon' in point
+        )
+    for member in element.get('members') or []:
+        member_geometry = member.get('geometry')
+        if isinstance(member_geometry, list):
+            points.extend(
+                point
+                for point in member_geometry
+                if 'lat' in point and 'lon' in point
+            )
+    return points
+
+
+def element_bounds(element):
+    bounds = element.get('bounds')
+    if isinstance(bounds, dict) and all(
+        key in bounds for key in ('minlat', 'maxlat', 'minlon', 'maxlon')
+    ):
+        return {
+            'north': bounds['maxlat'],
+            'south': bounds['minlat'],
+            'east': bounds['maxlon'],
+            'west': bounds['minlon'],
+        }
+    points = element_geometry_points(element)
+    if not points:
+        return {}
+    return {
+        'north': max(point['lat'] for point in points),
+        'south': min(point['lat'] for point in points),
+        'east': max(point['lon'] for point in points),
+        'west': min(point['lon'] for point in points),
+    }
 
 
 def sampled_geometry_coordinates(element, max_coordinates):
@@ -234,3 +281,78 @@ def test_center_only_highway_fixture_exposes_previous_geometry_loss():
     context = build_osm_context_like_context_gatherer(overpass)
 
     assert context['linear_features'] == []
+
+
+def test_relation_member_geometry_preserves_lake_extent():
+    relation = {
+        'type': 'relation',
+        'id': 10867274,
+        'bounds': {
+            'minlat': 48.2796683,
+            'minlon': 11.5941991,
+            'maxlat': 48.2886447,
+            'maxlon': 11.6084286,
+        },
+        'members': [
+            {
+                'type': 'way',
+                'role': 'outer',
+                'geometry': [
+                    {'lat': 48.2796683, 'lon': 11.5941991},
+                    {'lat': 48.2886447, 'lon': 11.6084286},
+                ],
+            }
+        ],
+        'tags': {'name': 'Hollerner See', 'natural': 'water'},
+    }
+
+    assert element_center_point(relation) == {
+        'lat': pytest.approx(48.2841565),
+        'lon': pytest.approx(11.60131385),
+    }
+    assert element_bounds(relation) == {
+        'north': 48.2886447,
+        'south': 48.2796683,
+        'east': 11.6084286,
+        'west': 11.5941991,
+    }
+    assert len(element_geometry_points(relation)) == 2
+
+
+def test_lake_context_defaults_cover_hollerner_and_use_official_failover():
+    source = CONTEXT_GATHERER_NODE.read_text()
+    params = yaml.safe_load(
+        (
+            REPO_ROOT
+            / 'src'
+            / 'context_gatherer'
+            / 'config'
+            / 'context_gatherer_params.yaml'
+        ).read_text()
+    )['context_gatherer']['ros__parameters']
+
+    assert 'return 1200.0;' in source
+    assert params['overpass_timeout_sec'] == 25.0
+    assert params['overpass_max_linear_features'] == 40
+    assert (
+        'https://gall.openstreetmap.de/api/interpreter'
+        in params['overpass_fallback_endpoints']
+    )
+    assert 'lake_route_relevance' in source
+
+
+def test_robot_pose_uses_configured_sim_odometry_topic():
+    source = CONTEXT_GATHERER_NODE.read_text()
+    params = yaml.safe_load(
+        (
+            REPO_ROOT
+            / 'src'
+            / 'context_gatherer'
+            / 'config'
+            / 'context_gatherer_params.yaml'
+        ).read_text()
+    )['context_gatherer']['ros__parameters']
+
+    assert 'declare_parameter<std::string>("odom_topic", "/odom")' in source
+    assert 'create_subscription<nav_msgs::msg::Odometry>(\n      odom_topic_' in source
+    assert params['odom_topic'] == '/a200_0000/platform/odom/filtered'

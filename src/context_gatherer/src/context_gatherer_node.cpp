@@ -15,6 +15,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include <curl/curl.h>
@@ -56,6 +57,7 @@ public:
   {
     action_name_ = this->declare_parameter<std::string>("action_name", "/context_gatherer/gather");
     output_directory_ = this->declare_parameter<std::string>("output_directory", "/tmp/context_gatherer");
+    odom_topic_ = this->declare_parameter<std::string>("odom_topic", "/odom");
     pose_cov_topic_ = this->declare_parameter<std::string>("pose_cov_topic", "");
     gps_fix_topic_ = this->declare_parameter<std::string>("gps_fix_topic", "/gps/fix");
     slam_map_topic_ = this->declare_parameter<std::string>("slam_map_topic", "/map");
@@ -117,8 +119,11 @@ public:
     overpass_enabled_ = this->declare_parameter<bool>("overpass_enabled", true);
     overpass_endpoint_ = this->declare_parameter<std::string>(
       "overpass_endpoint", "https://overpass-api.de/api/interpreter");
+    overpass_fallback_endpoints_ = this->declare_parameter<std::vector<std::string>>(
+      "overpass_fallback_endpoints",
+      {"https://gall.openstreetmap.de/api/interpreter"});
     overpass_radius_m_ = this->declare_parameter<double>("overpass_radius_m", 750.0);
-    overpass_timeout_sec_ = this->declare_parameter<double>("overpass_timeout_sec", 10.0);
+    overpass_timeout_sec_ = this->declare_parameter<double>("overpass_timeout_sec", 25.0);
     overpass_max_linear_features_ = this->declare_parameter<int>(
       "overpass_max_linear_features", 40);
     overpass_max_coordinates_per_feature_ = this->declare_parameter<int>(
@@ -153,7 +158,7 @@ public:
     init_requirement_handlers();
 
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-      "/odom", 10,
+      odom_topic_, 10,
       [this](nav_msgs::msg::Odometry::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
         latest_odom_ = msg;
@@ -339,6 +344,14 @@ private:
     json request_json{json::object()};
   };
 
+  struct LinearFeatureCandidate
+  {
+    const json* element{nullptr};
+    double target_distance_m{std::numeric_limits<double>::infinity()};
+    int route_penalty{0};
+    size_t source_index{0};
+  };
+
   rclcpp_action::Server<GatherContext>::SharedPtr action_server_;
   rclcpp::Client<SaveMap>::SharedPtr annotated_map_client_;
   rclcpp::Client<AnnotateSatelliteMap>::SharedPtr satellite_map_annotator_client_;
@@ -347,6 +360,7 @@ private:
 
   std::string action_name_;
   std::string output_directory_;
+  std::string odom_topic_;
   std::string pose_cov_topic_;
   std::string gps_fix_topic_;
   std::string slam_map_topic_;
@@ -381,6 +395,7 @@ private:
   double maptiler_overview_target_max_m_per_px_;
   bool overpass_enabled_;
   std::string overpass_endpoint_;
+  std::vector<std::string> overpass_fallback_endpoints_;
   double overpass_radius_m_;
   double overpass_timeout_sec_;
   int overpass_max_linear_features_;
@@ -765,7 +780,8 @@ private:
       return;
     }
 
-    const json osm_context = build_osm_context_json(overpass, center_lat, center_lon, radius_m);
+    const json osm_context = build_osm_context_json(
+      overpass, center_lat, center_lon, radius_m, mission_text);
     save_osm_context_json(osm_context);
     context_json["OSM_CONTEXT"] = osm_context;
     if (debug_logging_) {
@@ -1814,7 +1830,10 @@ private:
       return explicit_radius;
     }
     const std::string text = lowercase_copy(mission_text);
-    if (contains_any(text, {"circumvent", "around", "loop", "lake", "perimeter"})) {
+    if (contains_any(text, {"lake", "hollerner see", "pond", "reservoir"})) {
+      return 1200.0;
+    }
+    if (contains_any(text, {"circumvent", "around", "loop", "perimeter"})) {
       return 850.0;
     }
     if (contains_any(text, {"survey", "explore", "cover", "field", "park", "area"})) {
@@ -1910,18 +1929,33 @@ private:
     }
     curl_easy_cleanup(escape_curl);
 
-    std::string response_text;
-    std::string error_message;
-    if (!download_text_post(overpass_endpoint_, post_body, overpass_timeout_sec_, response_text, error_message)) {
-      RCLCPP_WARN(get_logger(), "Overpass context request failed: %s", error_message.c_str());
-      return json::object();
+    std::vector<std::string> endpoints{overpass_endpoint_};
+    endpoints.insert(
+      endpoints.end(), overpass_fallback_endpoints_.begin(), overpass_fallback_endpoints_.end());
+    std::unordered_set<std::string> attempted;
+    for (const auto& endpoint : endpoints) {
+      if (endpoint.empty() || !attempted.insert(endpoint).second) {
+        continue;
+      }
+      std::string response_text;
+      std::string error_message;
+      if (!download_text_post(endpoint, post_body, overpass_timeout_sec_, response_text, error_message)) {
+        RCLCPP_WARN(
+          get_logger(), "Overpass context request to %s failed: %s",
+          endpoint.c_str(), error_message.c_str());
+        continue;
+      }
+      try {
+        json response = json::parse(response_text);
+        response["__source_endpoint"] = endpoint;
+        return response;
+      } catch (const std::exception& exc) {
+        RCLCPP_WARN(
+          get_logger(), "Failed to parse Overpass response from %s: %s",
+          endpoint.c_str(), exc.what());
+      }
     }
-    try {
-      return json::parse(response_text);
-    } catch (const std::exception& exc) {
-      RCLCPP_WARN(get_logger(), "Failed to parse Overpass response: %s", exc.what());
-      return json::object();
-    }
+    return json::object();
   }
 
   json get_or_fetch_overpass_context(json& context_json, double lat, double lon, double radius_m)
@@ -1955,6 +1989,35 @@ private:
     return response;
   }
 
+  static void append_geometry_points(const json& element, std::vector<GeoPoint>& points)
+  {
+    if (!element.is_object()) {
+      return;
+    }
+    auto append_array = [&](const json& geometry) {
+        if (!geometry.is_array()) {
+          return;
+        }
+        for (const auto& point : geometry) {
+          double lat = 0.0;
+          double lon = 0.0;
+          if (extract_lat_lon_from_entry(point, lat, lon)) {
+            points.push_back(GeoPoint{lat, lon, "", "", ""});
+          }
+        }
+      };
+    if (element.contains("geometry")) {
+      append_array(element["geometry"]);
+    }
+    if (element.contains("members") && element["members"].is_array()) {
+      for (const auto& member : element["members"]) {
+        if (member.is_object() && member.contains("geometry")) {
+          append_array(member["geometry"]);
+        }
+      }
+    }
+  }
+
   static std::optional<GeoPoint> element_center_point(const json& element)
   {
     if (!element.is_object()) {
@@ -1972,25 +2035,39 @@ private:
     if (extract_lat_lon_from_entry(element, lat, lon)) {
       return GeoPoint{lat, lon, "", "", ""};
     }
-    if (element.contains("geometry") && element["geometry"].is_array() && !element["geometry"].empty()) {
-      double lat_sum = 0.0;
-      double lon_sum = 0.0;
-      int count = 0;
-      for (const auto& point : element["geometry"]) {
-        if (extract_lat_lon_from_entry(point, lat, lon)) {
-          lat_sum += lat;
-          lon_sum += lon;
-          ++count;
-        }
-      }
-      if (count > 0) {
+    const auto bounds_it = element.find("bounds");
+    if (bounds_it != element.end() && bounds_it->is_object()) {
+      const auto min_lat = extract_number_from_json(*bounds_it, {"minlat", "south"});
+      const auto max_lat = extract_number_from_json(*bounds_it, {"maxlat", "north"});
+      const auto min_lon = extract_number_from_json(*bounds_it, {"minlon", "west"});
+      const auto max_lon = extract_number_from_json(*bounds_it, {"maxlon", "east"});
+      if (min_lat.has_value() && max_lat.has_value() &&
+          min_lon.has_value() && max_lon.has_value())
+      {
         return GeoPoint{
-          lat_sum / static_cast<double>(count),
-          lon_sum / static_cast<double>(count),
+          (min_lat.value() + max_lat.value()) / 2.0,
+          (min_lon.value() + max_lon.value()) / 2.0,
           "",
           "",
           ""};
       }
+    }
+
+    std::vector<GeoPoint> points;
+    append_geometry_points(element, points);
+    if (!points.empty()) {
+      double lat_sum = 0.0;
+      double lon_sum = 0.0;
+      for (const auto& point : points) {
+        lat_sum += point.lat;
+        lon_sum += point.lon;
+      }
+      return GeoPoint{
+        lat_sum / static_cast<double>(points.size()),
+        lon_sum / static_cast<double>(points.size()),
+        "",
+        "",
+        ""};
     }
     return std::nullopt;
   }
@@ -2000,19 +2077,29 @@ private:
     if (!element.is_object()) {
       return;
     }
-    if (element.contains("geometry") && element["geometry"].is_array()) {
-      for (const auto& point : element["geometry"]) {
-        double lat = 0.0;
-        double lon = 0.0;
-        if (extract_lat_lon_from_entry(point, lat, lon)) {
-          bounds.include(lat, lon);
-        }
+    const auto bounds_it = element.find("bounds");
+    if (bounds_it != element.end() && bounds_it->is_object()) {
+      const auto min_lat = extract_number_from_json(*bounds_it, {"minlat", "south"});
+      const auto max_lat = extract_number_from_json(*bounds_it, {"maxlat", "north"});
+      const auto min_lon = extract_number_from_json(*bounds_it, {"minlon", "west"});
+      const auto max_lon = extract_number_from_json(*bounds_it, {"maxlon", "east"});
+      if (min_lat.has_value() && max_lat.has_value() &&
+          min_lon.has_value() && max_lon.has_value())
+      {
+        bounds.include(min_lat.value(), min_lon.value());
+        bounds.include(max_lat.value(), max_lon.value());
       }
-      return;
     }
-    const auto center = element_center_point(element);
-    if (center.has_value()) {
-      bounds.include(center->lat, center->lon);
+    std::vector<GeoPoint> points;
+    append_geometry_points(element, points);
+    for (const auto& point : points) {
+      bounds.include(point.lat, point.lon);
+    }
+    if (points.empty() && !bounds.valid()) {
+      const auto center = element_center_point(element);
+      if (center.has_value()) {
+        bounds.include(center->lat, center->lon);
+      }
     }
   }
 
@@ -2121,6 +2208,66 @@ private:
     return "route";
   }
 
+  static bool is_lake_route_mission(const std::string& mission_text)
+  {
+    const std::string text = lowercase_copy(mission_text);
+    return contains_any(
+      text,
+      {"lake", "hollerner see", "pond", "reservoir"});
+  }
+
+  static int linear_route_penalty(const json& element)
+  {
+    if (!element.is_object() || !element.contains("tags") || !element["tags"].is_object()) {
+      return 100;
+    }
+    const auto& tags = element["tags"];
+    const std::string highway = tags.value("highway", std::string());
+    const std::string surface = tags.value("surface", std::string());
+    int penalty = highway == "steps" ? 100 : 0;
+    if (highway == "service") {
+      penalty += 5;
+    } else if (highway == "residential" || highway == "unclassified" ||
+               highway == "tertiary" || highway == "living_street")
+    {
+      penalty += 10;
+    }
+    if (surface == "ground" || surface == "unpaved") {
+      penalty += 15;
+    } else if (surface == "grass" || surface == "dirt") {
+      penalty += 25;
+    }
+    return penalty;
+  }
+
+  static double minimum_geometry_distance_m(
+    const json& element,
+    const std::vector<GeoPoint>& target_points)
+  {
+    if (target_points.empty()) {
+      return std::numeric_limits<double>::infinity();
+    }
+    std::vector<GeoPoint> feature_points;
+    append_geometry_points(element, feature_points);
+    if (feature_points.empty()) {
+      const auto center = element_center_point(element);
+      if (center.has_value()) {
+        feature_points.push_back(center.value());
+      }
+    }
+    double minimum = std::numeric_limits<double>::infinity();
+    for (const auto& feature_point : feature_points) {
+      for (const auto& target_point : target_points) {
+        minimum = std::min(
+          minimum,
+          haversine_distance_m(
+            feature_point.lat, feature_point.lon,
+            target_point.lat, target_point.lon));
+      }
+    }
+    return minimum;
+  }
+
   static std::string linear_feature_label(const std::string& kind, int path_id, int street_id)
   {
     if (kind == "street") {
@@ -2146,8 +2293,8 @@ private:
     return description;
   }
 
-  static json sampled_geometry_coordinates(
-    const json& element,
+  static json sampled_coordinate_array(
+    const json& geometry,
     int max_coordinates,
     bool& truncated,
     int& original_count)
@@ -2155,12 +2302,12 @@ private:
     json coordinates = json::array();
     truncated = false;
     original_count = 0;
-    if (!element.contains("geometry") || !element["geometry"].is_array()) {
+    if (!geometry.is_array()) {
       return coordinates;
     }
 
     std::vector<GeoPoint> points;
-    for (const auto& point : element["geometry"]) {
+    for (const auto& point : geometry) {
       double lat = 0.0;
       double lon = 0.0;
       if (extract_lat_lon_from_entry(point, lat, lon)) {
@@ -2190,6 +2337,77 @@ private:
       coordinates.push_back({{"lat", points[index].lat}, {"lon", points[index].lon}});
     }
     return coordinates;
+  }
+
+  static json sampled_geometry_coordinates(
+    const json& element,
+    int max_coordinates,
+    bool& truncated,
+    int& original_count)
+  {
+    if (!element.contains("geometry")) {
+      truncated = false;
+      original_count = 0;
+      return json::array();
+    }
+    return sampled_coordinate_array(
+      element["geometry"], max_coordinates, truncated, original_count);
+  }
+
+  static json sampled_area_rings(
+    const json& element,
+    int max_coordinates,
+    bool& truncated)
+  {
+    json rings = json::array();
+    truncated = false;
+    if (element.contains("geometry") && element["geometry"].is_array()) {
+      bool ring_truncated = false;
+      int original_count = 0;
+      json coordinates = sampled_coordinate_array(
+        element["geometry"], max_coordinates, ring_truncated, original_count);
+      if (!coordinates.empty()) {
+        rings.push_back({
+          {"role", "outer"},
+          {"coordinates", coordinates},
+          {"original_coordinate_count", original_count}
+        });
+        if (ring_truncated) {
+          rings.back()["coordinates_truncated"] = true;
+          truncated = true;
+        }
+      }
+    }
+    if (element.contains("members") && element["members"].is_array()) {
+      for (const auto& member : element["members"]) {
+        if (!member.is_object() || !member.contains("geometry") ||
+            !member["geometry"].is_array())
+        {
+          continue;
+        }
+        bool ring_truncated = false;
+        int original_count = 0;
+        json coordinates = sampled_coordinate_array(
+          member["geometry"], max_coordinates, ring_truncated, original_count);
+        if (coordinates.empty()) {
+          continue;
+        }
+        json ring = {
+          {"role", member.value("role", std::string())},
+          {"coordinates", coordinates},
+          {"original_coordinate_count", original_count}
+        };
+        if (member.contains("ref")) {
+          ring["osm_way_id"] = member["ref"];
+        }
+        if (ring_truncated) {
+          ring["coordinates_truncated"] = true;
+          truncated = true;
+        }
+        rings.push_back(ring);
+      }
+    }
+    return rings;
   }
 
   static json bounds_json_from_element(const json& element)
@@ -2242,11 +2460,12 @@ private:
     const json& overpass,
     double center_lat,
     double center_lon,
-    double radius_m) const
+    double radius_m,
+    const std::string& mission_text) const
   {
     json linear_features = json::array();
     json point_features = json::array();
-    json area_features = json::array();
+    std::vector<json> area_features;
     int path_id = 1;
     int street_id = 1;
     int point_id = 1;
@@ -2259,6 +2478,60 @@ private:
     const int max_linear = std::max(0, overpass_max_linear_features_);
     const int max_other_features = max_linear;
     const int max_coordinates = std::max(2, overpass_max_coordinates_per_feature_);
+    std::unordered_set<long long> selected_linear_ids;
+    std::string linear_selection_strategy = "source_order";
+
+    if (overpass.is_object() && overpass.contains("elements") && overpass["elements"].is_array()) {
+      std::vector<GeoPoint> target_water_points;
+      if (is_lake_route_mission(mission_text)) {
+        for (const auto& element : overpass["elements"]) {
+          if (classify_overpass_element(element) == "water") {
+            append_geometry_points(element, target_water_points);
+          }
+        }
+      }
+
+      std::vector<LinearFeatureCandidate> candidates;
+      size_t source_index = 0;
+      for (const auto& element : overpass["elements"]) {
+        if (element.is_object() && element.value("type", std::string()) == "way" &&
+            element.contains("tags") && element["tags"].is_object() &&
+            element["tags"].contains("highway") && element["tags"]["highway"].is_string() &&
+            element.contains("geometry") && element.contains("id"))
+        {
+          candidates.push_back(LinearFeatureCandidate{
+            &element,
+            minimum_geometry_distance_m(element, target_water_points),
+            linear_route_penalty(element),
+            source_index});
+        }
+        ++source_index;
+      }
+      if (!target_water_points.empty()) {
+        linear_selection_strategy = "lake_route_relevance";
+        std::stable_sort(
+          candidates.begin(), candidates.end(),
+          [](const LinearFeatureCandidate& left, const LinearFeatureCandidate& right) {
+            const double left_score =
+              left.target_distance_m + static_cast<double>(left.route_penalty) * 20.0;
+            const double right_score =
+              right.target_distance_m + static_cast<double>(right.route_penalty) * 20.0;
+            if (std::abs(left_score - right_score) > 1e-6) {
+              return left_score < right_score;
+            }
+            return left.source_index < right.source_index;
+          });
+      }
+      const size_t selected_count = std::min(
+        candidates.size(), static_cast<size_t>(max_linear));
+      for (size_t index = 0; index < selected_count; ++index) {
+        selected_linear_ids.insert(candidates[index].element->at("id").get<long long>());
+      }
+      skipped_linear = static_cast<int>(candidates.size() - selected_count);
+      if (skipped_linear > 0) {
+        truncated = true;
+      }
+    }
 
     if (overpass.is_object() && overpass.contains("elements") && overpass["elements"].is_array()) {
       for (const auto& element : overpass["elements"]) {
@@ -2271,9 +2544,9 @@ private:
         if (osm_type == "way" && tags.contains("highway") &&
             tags["highway"].is_string() && element.contains("geometry"))
         {
-          if (static_cast<int>(linear_features.size()) >= max_linear) {
-            truncated = true;
-            ++skipped_linear;
+          if (!element.contains("id") ||
+              !selected_linear_ids.count(element["id"].get<long long>()))
+          {
             continue;
           }
           const std::string feature_kind = highway_kind(tags["highway"].get<std::string>());
@@ -2332,11 +2605,6 @@ private:
         }
 
         if (kind == "water" || kind == "avoid_natural" || kind == "area") {
-          if (static_cast<int>(area_features.size()) >= max_other_features) {
-            truncated = true;
-            ++skipped_area;
-            continue;
-          }
           json feature = base_osm_feature_json(
             element,
             "A" + std::to_string(area_id++),
@@ -2347,14 +2615,48 @@ private:
           if (!bounds.empty()) {
             feature["bounds"] = bounds;
           }
+          bool rings_truncated = false;
+          json rings = sampled_area_rings(element, max_coordinates, rings_truncated);
+          if (!rings.empty()) {
+            feature["rings"] = rings;
+          }
+          if (rings_truncated) {
+            truncated = true;
+          }
           feature["recommended_use"] = kind == "water" ? "avoid" : "context";
           area_features.push_back(feature);
         }
       }
     }
 
+    auto area_priority = [](const json& feature) {
+        const bool named = feature.contains("name") && feature["name"].is_string();
+        const std::string kind = feature.value("kind", std::string());
+        if (kind == "water" && named) {
+          return 0;
+        }
+        if (kind == "water") {
+          return 1;
+        }
+        if (named) {
+          return 2;
+        }
+        return 3;
+      };
+    std::stable_sort(
+      area_features.begin(), area_features.end(),
+      [&](const json& left, const json& right) {
+        return area_priority(left) < area_priority(right);
+      });
+    if (static_cast<int>(area_features.size()) > max_other_features) {
+      skipped_area = static_cast<int>(area_features.size()) - max_other_features;
+      area_features.resize(static_cast<size_t>(max_other_features));
+      truncated = true;
+    }
+
     return {
       {"provider", "overpass"},
+      {"source_endpoint", overpass.value("__source_endpoint", overpass_endpoint_)},
       {"center", {{"lat", center_lat}, {"lon", center_lon}}},
       {"radius_m", radius_m},
       {"linear_features", linear_features},
@@ -2376,6 +2678,7 @@ private:
         {"skipped_area_features", skipped_area},
         {"truncated", truncated}
       }},
+      {"linear_selection_strategy", linear_selection_strategy},
       {"note", "OSM coordinates are geographic route geometry for reasoning, not executable map-frame MoveTo waypoints."}
     };
   }

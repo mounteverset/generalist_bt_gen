@@ -2,6 +2,7 @@ context_gatherer:
   ros__parameters:
     action_name: "/context_gatherer/gather"
     output_directory: "/tmp/context_gatherer"
+    odom_topic: "/a200_0000/platform/odom/filtered"
     pose_cov_topic: "/a200_0000/pose"
     gps_fix_topic: "/gps/fix"
     slam_map_topic: "/a200_0000/map"
@@ -36,8 +37,11 @@ context_gatherer:
     maptiler_overview_target_max_m_per_px: 1.5
     overpass_enabled: true
     overpass_endpoint: "https://overpass-api.de/api/interpreter"
+    # Official backend fallback for transient failures on the round-robin endpoint.
+    overpass_fallback_endpoints:
+      - "https://gall.openstreetmap.de/api/interpreter"
     overpass_radius_m: 750.0
-    overpass_timeout_sec: 10.0
+    overpass_timeout_sec: 25.0
     overpass_max_linear_features: 40
     overpass_max_coordinates_per_feature: 80
     default_timeout_sec: 120.0
