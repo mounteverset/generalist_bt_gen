@@ -15,6 +15,7 @@
   <exec_depend>robot_actions</exec_depend>
   <exec_depend>mission_reasoner</exec_depend>
   <exec_depend>plan_reviewer</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

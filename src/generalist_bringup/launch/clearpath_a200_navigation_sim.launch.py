@@ -11,6 +11,7 @@ from launch.actions import (
     SetEnvironmentVariable,
     TimerAction,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     EnvironmentVariable,
@@ -92,7 +93,7 @@ def generate_launch_description():
 
     mock_gps_frame_id_arg = DeclareLaunchArgument(
         'mock_gps_frame_id',
-        default_value='gps_link',
+        default_value='base_link',
         description='Frame id for the mock GPS NavSatFix messages'
     )
 
@@ -100,6 +101,22 @@ def generate_launch_description():
         'mock_gps_publish_rate_hz',
         default_value='1.0',
         description='Publish rate for the mock GPS NavSatFix messages'
+    )
+
+    gps_navigation_odom_topic_arg = DeclareLaunchArgument(
+        'gps_navigation_odom_topic',
+        default_value='/a200_0000/platform/odom/filtered',
+        description='World-referenced odometry input used for GPS coordinate conversion'
+    )
+
+    enable_gps_navigation_arg = DeclareLaunchArgument(
+        'enable_gps_navigation',
+        default_value='true',
+        choices=['true', 'false'],
+        description=(
+            'Launch navsat_transform_node so Nav2 FollowGPSWaypoints can use /fromLL. '
+            'The simulation assumes odom yaw is ENU/world-referenced.'
+        )
     )
 
     # Launch configurations
@@ -116,6 +133,8 @@ def generate_launch_description():
     mock_gps_altitude = LaunchConfiguration('mock_gps_altitude_m')
     mock_gps_frame_id = LaunchConfiguration('mock_gps_frame_id')
     mock_gps_publish_rate = LaunchConfiguration('mock_gps_publish_rate_hz')
+    gps_navigation_odom_topic = LaunchConfiguration('gps_navigation_odom_topic')
+    enable_gps_navigation = LaunchConfiguration('enable_gps_navigation')
 
     # Clearpath generator scripts use /usr/bin/env python3 and require python3-apt.
     # Force system Python precedence so these scripts don't resolve to conda Python.
@@ -232,6 +251,28 @@ def generate_launch_description():
         }],
     )
 
+    navsat_transform = Node(
+        package='robot_localization',
+        executable='navsat_transform_node',
+        name='navsat_transform_node',
+        output='screen',
+        condition=IfCondition(enable_gps_navigation),
+        parameters=[
+            PathJoinSubstitution([
+                FindPackageShare('generalist_bringup'),
+                'config',
+                'navsat_transform_params.yaml',
+            ]),
+            {'use_sim_time': use_sim_time},
+        ],
+        remappings=[
+            ('gps/fix', mock_gps_fix_topic),
+            ('odometry/filtered', gps_navigation_odom_topic),
+            ('odometry/gps', '/a200_0000/platform/odom/gps'),
+            ('gps/filtered', '/gps/filtered'),
+        ],
+    )
+
     return LaunchDescription([
         setup_path_arg,
         namespace_arg,
@@ -246,9 +287,12 @@ def generate_launch_description():
         mock_gps_altitude_arg,
         mock_gps_frame_id_arg,
         mock_gps_publish_rate_arg,
+        gps_navigation_odom_topic_arg,
+        enable_gps_navigation_arg,
         prefer_system_python,
         prefer_ros_libs,
         mock_gps_fix_publisher,
+        navsat_transform,
         simulation_launch,
         nav2_delayed,
         slam_delayed,
