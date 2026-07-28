@@ -33,9 +33,9 @@ machine-readable source of truth.
 
 ## Decisions required before freeze
 
-1. Confirm that `blueboat_temperature_logging.xml` is the intended BlueBoat
+1. ✅ **Model identifiers frozen** (2026-07-27): GPT-5.6-Sol-xhigh → `openai/gpt-5.6-sol` (xhigh reasoning), Gemini 3.5 Flash → `google/gemini-3.5-flash`, Gemma 4 26B → `google/gemma-4-26b-a4b-it`. All routed through OpenRouter.
+2. Confirm that `blueboat_temperature_logging.xml` is the intended BlueBoat
    mission contract, or replace it consistently before implementation.
-2. Review the synthetic map geometry and canonical routes.
-3. Replace placeholder map images with immutable artifacts and hashes.
-4. Confirm the three general-purpose model identifiers.
+3. Review the synthetic map geometry and canonical routes.
+4. Replace placeholder map images with immutable artifacts and hashes.
 5. Decide whether S1, M1, C1, S2, and C2 are the final execution subset.
