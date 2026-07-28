@@ -151,6 +151,50 @@ def test_normalize_pending_plan_builds_satellite_map_preview_with_lat_lon_waypoi
     assert normalized['waypoints'][0]['coordinate_mode'] == 'geographic'
 
 
+def test_normalize_pending_plan_builds_gps_waypoint_preview_with_altitude():
+    plan = {
+        'session_id': 'webui-gps-tree',
+        'tree_id': 'gps_temperature_logging.xml',
+        'summary': 'Visit GPS route and log temperature.',
+        'payload_json': json.dumps(
+            {
+                'gps_waypoints': (
+                    '48.20286,11.64486,473.0,0.25; '
+                    '48.20284,11.64490,474.0,1.5'
+                )
+            }
+        ),
+        'context_snapshot_json': json.dumps(
+            {
+                'SATELLITE_MAP': {
+                    'uri': 'file:///tmp/context_gatherer/satellite_map.png',
+                    'map_metadata': {
+                        'image_width_px': 512,
+                        'image_height_px': 512,
+                        'bounds': {
+                            'north': 48.2032,
+                            'south': 48.2022,
+                            'east': 11.6454,
+                            'west': 11.6444,
+                        },
+                    },
+                }
+            }
+        ),
+        'attachment_uris': ['file:///tmp/context_gatherer/satellite_map.png'],
+    }
+
+    normalized = normalize_pending_plan(plan, lambda uri: f'/artifacts?uri={uri}')
+
+    assert normalized is not None
+    assert normalized['waypoint_count'] == 2
+    assert normalized['map_preview']['coordinate_mode'] == 'geographic'
+    assert normalized['waypoints'][0]['lat'] == 48.20286
+    assert normalized['waypoints'][0]['lon'] == 11.64486
+    assert normalized['waypoints'][0]['altitude'] == 473.0
+    assert normalized['waypoints'][0]['yaw_rad'] == 0.25
+
+
 def test_satellite_preview_prefers_detail_artifact_containing_all_waypoints():
     plan = {
         'session_id': 'webui-geo-detail',

@@ -47,6 +47,9 @@ DEFAULT_SELECTION_PROMPT = (
     "behavior trees (each with id + description), choose the best tree or return NONE.\n"
     "tree_id MUST be exactly one of the string IDs in TREES_JSON "
     "(e.g., \"temperature_logging.xml\").\n"
+    "Prefer a GPS-specific tree for named geographic routes, OSM routes, or lat/lon goals. "
+    "Prefer a map-frame tree for explicit local x/y goals.\n"
+    "Do not select a sensing or logging tree unless the command requests that task.\n"
     "Do NOT answer with numeric indexes.\n"
     "Respond strictly as JSON: {{\"tree_id\": \"<id or NONE>\", \"confidence\": 0-1, \"rationale\": \"...\"}}\n"
     "USER_COMMAND: {user_command}\n"
@@ -92,7 +95,7 @@ DEFAULT_PAYLOAD_PROMPT = (
     "INSTRUCTIONS:\n"
     "1. Map context data to blackboard keys specified in the contract\n"
     "2. Use contract defaults when context is missing\n"
-    "3. Infer reasonable values from context (e.g., extract waypoints from GPS trail)\n"
+    "3. Infer reasonable non-navigation values from context when needed\n"
     "4. If images are provided, use them to extract map/goal information\n"
     "5. Return ONLY valid JSON matching the contract schema\n"
     "6. Do NOT include markdown code fences\n\n"
@@ -102,6 +105,15 @@ DEFAULT_PAYLOAD_PROMPT = (
     "   with the payload and reasoning that caused it, and avoid repeating the same failures\n\n"
     "9. If PRIOR_REJECTED_PLAN_REASONING or PRIOR_REJECTED_PAYLOAD_JSON are present, use them\n"
     "   as the rejected baseline and revise the payload instead of repeating the same mistake\n\n"
+    "10. A contract key named \"waypoints\" always means executable map-frame x,y,yaw values\n"
+    "    in meters, meters, radians. Never put latitude/longitude in \"waypoints\"\n\n"
+    "11. OSM_CONTEXT, SATELLITE_MAP, and GPS_FIX are geographic reasoning context only unless\n"
+    "    CONTEXT explicitly provides a geographic-to-map-frame transform. GPS_FIX plus\n"
+    "    ROBOT_POSE alone does not establish map-axis orientation\n\n"
+    "12. For geographic route requests, follow connected OSM linear features and avoid water,\n"
+    "    steps, access restrictions, and barriers. Do not invent path geometry from an image\n\n"
+    "13. If executable map-frame waypoints cannot be derived from CONTEXT, return an empty JSON\n"
+    "    object so the caller reports missing context instead of fabricating a route\n\n"
     "OUTPUT (JSON only):"
 )
 
@@ -769,6 +781,20 @@ class LLMInterfaceNode(Node):
             token for token in re.findall(r'[a-z0-9]+', command)
             if len(token) > 2
         }
+        geographic_route = any(
+            keyword in command
+            for keyword in (
+                'gps',
+                'latitude',
+                'longitude',
+                'lat/lon',
+                'geographic',
+                'openstreetmap',
+                'osm',
+                'hollerner',
+                'lake',
+            )
+        )
 
         best_idx = 0
         best_score = -1
@@ -782,6 +808,8 @@ class LLMInterfaceNode(Node):
                 score += 5 if any(word in haystack for word in ('photo', 'photograph', 'image', 'rgb')) else 0
             if any(word in command for word in ('explore', 'survey', 'area', 'search')):
                 score += 5 if 'explore' in haystack else 0
+            if geographic_route:
+                score += 8 if 'gps' in haystack or 'geographic' in haystack else 0
             if score > best_score:
                 best_idx = idx
                 best_score = score
@@ -1134,6 +1162,10 @@ class LLMInterfaceNode(Node):
             converted = self._coerce_waypoints_field(coerced)
             if converted is not None:
                 coerced['waypoints'] = converted
+        if isinstance(contract.get('gps_waypoints'), dict):
+            converted = self._coerce_gps_waypoints_value(coerced.get('gps_waypoints'))
+            if converted is not None:
+                coerced['gps_waypoints'] = converted
         for key in ('frontiers',):
             if isinstance(contract.get(key), dict):
                 converted = self._coerce_waypoints_value(coerced.get(key))
@@ -1195,6 +1227,101 @@ class LLMInterfaceNode(Node):
                 triples.append(f"{triplet[0]},{triplet[1]},{triplet[2]}")
             if triples:
                 return '; '.join(triples)
+        return None
+
+    def _coerce_gps_waypoints_value(self, value) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            tokens = []
+            for token in value.replace('\n', ';').replace('|', ';').split(';'):
+                converted = self._gps_waypoint_tuple_from_item(token.strip())
+                if converted is not None:
+                    tokens.append(','.join(converted))
+            return '; '.join(tokens) if tokens else None
+        if isinstance(value, dict):
+            nested = (
+                value.get('gps_waypoints')
+                or value.get('waypoints')
+                or value.get('points')
+                or value.get('poses')
+            )
+            if nested is not None:
+                return self._coerce_gps_waypoints_value(nested)
+            converted = self._gps_waypoint_tuple_from_item(value)
+            return ','.join(converted) if converted is not None else None
+        if isinstance(value, list):
+            tokens = []
+            for item in value:
+                converted = self._gps_waypoint_tuple_from_item(item)
+                if converted is not None:
+                    tokens.append(','.join(converted))
+            return '; '.join(tokens) if tokens else None
+        return None
+
+    def _gps_waypoint_tuple_from_item(
+        self, item
+    ) -> Optional[Tuple[str, str, str, str]]:
+        if isinstance(item, str):
+            if not item:
+                return None
+            cleaned = item
+            for token in '[]()':
+                cleaned = cleaned.replace(token, '')
+            values = [part.strip() for part in cleaned.split(',')]
+            if len(values) < 2 or len(values) > 4 or any(not value for value in values):
+                return None
+            try:
+                numbers = [float(value) for value in values]
+            except (TypeError, ValueError):
+                return None
+            latitude, longitude = numbers[:2]
+            altitude = numbers[2] if len(numbers) == 4 else 0.0
+            yaw = numbers[-1] if len(numbers) >= 3 else 0.0
+            return (
+                str(latitude),
+                str(longitude),
+                str(altitude),
+                str(yaw),
+            )
+        if isinstance(item, dict):
+            position = item.get('position') if isinstance(item.get('position'), dict) else item
+            latitude = item.get(
+                'latitude', item.get('lat', position.get('latitude', position.get('lat')))
+            )
+            longitude = item.get(
+                'longitude',
+                item.get(
+                    'lon',
+                    item.get(
+                        'lng',
+                        position.get(
+                            'longitude', position.get('lon', position.get('lng'))
+                        ),
+                    ),
+                ),
+            )
+            if latitude is None or longitude is None:
+                return None
+            altitude = item.get(
+                'altitude', item.get('alt', position.get('altitude', position.get('alt', 0.0)))
+            )
+            yaw = item.get('yaw', item.get('theta', item.get('heading')))
+            if yaw is None:
+                yaw = self._yaw_from_quaternion(item.get('orientation'))
+            if yaw is None:
+                yaw = 0.0
+            try:
+                return (
+                    str(float(latitude)),
+                    str(float(longitude)),
+                    str(float(altitude)),
+                    str(float(yaw)),
+                )
+            except (TypeError, ValueError):
+                return None
+        if isinstance(item, list) and 2 <= len(item) <= 4:
+            return self._gps_waypoint_tuple_from_item(','.join(str(value) for value in item))
         return None
 
     def _waypoint_triplet_from_item(self, item) -> Optional[Tuple[str, str, str]]:
@@ -1392,26 +1519,51 @@ class LLMInterfaceNode(Node):
     ) -> List[str]:
         matches, errors = self._payload_matches_contract(payload, contract)
         validation_errors = list(errors if not matches else [])
-        if subtree_id == 'explore_area.xml':
-            validation_errors.extend(self._explore_area_payload_errors(payload, context))
+        if isinstance(contract, dict) and 'waypoints' in contract:
+            validation_errors.extend(self._waypoint_payload_errors(payload, context))
+        if isinstance(contract, dict) and 'gps_waypoints' in contract:
+            validation_errors.extend(self._gps_waypoint_payload_errors(payload))
         return validation_errors
 
-    def _explore_area_payload_errors(self, payload: dict, context: dict) -> List[str]:
+    def _waypoint_payload_errors(self, payload: dict, context: dict) -> List[str]:
         errors: List[str] = []
         if not isinstance(payload, dict):
-            return ["explore_area payload is not an object"]
+            return ["waypoint payload is not an object"]
         if (
             self._has_satellite_context(context)
             and not isinstance(context.get('ANNOTATED_SLAM_MAP_IMAGE'), dict)
             and not self._has_map_execution_anchor(context)
         ):
             errors.append(
-                "satellite-only exploration payloads require both GPS_FIX and ROBOT_POSE to anchor map-frame waypoints"
+                "geographic waypoint planning requires map execution context; "
+                "SATELLITE_MAP without both GPS_FIX and ROBOT_POSE cannot anchor map-frame waypoints"
             )
         if self._coordinate_string_looks_geographic(payload.get('waypoints'), context):
             errors.append(
-                "explore_area waypoints appear to be lat/lon values; waypoints must be executable map-frame x,y,yaw"
+                "waypoints appear to be lat/lon values; waypoints must be executable map-frame x,y,yaw"
             )
+        return errors
+
+    def _gps_waypoint_payload_errors(self, payload: dict) -> List[str]:
+        if not isinstance(payload, dict):
+            return ["GPS waypoint payload is not an object"]
+        raw_waypoints = payload.get('gps_waypoints')
+        if not isinstance(raw_waypoints, str) or not raw_waypoints.strip():
+            return ["gps_waypoints must contain at least one geographic waypoint"]
+
+        errors: List[str] = []
+        for index, token in enumerate(raw_waypoints.split(';'), start=1):
+            converted = self._gps_waypoint_tuple_from_item(token.strip())
+            if converted is None:
+                errors.append(f"gps_waypoints entry {index} is malformed")
+                continue
+            latitude, longitude, altitude, yaw = (float(value) for value in converted)
+            if not -90.0 <= latitude <= 90.0:
+                errors.append(f"gps_waypoints entry {index} latitude is outside [-90, 90]")
+            if not -180.0 <= longitude <= 180.0:
+                errors.append(f"gps_waypoints entry {index} longitude is outside [-180, 180]")
+            if not all(math.isfinite(value) for value in (latitude, longitude, altitude, yaw)):
+                errors.append(f"gps_waypoints entry {index} contains a non-finite value")
         return errors
 
     @staticmethod

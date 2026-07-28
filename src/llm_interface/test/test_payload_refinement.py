@@ -107,6 +107,42 @@ _install_langchain_stubs()
 from llm_interface.node import DEFAULT_PAYLOAD_PROMPT, LLMInterfaceNode
 
 
+def test_fallback_selection_prefers_gps_tree_for_named_lake_route():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    tree_ids = ['temperature_logging.xml', 'gps_temperature_logging.xml']
+    descriptions = [
+        'Navigate through map-frame waypoints and log temperature.',
+        'Follow a geographic OSM/GPS route and log temperature.',
+    ]
+
+    selection = node._fallback_selection(
+        tree_ids,
+        descriptions,
+        'Drive a roundtrip around Hollerner Lake and log temperature.',
+    )
+
+    assert selection is not None
+    assert tree_ids[selection[0]] == 'gps_temperature_logging.xml'
+
+
+def test_fallback_selection_uses_plain_gps_tree_without_sensing_request():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    tree_ids = ['gps_waypoint_navigation.xml', 'gps_temperature_logging.xml']
+    descriptions = [
+        'Follow a geographic OSM/GPS route.',
+        'Follow a geographic OSM/GPS route and log temperature.',
+    ]
+
+    selection = node._fallback_selection(
+        tree_ids,
+        descriptions,
+        'Drive a roundtrip around Hollerner Lake.',
+    )
+
+    assert selection is not None
+    assert tree_ids[selection[0]] == 'gps_waypoint_navigation.xml'
+
+
 def test_extract_refinement_notes_prefers_structured_context():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     context = {
@@ -384,6 +420,76 @@ def test_coerce_explore_area_payload_fields_to_contract_strings():
     assert coerced['frontiers_geo'] == '48.15,11.55'
 
 
+def test_coerce_structured_gps_waypoints_to_contract_string():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    payload = {
+        'gps_waypoints': [
+            {
+                'latitude': 48.2848,
+                'longitude': 11.6077,
+                'yaw': 1.2,
+            },
+            {
+                'position': {
+                    'lat': 48.2851,
+                    'lon': 11.6074,
+                    'altitude': 473.0,
+                },
+                'heading': -0.5,
+            },
+        ]
+    }
+    contract = {'gps_waypoints': {'type': 'string'}}
+
+    coerced = node._coerce_payload_to_contract(payload, contract)
+
+    assert coerced['gps_waypoints'] == (
+        '48.2848,11.6077,0.0,1.2; 48.2851,11.6074,473.0,-0.5'
+    )
+
+
+def test_gps_payload_validation_accepts_geographic_waypoints():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    contract = {
+        'gps_waypoints': {
+            'type': 'string',
+            'required': True,
+            'schema': {'type': 'string'},
+        }
+    }
+    payload = {
+        'gps_waypoints': (
+            '48.2848,11.6077,0.0,1.2; '
+            '48.2851,11.6074,473.0,-0.5'
+        )
+    }
+
+    errors = node._generated_payload_errors(
+        'gps_temperature_logging.xml', payload, contract, {}
+    )
+
+    assert errors == []
+
+
+def test_gps_payload_validation_rejects_out_of_range_coordinates():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    contract = {
+        'gps_waypoints': {
+            'type': 'string',
+            'required': True,
+            'schema': {'type': 'string'},
+        }
+    }
+    payload = {'gps_waypoints': '91.0,181.0,0.0,0.0'}
+
+    errors = node._generated_payload_errors(
+        'gps_temperature_logging.xml', payload, contract, {}
+    )
+
+    assert any('latitude' in error for error in errors)
+    assert any('longitude' in error for error in errors)
+
+
 def test_explore_payload_validation_rejects_missing_required_polygon():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     contract = {
@@ -433,6 +539,38 @@ def test_explore_payload_validation_rejects_lat_lon_waypoints():
     assert any('lat/lon' in error for error in errors)
 
 
+def test_temperature_payload_validation_rejects_lat_lon_waypoints():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    contract = {
+        'waypoints': {'type': 'string', 'required': True},
+        'logfile_path': {'type': 'string', 'required': False},
+    }
+    context = {
+        'SATELLITE_MAP': {
+            'map_metadata': {
+                'bounds': {
+                    'north': 48.3,
+                    'south': 48.0,
+                    'east': 11.8,
+                    'west': 11.4,
+                }
+            }
+        },
+        'GPS_FIX': {'latitude': 48.1, 'longitude': 11.5},
+        'ROBOT_POSE': {'x': 0.0, 'y': 0.0},
+    }
+    payload = {
+        'waypoints': '48.2,11.5,0.0; 48.21,11.51,1.57',
+        'logfile_path': '/tmp/temperature_log.txt',
+    }
+
+    errors = node._generated_payload_errors(
+        'temperature_logging.xml', payload, contract, context
+    )
+
+    assert any('lat/lon' in error for error in errors)
+
+
 def test_explore_payload_validation_rejects_satellite_without_map_anchor():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     contract = {
@@ -459,5 +597,36 @@ def test_explore_payload_validation_rejects_satellite_without_map_anchor():
     }
 
     errors = node._generated_payload_errors('explore_area.xml', payload, contract, context)
+
+    assert any('GPS_FIX and ROBOT_POSE' in error for error in errors)
+
+
+def test_temperature_payload_validation_rejects_satellite_without_map_anchor():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    contract = {
+        'waypoints': {'type': 'string', 'required': True},
+        'logfile_path': {'type': 'string', 'required': False},
+    }
+    payload = {
+        'waypoints': '0.0,0.0,0.0; -25.0,-15.0,-2.47',
+        'logfile_path': '/tmp/temperature_log.txt',
+    }
+    context = {
+        'SATELLITE_MAP': {
+            'map_metadata': {
+                'bounds': {
+                    'north': 48.3,
+                    'south': 48.0,
+                    'east': 11.8,
+                    'west': 11.4,
+                }
+            }
+        },
+        'GPS_FIX': {'latitude': 48.1, 'longitude': 11.5},
+    }
+
+    errors = node._generated_payload_errors(
+        'temperature_logging.xml', payload, contract, context
+    )
 
     assert any('GPS_FIX and ROBOT_POSE' in error for error in errors)

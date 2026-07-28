@@ -41,6 +41,9 @@ llm_interface:
         You are a mission planner for a field robot. Given USER_COMMAND and a JSON array of
         behavior trees (each with id + description), choose the best tree or return NONE.
         tree_id MUST be exactly one of the string IDs in TREES_JSON (e.g., "temperature_logging.xml").
+        Prefer a GPS-specific tree for named geographic routes, OSM routes, or lat/lon goals.
+        Prefer a map-frame tree for explicit local x/y goals.
+        Do not select a sensing or logging tree unless the command requests that task.
         Do NOT answer with numeric indexes.
         Respond strictly as JSON: {{"tree_id": "<id or NONE>", "confidence": 0-1, "rationale": "..."}}
         USER_COMMAND: {user_command}
@@ -85,10 +88,75 @@ llm_interface:
           INSTRUCTIONS:
           1. Map context data to blackboard keys specified in the contract
           2. Use contract defaults when context is missing
-          3. Infer reasonable values from context (e.g., extract waypoints from GPS trail)
+          3. Infer reasonable non-navigation values from context when needed
           4. If images are provided, use them to extract map/goal information
           5. Return ONLY valid JSON matching the contract schema
           6. Do NOT include markdown code fences
+          7. A contract key named "waypoints" always means executable map-frame x,y,yaw values in meters, meters, radians. Never put latitude/longitude in "waypoints".
+          8. OSM_CONTEXT, SATELLITE_MAP, and GPS_FIX are geographic reasoning context only unless CONTEXT explicitly provides a geographic-to-map-frame transform. GPS_FIX plus ROBOT_POSE alone does not establish map-axis orientation.
+          9. For geographic route requests, follow connected OSM linear features and avoid water, steps, access restrictions, and barriers. Do not invent path geometry from an image.
+          10. If executable map-frame waypoints cannot be derived from CONTEXT, return an empty JSON object so the caller reports missing context instead of fabricating a route.
+
+          OUTPUT (JSON only):
+        "gps_waypoint_navigation.xml": |
+          You are planning a geographic outdoor route for a Clearpath Husky A200.
+          Generate the blackboard payload for gps_waypoint_navigation.xml.
+
+          SUBTREE_ID: {subtree_id}
+          USER_COMMAND: {user_command}
+
+          CONTEXT (sensor/geographic data):
+          {context_json}
+
+          CONTRACT (required blackboard keys with types/defaults):
+          {contract_json}
+
+          ATTACHMENT_URIS: {attachment_uris}
+
+          Required output:
+          - "gps_waypoints": ordered route as "latitude,longitude,altitude,yaw; ...".
+
+          Planning rules:
+          1. GPS waypoints are WGS84 geographic coordinates, not map-frame x/y values.
+          2. Begin at or near GPS_FIX and, for a roundtrip, return to that starting location.
+          3. Use OSM_CONTEXT.linear_features as route geometry. Build a connected sequence around the named target; do not merely sample the water boundary or draw straight chords between unrelated points.
+          4. Prefer suitable compacted, gravel, fine-gravel, pebblestone, paved, path, track, footway, or cycleway features.
+          5. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry. Do not invent paths from satellite pixels.
+          6. Orient yaw toward the following GPS waypoint. Use altitude 0.0 when no reliable altitude is available.
+          7. Keep enough points to represent path bends, but remove near-duplicate points.
+          8. If OSM_CONTEXT does not provide a connected route that satisfies the request, return an empty JSON object instead of fabricating a route.
+          9. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
+
+          OUTPUT (JSON only):
+        "gps_temperature_logging.xml": |
+          You are planning a geographic outdoor route for a Clearpath Husky A200.
+          Generate the blackboard payload for gps_temperature_logging.xml.
+
+          SUBTREE_ID: {subtree_id}
+          USER_COMMAND: {user_command}
+
+          CONTEXT (sensor/geographic data):
+          {context_json}
+
+          CONTRACT (required blackboard keys with types/defaults):
+          {contract_json}
+
+          ATTACHMENT_URIS: {attachment_uris}
+
+          Required output:
+          - "gps_waypoints": ordered route as "latitude,longitude,altitude,yaw; ...".
+          - "logfile_path": use the contract default unless the operator specified one.
+
+          Planning rules:
+          1. GPS waypoints are WGS84 geographic coordinates, not map-frame x/y values.
+          2. Begin at or near GPS_FIX and, for a roundtrip, return to that starting location.
+          3. Use OSM_CONTEXT.linear_features as route geometry. Build a connected sequence around the named target; do not merely sample the water boundary or draw straight chords between unrelated points.
+          4. Prefer suitable compacted, gravel, fine-gravel, pebblestone, paved, path, track, footway, or cycleway features.
+          5. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry. Do not invent paths from satellite pixels.
+          6. Orient yaw toward the following GPS waypoint. Use altitude 0.0 when no reliable altitude is available.
+          7. Keep enough points to represent path bends, but remove near-duplicate points.
+          8. If OSM_CONTEXT does not provide a connected route that satisfies the request, return an empty JSON object instead of fabricating a route.
+          9. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):
         "explore_area.xml": |
@@ -116,10 +184,11 @@ llm_interface:
           Planning rules:
           1. The operator must define the area in USER_COMMAND or REQUEST_HINTS; do not invent a mission area.
           2. Use ANNOTATED_SLAM_MAP_IMAGE metadata and ROBOT_POSE to keep map-frame points inside traversable or useful unknown-boundary space.
-          3. Use SATELLITE_MAP, GPS_FIX, and OSM_CONTEXT only as reasoning context unless you can also convert the result into map-frame x,y,yaw.
-          4. Never put lat/lon coordinates in "waypoints", "area_polygon", or "frontiers".
-          5. If only geographic context is available and no map-frame conversion anchor is available, return an invalid empty JSON object rather than fake map-frame waypoints.
-          6. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
+          3. Use OSM_CONTEXT area bounds/rings to identify the requested geographic target. For a roundtrip, prefer a connected sequence of OSM_CONTEXT.linear_features around that target, favoring suitable surface/access tags and avoiding steps, barriers, and water.
+          4. Use SATELLITE_MAP, GPS_FIX, and OSM_CONTEXT only as reasoning context unless the context also establishes the geographic-to-map-frame transform. GPS_FIX plus ROBOT_POSE anchors translation but does not by itself establish map-axis orientation.
+          5. Never put lat/lon coordinates in "waypoints", "area_polygon", or "frontiers".
+          6. If only geographic context is available and no map-frame conversion anchor is available, return an invalid empty JSON object rather than fake map-frame waypoints.
+          7. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):
       payload_normalizer: |

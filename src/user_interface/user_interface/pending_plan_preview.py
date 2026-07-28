@@ -25,6 +25,8 @@ def extract_waypoints(payload_value: Any) -> List[Dict[str, Any]]:
     payload = load_json_value(payload_value)
     if not isinstance(payload, dict):
         return []
+    if payload.get('gps_waypoints') not in (None, ''):
+        return _extract_gps_waypoint_list(payload.get('gps_waypoints'))
     return _extract_waypoint_list(payload.get('waypoints'))
 
 
@@ -227,6 +229,69 @@ def _extract_waypoint_list(raw_waypoints: Any) -> List[Dict[str, Any]]:
             return _finalize_waypoints([parsed])
 
     return waypoints
+
+
+def _extract_gps_waypoint_list(raw_waypoints: Any) -> List[Dict[str, Any]]:
+    waypoints: List[Dict[str, Any]] = []
+    if raw_waypoints in (None, ''):
+        return waypoints
+
+    if isinstance(raw_waypoints, str):
+        for token in raw_waypoints.split(';'):
+            parsed = _gps_waypoint_from_string(token)
+            if parsed:
+                waypoints.append(parsed)
+        return _finalize_waypoints(waypoints)
+
+    if isinstance(raw_waypoints, list):
+        for item in raw_waypoints:
+            if isinstance(item, str):
+                parsed = _gps_waypoint_from_string(item)
+            elif isinstance(item, dict):
+                parsed = _waypoint_from_dict(item)
+            elif isinstance(item, list):
+                parsed = _gps_waypoint_from_string(','.join(str(value) for value in item))
+            else:
+                parsed = None
+            if parsed:
+                waypoints.append(parsed)
+        return _finalize_waypoints(waypoints)
+
+    if isinstance(raw_waypoints, dict):
+        nested = (
+            raw_waypoints.get('gps_waypoints')
+            or raw_waypoints.get('waypoints')
+            or raw_waypoints.get('poses')
+            or raw_waypoints.get('points')
+        )
+        if nested is not None:
+            return _extract_gps_waypoint_list(nested)
+        parsed = _waypoint_from_dict(raw_waypoints)
+        if parsed:
+            return _finalize_waypoints([parsed])
+
+    return waypoints
+
+
+def _gps_waypoint_from_string(raw_waypoint: str) -> Optional[Dict[str, Any]]:
+    cleaned = raw_waypoint.strip()
+    if not cleaned:
+        return None
+    for token in '[]()':
+        cleaned = cleaned.replace(token, '')
+    try:
+        values = [float(part.strip()) for part in cleaned.split(',')]
+    except ValueError:
+        return None
+    if len(values) < 2 or len(values) > 4:
+        return None
+    return {
+        'lat': values[0],
+        'lon': values[1],
+        'altitude': values[2] if len(values) == 4 else 0.0,
+        'yaw_rad': values[-1] if len(values) >= 3 else 0.0,
+        'raw': raw_waypoint.strip(),
+    }
 
 
 def _waypoint_from_value(value: Any) -> Optional[Dict[str, Any]]:
