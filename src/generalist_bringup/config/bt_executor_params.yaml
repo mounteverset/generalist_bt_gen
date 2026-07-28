@@ -13,6 +13,7 @@ bt_action_server:
 
     # robot_actions defaults
     nav2_action_name: "/navigate_to_pose"
+    nav2_follow_gps_waypoints_action_name: "/a200_0000/follow_gps_waypoints"
     log_temperature_service_name: "/log_temperature"
     take_photo_image_topic: "/a200_0000/sensors/camera_0/color/image"
     get_current_pose_pose_topic: "/a200_0000/pose"

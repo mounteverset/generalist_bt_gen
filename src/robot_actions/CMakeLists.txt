@@ -11,6 +11,7 @@ find_package(behaviortree_ros2 REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(geographic_msgs REQUIRED)
 find_package(language_feature_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
@@ -24,6 +25,7 @@ set(dependencies
   nav2_msgs
   nav_msgs
   geometry_msgs
+  geographic_msgs
   language_feature_msgs
   rclcpp
   std_srvs
@@ -33,6 +35,8 @@ set(dependencies
 
 add_library(${PROJECT_NAME} SHARED
   src/move_to.cpp
+  src/move_to_gps.cpp
+  src/gps_waypoint_utils.cpp
   src/take_picture.cpp
   src/distance_traveled.cpp
   src/find_object_location.cpp
@@ -40,6 +44,7 @@ add_library(${PROJECT_NAME} SHARED
   src/log_temperature.cpp
   src/restart_node.cpp
   src/parse_waypoints.cpp
+  src/parse_gps_waypoints.cpp
   src/plugin_registration.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -65,9 +70,13 @@ install(
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
+  find_package(ament_cmake_gtest REQUIRED)
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  ament_add_gtest(test_gps_waypoint_utils test/test_gps_waypoint_utils.cpp)
+  target_link_libraries(test_gps_waypoint_utils ${PROJECT_NAME})
 endif()
 
 ament_export_dependencies(${dependencies})
