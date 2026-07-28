@@ -2,7 +2,10 @@ import json
 import sys
 import types
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
+
+import yaml
 
 
 def _install_ros_stubs() -> None:
@@ -155,7 +158,87 @@ def _install_ros_stubs() -> None:
 
 _install_ros_stubs()
 
-from mission_coordinator.node import MissionCoordinatorNode
+from mission_coordinator.node import DEFAULT_KNOWN_TREE_ENTRIES, MissionCoordinatorNode
+
+
+def _tree_ids(entries):
+    return [entry.split('::', 1)[0] for entry in entries]
+
+
+def test_selectable_tree_catalog_is_consistent_across_code_config_and_metadata():
+    repo_root = Path(__file__).resolve().parents[3]
+    coordinator_config = yaml.safe_load(
+        (
+            repo_root
+            / 'src/mission_coordinator/config/mission_coordinator_params.yaml'
+        ).read_text(encoding='utf-8')
+    )
+    configured_entries = coordinator_config['/**']['mission_coordinator'][
+        'ros__parameters'
+    ]['known_trees']
+
+    metadata = yaml.safe_load(
+        (repo_root / 'config/tree_metadata.yaml').read_text(encoding='utf-8')
+    )
+    metadata_ids = [tree['id'] for tree in metadata['trees']]
+    source_tree_ids = sorted(
+        path.name for path in (repo_root / 'src/bt_executor/trees').glob('*.xml')
+    )
+
+    assert list(DEFAULT_KNOWN_TREE_ENTRIES) == configured_entries
+    assert _tree_ids(configured_entries) == metadata_ids
+    assert set(metadata_ids).issubset(source_tree_ids)
+    assert '360_rgb_sweep.xml' in source_tree_ids
+    assert '360_rgb_sweep.xml' not in metadata_ids
+
+
+def test_gps_tree_contracts_use_geographic_waypoint_key():
+    repo_root = Path(__file__).resolve().parents[3]
+    metadata = yaml.safe_load(
+        (repo_root / 'config/tree_metadata.yaml').read_text(encoding='utf-8')
+    )
+    trees = {tree['id']: tree for tree in metadata['trees']}
+
+    for tree_id in ('gps_waypoint_navigation.xml', 'gps_temperature_logging.xml'):
+        contract = trees[tree_id]['blackboard_contract']
+        assert 'gps_waypoints' in contract
+        assert 'waypoints' not in contract
+
+
+def test_fallback_selection_prefers_gps_tree_for_named_lake_route():
+    node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
+    catalog = [
+        ('temperature_logging.xml', 'Navigate map waypoints and log temperature.'),
+        (
+            'gps_temperature_logging.xml',
+            'Follow a geographic OSM/GPS route and log temperature.',
+        ),
+    ]
+
+    selected = node._fallback_select_behavior_tree(
+        'Drive a roundtrip around Hollerner Lake and log temperature.',
+        catalog,
+    )
+
+    assert selected == 'gps_temperature_logging.xml'
+
+
+def test_fallback_selection_uses_plain_gps_tree_without_sensing_request():
+    node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
+    catalog = [
+        ('gps_waypoint_navigation.xml', 'Follow a geographic OSM/GPS route.'),
+        (
+            'gps_temperature_logging.xml',
+            'Follow a geographic OSM/GPS route and log temperature.',
+        ),
+    ]
+
+    selected = node._fallback_select_behavior_tree(
+        'Drive a roundtrip around Hollerner Lake.',
+        catalog,
+    )
+
+    assert selected == 'gps_waypoint_navigation.xml'
 
 
 def test_compose_payload_user_command_appends_operator_feedback():

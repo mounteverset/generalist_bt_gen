@@ -53,6 +53,16 @@ actions:
     requires:
       - "locomotion.ground"
       - "localization.odometry"
+  - id: "navigate_gps"
+    capability: "navigation.gps_waypoints"
+    type: "locomotion"
+    ros_interface: "/a200_0000/follow_gps_waypoints"
+    ros_type: "action"
+    description: "Navigate to WGS84 geographic poses through Nav2's GPS waypoint follower."
+    requires:
+      - "locomotion.ground"
+      - "localization.gps"
+      - "localization.odometry"
   - id: "photograph"
     capability: "sensing.rgb_image"
     type: "sensing"
@@ -80,6 +90,10 @@ actions:
     capability: "payload.parse_waypoints"
     type: "utility"
     description: "Parse waypoint payloads into a BT waypoint queue."
+  - id: "parse_gps_waypoints"
+    capability: "payload.parse_gps_waypoints"
+    type: "utility"
+    description: "Validate and parse geographic waypoint payloads into a BT waypoint queue."
   - id: "restart_node"
     capability: "system.restart_node"
     type: "system"
@@ -89,6 +103,7 @@ capabilities:
   supported:
     - "locomotion.ground"
     - "navigation.waypoints"
+    - "navigation.gps_waypoints"
     - "sensing.rgb_image"
     - "sensing.depth_image"
     - "sensing.temperature"
@@ -98,6 +113,7 @@ capabilities:
     - "mapping.slam"
     - "perception.object_location"
     - "payload.parse_waypoints"
+    - "payload.parse_gps_waypoints"
     - "system.restart_node"
   unsupported:
     locomotion.flight: "The Husky A200 is a ground rover and cannot fly."
@@ -138,6 +154,8 @@ command_capability_rules:
     keywords: ["photo", "photos", "picture", "pictures", "photograph", "document", "image", "images"]
   - capability: "navigation.waypoints"
     keywords: ["drive", "navigate", "go to", "patrol", "survey", "explore", "waypoint", "waypoints", "route"]
+  - capability: "navigation.gps_waypoints"
+    keywords: ["gps waypoint", "gps waypoints", "latitude", "longitude", "lat/lon", "geographic waypoint", "geographic route", "openstreetmap", "osm", "hollerner", "lake"]
   - capability: "mapping.slam"
     keywords: ["explore", "frontier", "frontiers", "coverage", "cover the area", "unknown area"]
   - capability: "perception.object_location"

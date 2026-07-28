@@ -37,6 +37,85 @@ trees:
         required: false
         default: "/tmp/temperature_log.txt"
 
+  - id: "gps_waypoint_navigation.xml"
+    description: "Follow a geographic OSM/GPS route without adding an unrelated sensing task."
+    mission_intents:
+      - "navigate_waypoints"
+      - "navigate_gps_waypoints"
+      - "geographic_route"
+    required_capabilities:
+      - "localization.gps"
+      - "localization.odometry"
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "navigation.gps_waypoints"
+      - "payload.parse_gps_waypoints"
+    unsupported_requirements:
+      - "locomotion.flight"
+      - "manipulation.pick_place"
+      - "sampling.soil"
+    selection_constraints:
+      max_range_m: 5000
+      requires_target_area_or_route: true
+    context_requirements:
+      - ROBOT_POSE
+      - GPS_FIX
+      - OSM_CONTEXT
+      - SATELLITE_MAP
+    blackboard_contract:
+      gps_waypoints:
+        type: "string"
+        required: true
+        schema:
+          type: "string"
+          description: "Semicolon-separated geographic route. Each waypoint is 'latitude,longitude,yaw' or 'latitude,longitude,altitude,yaw'."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2}(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2})*$'
+          examples:
+            - "48.2848,11.6077,0.0; 48.2851,11.6074,1.57"
+
+  - id: "gps_temperature_logging.xml"
+    description: "Follow a geographic OSM/GPS route and log temperature after reaching each GPS waypoint."
+    mission_intents:
+      - "navigate_waypoints"
+      - "navigate_gps_waypoints"
+      - "geographic_route"
+      - "log_temperature"
+    required_capabilities:
+      - "localization.gps"
+      - "localization.odometry"
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "navigation.gps_waypoints"
+      - "sensing.temperature"
+      - "payload.parse_gps_waypoints"
+    unsupported_requirements:
+      - "locomotion.flight"
+      - "sensing.thermal_image"
+      - "manipulation.pick_place"
+      - "sampling.soil"
+    selection_constraints:
+      max_range_m: 5000
+      requires_target_area_or_route: true
+    context_requirements:
+      - ROBOT_POSE
+      - GPS_FIX
+      - OSM_CONTEXT
+      - SATELLITE_MAP
+    blackboard_contract:
+      gps_waypoints:
+        type: "string"
+        required: true
+        schema:
+          type: "string"
+          description: "Semicolon-separated geographic route. Each waypoint is 'latitude,longitude,yaw' or 'latitude,longitude,altitude,yaw'."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2}(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2})*$'
+          examples:
+            - "48.2848,11.6077,0.0; 48.2851,11.6074,1.57"
+      logfile_path:
+        type: "string"
+        required: false
+        default: "/tmp/gps_temperature_log.txt"
+
   - id: "navigate_and_photograph.xml"
     description: "Navigate to waypoints and take photos at regular intervals"
     mission_intents:
@@ -119,8 +198,8 @@ trees:
     context_requirements:
       - ROBOT_POSE
       - ANNOTATED_SLAM_MAP_IMAGE
-      # - GPS_FIX
-      # - SATELLITE_MAP
+      - GPS_FIX
+      - SATELLITE_MAP
       - OSM_CONTEXT
       - BATTERY_STATE
     blackboard_contract:

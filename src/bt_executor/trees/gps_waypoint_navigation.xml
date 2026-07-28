@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!--
+Tree Name: gps_waypoint_navigation.xml
+Description: Visit geographic waypoints through Nav2's FollowGPSWaypoints action.
+Usage Instructions:
+  - Payload must include "gps_waypoints" as semicolon-separated entries formatted
+    as latitude,longitude[,yaw] or latitude,longitude,altitude,yaw.
+  - Nav2 waypoint_follower and robot_localization navsat_transform_node must be active.
+-->
+<root BTCPP_format="4" main_tree_to_execute="gps_waypoint_navigation.xml">
+  <BehaviorTree ID="gps_waypoint_navigation.xml">
+    <Sequence name="GpsWaypointNavigationMission">
+      <ParseGpsWaypoints
+        raw_waypoints="{gps_waypoints}"
+        waypoint_queue="{gps_waypoint_queue}"
+        waypoint_count="{gps_waypoint_count}" />
+      <LoopString queue="{gps_waypoint_queue}" value="{active_gps_waypoint}" if_empty="FAILURE">
+        <MoveToGPS
+          name="DriveToGpsWaypoint"
+          gps_pose="{active_gps_waypoint}"
+          action_name="/a200_0000/follow_gps_waypoints" />
+      </LoopString>
+    </Sequence>
+  </BehaviorTree>
+</root>

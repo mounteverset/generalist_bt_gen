@@ -32,6 +32,24 @@ from rclpy.task import Future
 from std_msgs.msg import String
 
 
+DEFAULT_KNOWN_TREE_ENTRIES = (
+    'temperature_logging.xml::Navigate through map-frame waypoints and log temperature.',
+    (
+        'gps_waypoint_navigation.xml::Follow geographic GPS waypoints '
+        'without adding a sensing task.'
+    ),
+    (
+        'gps_temperature_logging.xml::Follow geographic GPS waypoints '
+        'and log temperature at each waypoint.'
+    ),
+    'navigate_and_photograph.xml::Navigate through map-frame waypoints and take RGB photos.',
+    (
+        'explore_area.xml::Explore an operator-defined ground area with '
+        'LLM-generated map-frame frontier waypoints.'
+    ),
+)
+
+
 class _YieldOnce:
     def __await__(self):
         yield None
@@ -202,9 +220,7 @@ class MissionCoordinatorNode(Node):
         ).expanduser()
         transcript_dir.mkdir(parents=True, exist_ok=True)
 
-        known_trees_default = [
-            'temperature_logging.xml::Navigate through waypoints and log temperature.'
-        ]
+        known_trees_default = list(DEFAULT_KNOWN_TREE_ENTRIES)
 
         return CoordinatorParams(
             mission_action_name=declare('mission_action_name', '/mission_coordinator/execute_tree'),
@@ -716,7 +732,10 @@ class MissionCoordinatorNode(Node):
                     if tree_id:
                         catalog.append((tree_id, desc.strip()))
         if not catalog:
-            catalog = [('temperature_logging.xml', 'Fallback temperature logging tree.')]
+            catalog = [
+                tuple(entry.split('::', 1))
+                for entry in DEFAULT_KNOWN_TREE_ENTRIES
+            ]
         self._log_debug(f'Parsed tree catalog: {catalog}')
         return catalog
 
@@ -981,6 +1000,20 @@ class MissionCoordinatorNode(Node):
             token for token in command_lower.replace('_', ' ').split()
             if len(token) > 2
         }
+        geographic_route = any(
+            keyword in command_lower
+            for keyword in (
+                'gps',
+                'latitude',
+                'longitude',
+                'lat/lon',
+                'geographic',
+                'openstreetmap',
+                'osm',
+                'hollerner',
+                'lake',
+            )
+        )
 
         best_tree = catalog[0][0]
         best_score = -1
@@ -994,6 +1027,8 @@ class MissionCoordinatorNode(Node):
                 score += 5 if any(word in haystack for word in ('photo', 'photograph', 'image', 'rgb')) else 0
             if any(word in command_lower for word in ('explore', 'survey', 'area', 'search')):
                 score += 5 if 'explore' in haystack else 0
+            if geographic_route:
+                score += 8 if 'gps' in haystack or 'geographic' in haystack else 0
             if score > best_score:
                 best_tree = tree_id
                 best_score = score
@@ -1481,7 +1516,14 @@ class MissionCoordinatorNode(Node):
             return None
         if not isinstance(payload, dict):
             return None
-        for key in ('waypoints', 'route', 'points', 'targets', 'goal_points'):
+        for key in (
+            'gps_waypoints',
+            'waypoints',
+            'route',
+            'points',
+            'targets',
+            'goal_points',
+        ):
             if key in payload:
                 return payload.get(key)
         return None

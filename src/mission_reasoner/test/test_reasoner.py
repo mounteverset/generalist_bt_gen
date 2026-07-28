@@ -52,6 +52,42 @@ def test_accepts_ground_navigation_and_photos():
     assert 'sensing.rgb_image' in result.matched_capabilities
 
 
+def test_selects_gps_temperature_tree_for_explicit_geographic_waypoints():
+    result = _reasoner().validate(
+        'Drive through these GPS waypoints and log temperature.',
+        _trees(),
+        context_json=json.dumps(
+            {'gps_waypoints': '48.2848,11.6077,0.0; 48.2851,11.6074,1.57'}
+        ),
+    )
+
+    assert result.status_code == ACCEPT
+    assert result.candidate_trees == ['gps_temperature_logging.xml']
+    assert 'navigation.gps_waypoints' in result.matched_capabilities
+
+
+def test_selects_gps_temperature_tree_for_named_lake_route():
+    result = _reasoner().validate(
+        'Drive a roundtrip around Hollerner Lake and log temperature.',
+        _trees(),
+    )
+
+    assert result.status_code == ACCEPT
+    assert result.candidate_trees == ['gps_temperature_logging.xml']
+    assert 'navigation.gps_waypoints' in result.matched_capabilities
+
+
+def test_named_lake_route_includes_plain_gps_navigation_tree():
+    result = _reasoner().validate(
+        'Drive a roundtrip around Hollerner Lake.',
+        _trees(),
+    )
+
+    assert result.status_code == ACCEPT
+    assert 'gps_waypoint_navigation.xml' in result.candidate_trees
+    assert 'navigation.gps_waypoints' in result.matched_capabilities
+
+
 def test_clarifies_document_command_without_target():
     result = _reasoner().validate('Document the area.', _trees())
 

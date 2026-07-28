@@ -43,6 +43,8 @@
 
       # Tree catalog for selection service
       known_trees:
-        - "temperature_logging.xml::Navigate through waypoints and log temperature."
-        - "navigate_and_photograph.xml::Navigate to waypoints and take RGB photos."
-        - "explore_area.xml::Explore an operator-defined ground area with LLM-generated frontier waypoints."
+        - "temperature_logging.xml::Navigate through map-frame waypoints and log temperature."
+        - "gps_waypoint_navigation.xml::Follow geographic GPS waypoints without adding a sensing task."
+        - "gps_temperature_logging.xml::Follow geographic GPS waypoints and log temperature at each waypoint."
+        - "navigate_and_photograph.xml::Navigate through map-frame waypoints and take RGB photos."
+        - "explore_area.xml::Explore an operator-defined ground area with LLM-generated map-frame frontier waypoints."
