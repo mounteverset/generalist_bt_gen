@@ -16,10 +16,10 @@
                 <mxCell id="branch_reqs" value="For each requirement" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
                     <mxGeometry x="820" y="80" width="140" height="70" as="geometry"/>
                 </mxCell>
-                <mxCell id="collect_local" value="Collect local data&#xa;- pose/odom/TF&#xa;- camera frame via image_transport&#xa;- pointcloud/scan summary&#xa;- battery/velocity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                <mxCell id="collect_local" value="Collect local data&#xa;- pose / odometry&#xa;- GPS fix&#xa;- RGB / depth images&#xa;- battery state" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
                     <mxGeometry x="920" y="-120" width="240" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="collect_mcp" value="Fetch external data (MCP)&#xa;- ROS-MCP latest messages&#xa;- OpenStreetMapMCP tile by GPS/geo_hint" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                <mxCell id="collect_mcp" value="Fetch geographic context&#xa;- MapTiler overview/detail maps&#xa;- Overpass route geometry, surfaces, barriers, water&#xa;- Lake extent 1200 m + relevance ranking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
                     <mxGeometry x="1040" y="260" width="240" height="100" as="geometry"/>
                 </mxCell>
                 <mxCell id="timeout_check" value="Timeout or cancel?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">

@@ -63,6 +63,13 @@ Then open `http://<host>:8080` (port/host configurable). The page auto-refreshes
 
 Override any parameter through `--ros-args -p param_name:=value` or custom YAML.
 
+## Pending route previews
+
+Pending-plan previews recognize both route contracts. `waypoints` is displayed
+as map-frame `x/y/yaw`; `gps_waypoints` is displayed as
+latitude/longitude with optional altitude and yaw. Keeping the labels distinct
+helps the operator catch coordinate-frame mistakes before approving execution.
+
 ## Open TODOs / Next Steps
 1. **Live updates for Web UI** – Replace polling with WebSockets/SSE for instant mission state updates.
 2. **Authentication / multi-user** – Add optional auth for web deployment beyond localhost.

@@ -8,13 +8,13 @@ Goal: deliver the first version of `bt_executor` that wraps `behaviortree_ros2::
 | --- | --- | --- |
 | `GeneralistBehaviorTreeServer` (C++) | Subclass of `behaviortree_ros2::TreeExecutionServer` implementing hook overrides (`onTreeCreated`, `onLoopAfterTick`, `onTreeExecutionCompleted`, `onLoopFeedback`). | Responsible for blackboard seeding (`user_command`), failure detection, logging feedback for the mission coordinator / UI. |
 | `bt_executor_node` | Thin `rclcpp::Node` that instantiates `GeneralistBehaviorTreeServer`, loads parameters (tree path, plugin directories, action namespace), and spins. | Launchable via `ros2 run` or `ros2 launch`. |
-| Tree assets (`trees/*.xml`) | Initial behavior tree(s) distributed with the package. | Stubs for now; must be loadable by the server. |
+| Tree assets (`trees/*.xml`) | Installed map-frame, GPS, sensing, exploration, and internal context trees. | Selectable IDs are synchronized with coordinator configuration and metadata. |
 | Parameters YAML | Defines plugin directories, tree file, action names, telemetry topics, failure-handling toggles. |
 | Telemetry publishers | Provide textual status + active node info for UI. | Could reuse `status_topic` / `active_subtree_topic`. |
 
 ### Dependency Notes (Task 1)
 
-- **Core libraries**: `behaviortree_cpp_v4` (BT engine), `behaviortree_ros2` (TreeExecutionServer), `rclcpp`, `rclcpp_action`, `std_msgs`, `ament_index_cpp`.
+- **Core libraries**: `behaviortree_cpp` (BT engine), `behaviortree_ros2` (TreeExecutionServer), `rclcpp`, `rclcpp_action`, `std_msgs`, `ament_index_cpp`.
 - **Plugin packages**: `robot_actions` (BT skill plugins loaded from shared libraries via TreeExecutionServer params).
 - **Interface packages**: `gen_bt_interfaces` (MissionCommand action for coordination), potentially `behaviortree_ros2_msgs` for executor telemetry if needed.
 - **Utilities**: `nlohmann_json` (optional for structured feedback), `yaml-cpp` if we parse configs manually (TreeExecutionServer already supports YAML).
@@ -33,7 +33,7 @@ Goal: deliver the first version of `bt_executor` that wraps `behaviortree_ros2::
 | 8 | Build `bt_executor_node` | Task 3 | `main.cpp` that loads params, instantiates server, spins. ✅ |
 | 9 | Wire plugin & tree loading | Task 8 | Parse parameters for plugin directories, XML path; pass to server constructor. ✅ |
 |10 | Add telemetry publishers | Task 6 | `rclcpp::Publisher<std_msgs::msg::String>` for `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree`. ✅ |
-|11 | Tree asset stub | README guidance | Provide starter XML (e.g., `trees/temperature_logging.xml`) to allow server to load. ✅ |
+|11 | Tree assets | README guidance | Install the selectable catalogue plus the internal `360_rgb_sweep.xml` context tree. ✅ |
 |12 | Config + launch files | Task 2 | Install YAML + `launch/bt_executor.launch.py` referencing tree + plugin params. ✅ |
 |13 | Documentation updates | All | Update `README.md` with build/run instructions and hook behavior. ✅ |
 |14 | Build/test verification | All | `colcon build --packages-select bt_executor` + simple `ros2 run bt_executor bt_executor_node` smoke test (with temperature logging tree). ✅ |

@@ -27,103 +27,80 @@ trees:
         default: <value>  # Optional default value
 ```
 
-## Example Trees
+## Current catalogue
+
+The selectable tree IDs in `config/tree_metadata.yaml` must match both
+`mission_coordinator.known_trees` and XML filenames under
+`src/bt_executor/trees`.
+
+| Tree ID | Required route field | Coordinate frame |
+| --- | --- | --- |
+| `temperature_logging.xml` | `waypoints` | map-frame `x,y,yaw` |
+| `gps_waypoint_navigation.xml` | `gps_waypoints` | geographic latitude/longitude |
+| `gps_temperature_logging.xml` | `gps_waypoints` | geographic latitude/longitude |
+| `navigate_and_photograph.xml` | `waypoints` | map-frame `x,y,yaw` |
+| `explore_area.xml` | `waypoints`, `area_polygon`, `frontiers` | map frame |
+
+`360_rgb_sweep.xml` is an internal context-capture tree, so it has source XML
+but is intentionally not in the selectable metadata/catalogue.
+
+## GPS tree example
 
 ```yaml
 trees:
-  - id: "navigate_and_photograph.xml"
-    description: "Navigate to waypoints and take photos at regular intervals"
+  - id: "gps_waypoint_navigation.xml"
+    description: "Follow a geographic OSM/GPS route without adding an unrelated sensing task."
     mission_intents:
       - "navigate_waypoints"
-      - "photograph_route"
-      - "document_area"
+      - "navigate_gps_waypoints"
+      - "geographic_route"
     required_capabilities:
+      - "localization.gps"
+      - "localization.odometry"
       - "locomotion.ground"
       - "navigation.waypoints"
-      - "sensing.rgb_image"
-      - "localization.gps"
+      - "navigation.gps_waypoints"
+      - "payload.parse_gps_waypoints"
     unsupported_requirements:
       - "locomotion.flight"
-      - "sensing.thermal_image"
     selection_constraints:
       max_range_m: 5000
       requires_target_area_or_route: true
     context_requirements:
       - ROBOT_POSE
-      - RGB_IMAGE
       - GPS_FIX
+      - OSM_CONTEXT
+      - SATELLITE_MAP
     blackboard_contract:
-      waypoints:
-        type: "geometry_msgs/PoseArray"
+      gps_waypoints:
+        type: "string"
         required: true
-      photo_interval_m:
-        type: "double"
-        required: false
-        default: 5.0
-      camera_topic:
-        type: "string"
-        required: false
-        default: "/camera/image_raw"
-
-  - id: "explore_area.xml"
-    description: "Autonomous exploration of an unknown area with obstacle avoidance"
-    mission_intents:
-      - "explore_area"
-      - "survey_area"
-    required_capabilities:
-      - "locomotion.ground"
-      - "navigation.waypoints"
-      - "localization.odometry"
-      - "mapping.slam"
-    context_requirements:
-      - ROBOT_POSE
-      - POINTCLOUD
-      - BATTERY_STATE
-    blackboard_contract:
-      exploration_radius_m:
-        type: "double"
-        required: false
-        default: 50.0
-      min_battery_percent:
-        type: "double"
-        required: false
-        default: 20.0
-      return_home_on_low_battery:
-        type: "bool"
-        required: false
-        default: true
-
-  - id: "temperature_logging.xml"
-    description: "Navigate through waypoints and log temperature at each waypoint."
-    mission_intents:
-      - "navigate_waypoints"
-      - "log_temperature"
-    required_capabilities:
-      - "locomotion.ground"
-      - "navigation.waypoints"
-      - "sensing.temperature"
-      - "payload.parse_waypoints"
-    context_requirements:
-      - ROBOT_POSE
-    blackboard_contract:
-      test_message:
-        type: "string"
-        required: false
-        default: "Hello from temperature logging tree"
+        schema:
+          type: "string"
+          description: "Semicolon-separated latitude,longitude[,yaw] points."
+          examples:
+            - "48.2848,11.6077,0.0; 48.2851,11.6074,1.57"
 ```
+
+Do not put latitude/longitude into `waypoints`. That key is reserved for
+map-frame meters and is consumed by `ParseWaypoints`/`MoveTo`. Geographic
+routes use `gps_waypoints` and are consumed by
+`ParseGpsWaypoints`/`MoveToGPS`.
 
 ## Supported Context Requirements
 
 | Requirement | Description | Data Source |
 |-------------|-------------|-------------|
-| `ROBOT_POSE` | Current robot position and orientation | `/odom` or `/tf` |
-| `RGB_IMAGE` | Latest RGB camera image | `/camera/image_raw` |
-| `DEPTH_IMAGE` | Latest depth image | `/camera/depth/image_raw` |
-| `POINTCLOUD` | 3D point cloud | `/velodyne_points` or similar |
-| `SATELLITE_MAP` | Annotated satellite or aerial image with geo metadata | External tile/image source + `satellite_map_annotator` |
-| `GPS_FIX` | GPS coordinates | `/gps/fix` |
-| `BATTERY_STATE` | Battery percentage and voltage | `/battery_state` |
-| `SEMANTIC_MAP` | Semantic map query result | Custom service |
+| `ROBOT_POSE` | Current position and orientation | configured pose/odometry topics |
+| `RGB_IMAGE` | Latest RGB camera image | configured RGB topic |
+| `DEPTH_IMAGE` | Latest depth image | configured depth topic |
+| `BATTERY_STATE` | Battery percentage and voltage | configured battery topic |
+| `GPS_FIX` | Current latitude/longitude fix | configured NavSatFix topic |
+| `ANNOTATED_SLAM_MAP_IMAGE` | SLAM map annotated with the robot pose | `annotated_map_saver` service |
+| `SATELLITE_MAP` / `SATELLITE_TILE` | Overview/detail map artifacts with geographic metadata | MapTiler + `satellite_map_annotator` |
+| `OSM_CONTEXT` | Routeable lines with surface/access data, water geometry, barriers, and relevant points | OpenStreetMap Overpass API |
+| `FIND_ANYTHING` | Object-location candidates | configured FindAnything service |
+| `RGB360SWEEP` | Active six-heading RGB context sweep | internal `360_rgb_sweep.xml` execution |
 
 ## Capability Fields
 

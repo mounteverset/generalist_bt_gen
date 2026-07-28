@@ -26,6 +26,13 @@ Responses:
 If the LLM service is unavailable, times out, or returns invalid JSON, the
 reasoner logs a warning and falls back to deterministic command rules.
 
+Geographic route candidates declare `navigation.gps_waypoints` and
+`payload.parse_gps_waypoints`. This lets the reasoner retain
+`gps_waypoint_navigation.xml` or `gps_temperature_logging.xml` for GPS/OSM/lake
+missions while keeping map-frame trees on the `navigation.waypoints` and
+`payload.parse_waypoints` contract. The plain GPS tree is preferred when the
+operator did not ask for an additional sensing task.
+
 Relevant parameters:
 
 | Parameter | Default | Meaning |

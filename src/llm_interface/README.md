@@ -36,3 +36,17 @@ To run through OpenRouter, set the provider fields to `openrouter` and use an Op
 - `openrouter_app_title`
 
 See `implementation_plan.md` for the delivery roadmap.
+
+## Route payload contracts
+
+Payload generation has two explicit coordinate modes:
+
+| Contract key | Coordinate meaning | Executing nodes |
+| --- | --- | --- |
+| `waypoints` | semicolon-separated map-frame `x,y,yaw` | `ParseWaypoints` → `MoveTo` |
+| `gps_waypoints` | semicolon-separated `lat,lon`, `lat,lon,yaw`, or `lat,lon,altitude,yaw` | `ParseGpsWaypoints` → `MoveToGPS` |
+
+Tree-specific prompts in `config/llm_interface_params.yaml` tell the model to
+build geographic routes from `GPS_FIX`, `OSM_CONTEXT`, and satellite-map
+metadata for the GPS trees. Validation/coercion preserves the contract
+separation: latitude/longitude is not emitted under generic `waypoints`.

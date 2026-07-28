@@ -134,6 +134,20 @@ The Husky A200 provides:
 - Camera (for visual context gathering)
 
 These integrate with:
-- `context_gatherer`: Reads GPS, camera, LiDAR data
-- `robot_actions`: Drive, TakePicture actions
+- `context_gatherer`: Reads GPS/camera/robot state and gathers satellite/OSM
+  route context
+- `robot_actions`: `MoveTo`, `MoveToGPS`, `TakePhoto`, and route parsers
 - `bt_executor`: Executes behavior trees on simulated robot
+
+For the repository's current navigation integration, use:
+
+```bash
+ros2 launch generalist_bringup clearpath_a200_navigation_sim.launch.py
+```
+
+This launch starts the mock GPS publisher and enables `navsat_transform_node` by
+default, exposing `/fromLL` for Nav2 `FollowGPSWaypoints`. The geographic trees
+consume `gps_waypoints`; map-frame trees consume `waypoints`. The supplied
+solar-farm Gazebo world is not geographically aligned with Hollerner Lake, so an
+external OSM lake route is suitable for payload/interface validation but not
+meaningful physical execution in that world.

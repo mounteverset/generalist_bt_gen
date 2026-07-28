@@ -6,7 +6,10 @@ to select a compatible behavior tree, gathering context, building the payload,
 and then dispatching execution to `bt_executor`. The reasoner may use
 `llm_interface` to extract mission requirements, but the capability gate remains
 inside `mission_reasoner`.
-After receiving a behavior tree decision which tree to execute the mission coordinator calls the `bt_executor` action server with the respective tree to call. The payload is needed context for the execution of the tree, this could for example be waypoints or a tree species which is the target to photograph. The payload will be parsed from JSON to populate the blackboard of the `bt_executor` for execution. 
+After tree selection, the coordinator calls the `bt_executor` action server with
+that tree ID. The generated JSON payload populates the executor blackboard. Route
+payloads use `waypoints` for map-frame `x,y,yaw` values and `gps_waypoints` for
+latitude/longitude values.
 
 The mission coordinator should have the possibility to be somewhat configurable during run-time with dynamic reconfigure by the user interface. E.g. the LLM provider should be changeable by the UI, it should exist an option to toggle if the mission_coordinator waits for an acknowledge by the user before sending an action goal to execute a BT. Also at some point we want to use memori inside of the LLM interface app, this should also be an option to select or de-select.
 
@@ -35,3 +38,19 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | `bt_timeout_sec` | Timeout for BT executor action. | `120.0` |
 | `spin_period_sec` | Main executor spin period. | `0.1` |
 | `transcript_directory` | Directory for mission transcripts/logs. | `~/.generalist_bt/mission_logs` |
+
+## Selectable tree catalogue
+
+| Tree | Route mode | Mission |
+| --- | --- | --- |
+| `temperature_logging.xml` | map-frame `waypoints` | navigation + temperature |
+| `gps_waypoint_navigation.xml` | geographic `gps_waypoints` | plain GPS/OSM route |
+| `gps_temperature_logging.xml` | geographic `gps_waypoints` | GPS route + temperature |
+| `navigate_and_photograph.xml` | map-frame `waypoints` | navigation + photos |
+| `explore_area.xml` | map-frame exploration fields | area exploration |
+
+The authoritative metadata and payload contracts are in
+`config/tree_metadata.yaml`; configured selection descriptions are in
+`config/mission_coordinator_params.yaml`. The same IDs are retained in the
+in-code fallback so invalid parameter input does not collapse the catalogue.
+`360_rgb_sweep.xml` is internal to context gathering and is not selectable.

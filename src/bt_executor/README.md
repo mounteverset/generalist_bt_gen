@@ -1,6 +1,9 @@
 # BT_executor 
 
-This package extends behaviortree.ros2 `TreeExecutionServer` in its own class called `GeneralistBehaviorTreeServer`. We assume for now that the User Command is send via the action goal call. How this information then gets used and processed inside the tree to be written on the blackboard remains as open TODO in this package.
+This package extends behaviortree.ros2 `TreeExecutionServer` in
+`GeneralistBehaviorTreeServer`. The mission coordinator sends the selected tree
+ID and a JSON payload; the executor mirrors payload fields onto the BT
+blackboard before ticking the tree.
 
 Overriding the following methods with the following purpose:
 
@@ -38,6 +41,7 @@ Key parameters:
 | `action_name` | Action server name exposed to mission coordinator. | `/bt_executor/execute_tree` |
 | `plugin_directories` | Additional directories scanned for ROS BT plugins. Accepts absolute paths or `package/subfolder` entries resolved relative to the package prefix. | `["robot_actions/lib"]` |
 | `nav2_action_name` | Default action server name used by the `MoveTo` BT node (can still be overridden per-node via the `action_name` input port). | `"/navigate_to_pose"` |
+| `nav2_follow_gps_waypoints_action_name` | Default action server name used by the `MoveToGPS` BT node. | `"/follow_gps_waypoints"` |
 | `log_temperature_service_name` / `take_photo_image_topic` / `get_current_pose_pose_topic` / `distance_traveled_odom_topic` / `get_current_pose_odom_topic` / `find_anything_service_name` | Default service/topic names used by the respective `robot_actions` sensing/perception nodes. `TakePicture`/`TakePhoto`, `DistanceTraveled`, and `GetCurrentPose` can override image/pose/odometry topics with input ports. `FindObjectLocation`/`FindAnything` can override the service with the standard `service_name` port. | `"/log_temperature"`, `"/a200_0000/sensors/camera_0/color/image"`, `"/a200_0000/pose"`, `"/a200_0000/platform/odom/filtered"`, `"/a200_0000/platform/odom/filtered"`, `"/language_processor/find_object_locations"` |
 | `behavior_trees` | List of `package/subfolder` entries that contain BT XML files to pre-register. | `["bt_executor/trees"]` |
 | `status_topic` / `active_node_topic` | Topics publishing textual status + active subtree for UI/mission coordinator. | `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree` |
@@ -55,6 +59,17 @@ ros2 launch bt_executor bt_executor.launch.py
 
 This loads `config/bt_executor_params.yaml`, which points the server at the tree bundle (`trees/`) and registers the `robot_actions` plugin library discovered under `robot_actions/lib`.
 
+## Tree bundle
+
+| Tree | Route contract | Role |
+| --- | --- | --- |
+| `temperature_logging.xml` | map-frame `waypoints` | Selectable route + temperature |
+| `gps_waypoint_navigation.xml` | geographic `gps_waypoints` | Selectable GPS route |
+| `gps_temperature_logging.xml` | geographic `gps_waypoints` | Selectable GPS route + temperature |
+| `navigate_and_photograph.xml` | map-frame `waypoints` | Selectable route + RGB capture |
+| `explore_area.xml` | map-frame exploration fields | Selectable exploration route |
+| `360_rgb_sweep.xml` | pose/camera options | Internal context routine |
+
 ## Temperature Logging Tree (`trees/temperature_logging.xml`)
 
 The default behavior tree, `temperature_logging.xml`, executes a waypoint
@@ -66,6 +81,23 @@ temperature logging mission:
 4. After reaching the waypoint, `LogTemperature` triggers a telemetry logging service call using the `logfile_path` also injected via the payload.
 
 Mission payloads may provide waypoints either as arrays (e.g. `[1.0, 2.0, 0.0]`), objects (`{"x": 1.0, "y": 2.0, "yaw": 0.0}`), or ready-to-use `"x,y,yaw"` strings—the executor normalizes them into a string queue for the tree.
+
+## GPS waypoint trees
+
+`trees/gps_waypoint_navigation.xml` handles a plain geographic route.
+`trees/gps_temperature_logging.xml` uses the same GPS route mechanism and adds
+a temperature sample after each point.
+
+Both trees keep geographic coordinates separate from map-frame coordinates.
+`ParseGpsWaypoints` validates the `gps_waypoints` payload, then `MoveToGPS`
+sends each point to Nav2's `FollowGPSWaypoints` action. Accepted point formats
+are `"lat,lon"`, `"lat,lon,yaw"`, and `"lat,lon,altitude,yaw"`.
+Latitude/longitude is intentionally invalid in the generic `waypoints` field,
+which is reserved for map-frame meters.
+
+The Nav2 waypoint follower must be active and its `/fromLL` conversion service
+must be backed by a correctly configured global localization pipeline. A mock
+GPS fix alone is not enough to execute geographic navigation safely.
 
 ## Context sweep tree (`trees/360_rgb_sweep.xml`)
 

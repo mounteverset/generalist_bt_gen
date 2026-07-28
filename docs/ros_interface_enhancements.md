@@ -4,6 +4,27 @@ This walkthrough documents the completion of three major tasks to enhance the `g
 
 ---
 
+## Current GPS/OSM route extension
+
+The current implementation now carries geographic routes through a dedicated
+contract instead of forcing latitude/longitude into map-frame waypoints:
+
+- `gps_waypoint_navigation.xml` executes a plain geographic route.
+- `gps_temperature_logging.xml` executes the same route and logs temperature.
+- `ParseGpsWaypoints` validates `gps_waypoints`.
+- `MoveToGPS` calls Nav2 `FollowGPSWaypoints`; `/fromLL` must be available from
+  a valid global localization pipeline.
+- `OSM_CONTEXT` retrieves route geometry, surfaces, access/barriers, and water
+  features from Overpass. Lake requests use a 1200 m extent and rank linear
+  features near water before applying payload limits.
+- `CreatePayload` has tree-specific geographic prompting and keeps
+  `gps_waypoints` separate from map-frame `waypoints`.
+
+The current selectable catalogue and exact contracts are documented in
+`config/tree_metadata.yaml` and `docs/tree_metadata_schema.md`.
+
+---
+
 ## Task 3: CreatePayload Service ✅
 
 ### What Was Implemented
@@ -12,7 +33,7 @@ Added the `CreatePayload` service to `llm_interface` to transform raw sensor con
 
 ### Key Changes
 
-#### [llm_interface/node.py](file:///home/luke/generalist_bt_gen/src/llm_interface/llm_interface/node.py)
+#### `src/llm_interface/llm_interface/node.py`
 
 - **Service Handler**: `handle_create_payload()` processes requests with context and contract JSON
 - **LLM Generation**: `_generate_payload_via_llm()` uses LangChain to intelligently map context to blackboard entries
@@ -44,23 +65,29 @@ Created a YAML-based metadata system to define context requirements and blackboa
 
 ### Key Files
 
-#### [config/tree_metadata.yaml](file:///home/luke/generalist_bt_gen/config/tree_metadata.yaml)
+#### `config/tree_metadata.yaml`
 
 Defines metadata for trees:
 
 ```yaml
 trees:
   - id: "temperature_logging.xml"
-    description: "Navigate through waypoints and log temperature."
+    description: "Navigate through map-frame waypoints and log temperature."
     context_requirements:
       - ROBOT_POSE
     blackboard_contract:
-      test_message:
+      waypoints:
         type: "string"
-        default: "Hello from temperature logging tree"
+        required: true
+        schema:
+          description: "Semicolon-separated x,y,yaw values in the map frame."
+      logfile_path:
+        type: "string"
+        required: false
+        default: "/tmp/temperature_log.txt"
 ```
 
-#### [mission_coordinator/node.py](file:///home/luke/generalist_bt_gen/src/mission_coordinator/mission_coordinator/node.py)
+#### `src/mission_coordinator/mission_coordinator/node.py`
 
 - **YAML Loader**: `_load_tree_metadata()` parses metadata file at startup
 - **Context Lookup**: `_context_requirements_for_tree()` returns requirements list
@@ -83,7 +110,7 @@ Transformed `context_gatherer` from a stub into a real sensor aggregation node w
 
 ### Key Changes
 
-#### [context_gatherer/src/context_gatherer_node.cpp](file:///home/luke/generalist_bt_gen/src/context_gatherer/src/context_gatherer_node.cpp)
+#### `src/context_gatherer/src/context_gatherer_node.cpp`
 
 **Sensor Subscribers**:
 - `/odom` → `latest_odom_` (nav_msgs/Odometry)
@@ -119,7 +146,7 @@ requirement_handlers_["ROBOT_POSE"] = [this](json& ctx, vector<string>& uris) {
 }
 ```
 
-#### [context_gatherer/CMakeLists.txt](file:///home/luke/generalist_bt_gen/src/context_gatherer/CMakeLists.txt)
+#### `src/context_gatherer/CMakeLists.txt`
 
 Added dependencies:
 - `cv_bridge` - ROS/OpenCV conversion

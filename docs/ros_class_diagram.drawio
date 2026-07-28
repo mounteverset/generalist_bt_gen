@@ -10,19 +10,19 @@
                 <mxCell id="mc" value="mission_coordinator&#xa;- Action server: MissionCommand (/mission_coordinator/execute_tree)&#xa;- Publishes: status_text, active_subtree topics&#xa;- Clients: SelectBehaviorTree, PlanSubtree, CreatePayload; GatherContext action; ExecuteTree action" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" parent="1" vertex="1">
                     <mxGeometry x="-200" y="240" width="260" height="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="llm" value="llm_interface&#xa;- Services: SelectBehaviorTree (/llm_interface/select_behavior_tree), PlanSubtree (/llm_interface/plan_subtree)&#xa;- TODO server: CreatePayload (not yet implemented)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
+                <mxCell id="llm" value="llm_interface&#xa;- Services: ExtractMissionRequirements, SelectBehaviorTree, CreatePayload&#xa;- PlanSubtree stub (not used by coordinator)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
                     <mxGeometry x="-190" y="10" width="220" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ctx" value="context_gatherer&#xa;- Action server: GatherContext (/context_gatherer/gather)&#xa;- Produces context_json + attachments" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                <mxCell id="ctx" value="context_gatherer&#xa;- Action server: GatherContext (/context_gatherer/gather)&#xa;- Sensors + SLAM/satellite/OSM route context&#xa;- Produces context_json + attachments" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
                     <mxGeometry x="-190" y="570" width="240" height="110" as="geometry"/>
                 </mxCell>
                 <mxCell id="bt" value="bt_executor (GeneralistBehaviorTreeServer)&#xa;- Action server: ExecuteTree (/bt_executor/execute_tree)&#xa;- Publishes: status_text, active_subtree topics&#xa;- Loads robot_actions plugins" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
                     <mxGeometry x="390" y="235" width="230" height="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="plugins" value="robot_actions BT plugins&#xa;- MoveTo (NavigateToPose action client)&#xa;- GetCurrentPose (Odometry reader)&#xa;- LogTemperature (Trigger srv client)&#xa;- TakePicture (Trigger srv client)&#xa;- RestartNode (SetBool srv client)&#xa;- ParseWaypoints" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                <mxCell id="plugins" value="robot_actions BT plugins&#xa;- MoveTo / MoveToGPS&#xa;- ParseWaypoints / ParseGpsWaypoints&#xa;- GetCurrentPose / DistanceTraveled&#xa;- LogTemperature / TakePhoto&#xa;- FindAnything / RestartNode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
                     <mxGeometry x="760" y="220" width="220" height="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="nav2" value="Nav2 /a200_0000/navigate_to_pose&#xa;(action server)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                <mxCell id="nav2" value="Nav2 actions&#xa;/a200_0000/navigate_to_pose&#xa;/a200_0000/follow_gps_waypoints&#xa;+ /fromLL conversion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
                     <mxGeometry x="1160" y="100" width="160" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="logtemp" value="/log_temperature&#xa;(Trigger service server, dummy in generalist_bringup)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
@@ -61,7 +61,7 @@
                 <mxCell id="edge_bt_plugins" value="Loads BT plugins" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="bt" target="plugins" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="edge_plugins_nav2" value="MoveTo → NavigateToPose action client&#xa;/a200_0000/navigate_to_pose" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="plugins" target="nav2" edge="1">
+                <mxCell id="edge_plugins_nav2" value="MoveTo → NavigateToPose&#xa;MoveToGPS → FollowGPSWaypoints" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="plugins" target="nav2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="edge_plugins_logtemp" value="LogTemperature → Trigger service client&#xa;/log_temperature" style="endArrow=block;endFill=1;html=1;rounded=0;" parent="1" source="plugins" target="logtemp" edge="1">

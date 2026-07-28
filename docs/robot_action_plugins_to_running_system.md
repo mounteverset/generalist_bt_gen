@@ -33,10 +33,10 @@ Use the existing node patterns:
 
 | Pattern | Base class | Current examples |
 | --- | --- | --- |
-| ROS action client BT node | `BT::RosActionNode<...>` | `MoveTo` |
+| ROS action client BT node | `BT::RosActionNode<...>` | `MoveTo`, `MoveToGPS` |
 | ROS service client BT node | `BT::RosServiceNode<...>` | `LogTemperature`, `RestartNode` |
 | ROS topic capture BT node | `BT::SyncActionNode` with an `rclcpp` subscription | `TakePicture` / `TakePhoto` |
-| Local synchronous BT utility | `BT::SyncActionNode` | `ParseWaypoints` |
+| Local synchronous BT utility | `BT::SyncActionNode` | `ParseWaypoints`, `ParseGpsWaypoints` |
 
 Important constraints:
 
@@ -126,11 +126,23 @@ metadata. For example:
 </root>
 ```
 
+Current XML bundle:
+
+| XML tree | Role |
+| --- | --- |
+| `temperature_logging.xml` | Selectable map-frame navigation + temperature |
+| `gps_waypoint_navigation.xml` | Selectable geographic route |
+| `gps_temperature_logging.xml` | Selectable geographic route + temperature |
+| `navigate_and_photograph.xml` | Selectable map-frame navigation + photos |
+| `explore_area.xml` | Selectable map-frame exploration route |
+| `360_rgb_sweep.xml` | Internal context-capture routine |
+
 Current registered node IDs:
 
 | XML node ID | Ports | Runtime dependency |
 | --- | --- | --- |
 | `MoveTo` | `pose`, optional `frame_id`, standard `action_name` | Nav2 `NavigateToPose` action |
+| `MoveToGPS` | `gps_pose`, standard `action_name` | Nav2 `FollowGPSWaypoints` action and working `/fromLL` conversion |
 | `TakePicture` / `TakePhoto` | inputs `image_topic`, `output_directory`, `filename_prefix`, `timeout_ms`; output `filepath` | RGB `sensor_msgs/Image` topic |
 | `GetCurrentPose` | inputs `odom_topic`, `odom_timeout_ms`; outputs `current_x`, `current_y`, `current_yaw`, `current_pose`, `current_frame_id`, fixed-yaw `sweep_pose_*` strings | Odometry topic |
 | `DistanceTraveled` | inputs `interval_m`, `odom_topic`, output `distance_accumulated_m` | Odometry topic |
@@ -138,6 +150,7 @@ Current registered node IDs:
 | `LogTemperature` | input `logfile_path`, standard `service_name` | `std_srvs/Trigger` temperature service |
 | `RestartNode` | input `node_name`, standard `service_name` | `std_srvs/SetBool` restart service |
 | `ParseWaypoints` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | local BT utility |
+| `ParseGpsWaypoints` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | local geographic waypoint validator/queue utility |
 
 ## 4. Add Tree Metadata For Selection And Payload Generation
 
@@ -243,16 +256,27 @@ known_trees:
 The reasoner receives this catalog plus metadata and may narrow it before the
 LLM selection call.
 
+Keep the selectable IDs synchronized across:
+
+- `src/mission_coordinator/config/mission_coordinator_params.yaml`
+- the `DEFAULT_KNOWN_TREE_ENTRIES` fallback in `mission_coordinator/node.py`
+- `config/tree_metadata.yaml`
+- `src/bt_executor/trees/*.xml`
+
+The mission-coordinator consistency test enforces this relationship while
+allowing internal XML such as `360_rgb_sweep.xml` to remain unselectable.
+
 ## 7. Ensure Runtime ROS Interfaces Exist
 
 Before running a BT that calls ROS action/service nodes, the backing ROS
 interfaces must be available.
 
-For the current temperature logging tree:
+For the current trees:
 
 | BT node | Required server |
 | --- | --- |
 | `MoveTo` | `/a200_0000/navigate_to_pose` or the configured `nav2_action_name` |
+| `MoveToGPS` | `/a200_0000/follow_gps_waypoints` or the configured `nav2_follow_gps_waypoints_action_name` |
 | `LogTemperature` | `/log_temperature` |
 | `TakePicture` / `TakePhoto` | `/a200_0000/sensors/camera_0/color/image` or configured `take_photo_image_topic` |
 | `GetCurrentPose` | `/odom` or configured `get_current_pose_odom_topic` |
@@ -271,6 +295,14 @@ ros2 service list
 
 For the integrated bringup, `dummy_log_temperature_node` provides
 `/log_temperature`. Nav2 must come from the Husky simulation or robot bringup.
+GPS trees additionally require Nav2's waypoint follower and a valid `/fromLL`
+service backed by `navsat_transform_node` or an equivalent global conversion
+pipeline. Check them with:
+
+```bash
+ros2 action list | grep follow_gps_waypoints
+ros2 service list | grep fromLL
+```
 
 ## 8. Build And Source
 
@@ -357,6 +389,16 @@ ros2 action send_goal /bt_executor/execute_tree btcpp_ros2_interfaces/action/Exe
   "{target_tree: 'temperature_logging.xml', payload: '{\"waypoints\":\"1.0,0.0,0.0; 2.0,0.0,0.0\", \"logfile_path\":\"/tmp/temperature_log.txt\"}'}"
 ```
 
+For a geographic route, keep latitude/longitude under `gps_waypoints`:
+
+```bash
+ros2 action send_goal /bt_executor/execute_tree btcpp_ros2_interfaces/action/ExecuteTree \
+  "{target_tree: 'gps_waypoint_navigation.xml', payload: '{\"gps_waypoints\":\"48.2848,11.6077,0.0; 48.2851,11.6074,1.57\"}'}"
+```
+
+The generic `waypoints` key is map-frame `x,y,yaw` only. Payload generation
+intentionally does not coerce latitude/longitude into it.
+
 If this works but the full mission fails, inspect reasoner metadata,
 `known_trees`, context requirements, and the blackboard contract.
 
@@ -387,11 +429,17 @@ If this fails, inspect:
   - Check that the reasoner candidate list is not too broad.
 - Payload missing BT port values:
   - Check `blackboard_contract` keys.
-  - Check XML blackboard references such as `{waypoints}`.
+  - Check XML blackboard references such as `{waypoints}` or `{gps_waypoints}`.
   - Check `CreatePayload` reasoning and payload JSON.
+- GPS tree fails before moving:
+  - Confirm the `FollowGPSWaypoints` action is active.
+  - Confirm `/fromLL` exists and the GPS, IMU, odometry, and map frames share a
+    valid global reference.
+  - Confirm the payload uses `gps_waypoints`, not map-frame `waypoints`.
 - ROS action/service failure:
   - Use `ros2 action list` and `ros2 service list`.
   - Check configured names such as `nav2_action_name`,
-    `log_temperature_service_name`, `take_photo_image_topic`,
+    `nav2_follow_gps_waypoints_action_name`, `log_temperature_service_name`,
+    `take_photo_image_topic`,
     `distance_traveled_odom_topic`, and per-node
     `action_name`/`service_name`/`image_topic` ports.

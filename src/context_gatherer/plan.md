@@ -1,17 +1,29 @@
-# Context Gatherer Implementation Plan (v0.6 target)
+# Context Gatherer Implementation Plan and Current Status
 
-Goal: ship a functional `context_gatherer` node that serves `GatherContext.action`, aggregates required sensor/geo context, and unblocks `mission_coordinator` + `llm_interface` to build a subtree payload before calling `bt_executor`.
+The original v0.6 goal is implemented: `context_gatherer` serves
+`GatherContext.action`, aggregates requested sensor/geographic context, and
+feeds `mission_coordinator` + `llm_interface` before `bt_executor` dispatch.
+Current supported requirements and OSM behavior are documented in `README.md`.
 
 ## Milestones
 1) **Package scaffolding** – Create C++ node skeleton with parameters, action server wiring for `GatherContext`. Stub feedback/result so mission_coordinator can connect without data. Add launch + params YAML.
-2) **Context requirement registry** – Define enum/strings mapping (e.g., ROBOT_POSE, ODOM, RGB_IMAGE, POINTCLOUD, SATELLITE_TILE, LAST_FAILURE). Configurable per parameter. Reject unknown requirements early.
+2) **Context requirement registry** – Implemented handlers for `ROBOT_POSE`,
+   `RGB_IMAGE`, `DEPTH_IMAGE`, `BATTERY_STATE`, `GPS_FIX`,
+   `ANNOTATED_SLAM_MAP_IMAGE`, `SATELLITE_MAP`/`SATELLITE_TILE`,
+   `OSM_CONTEXT`, `FIND_ANYTHING`, and `RGB360SWEEP`.
 3) **Core collectors (local ROS)** – Implement helpers for:
    - Pose/TF/odom (map frame) with freshness checks.
    - Battery/velocity/system status (optional).
    - Camera capture via `image_transport` + `cv_bridge` (single frame, timeout).
    - Pointcloud/scan summary (downsampled stats; full cloud stored as file).
    - Recent BT failure note passthrough from goal (if provided in geo_hint or later goal field).
-4) **External data (MCP/OSM)** – Add ROS-MCP client to request recent messages when available; add OpenStreetMapMCP tile fetch by GPS (from current pose or geo_hint). Cache tiles under `/tmp/context_gatherer/<session>/`.
+4) **External geographic data** – Implemented MapTiler overview/detail maps and
+   direct OpenStreetMap Overpass queries centered on GPS/geo hints. OSM output
+   includes route geometry, surfaces/access tags, barriers, water features, and
+   landmarks. Roundtrip/lake requests expand the query extent (850/1200 m);
+   lake routes rank linear features by proximity to water plus traversability
+   before applying feature limits. Artifacts are cached under
+   `/tmp/context_gatherer`.
 5) **Snapshot assembly** – Normalize into JSON schema (timestamp, frame_id, pose, nav_status, sensors[], map, attachments[]). Keep blobs out of JSON; reference URIs pointing to saved files (png/jpg/pcd). Include encoding/shape metadata.
 6) **Limits + error handling** – Timeouts per requirement, max bytes per attachment, partial-success result with clear message. Throttle captures and reuse cached data within a short window to avoid sensor spam.
 7) **Persistence + cleanup** – Write snapshot JSON + attachments to session-scoped directory; return URIs. Optional retention policy param.
@@ -25,7 +37,9 @@ Goal: ship a functional `context_gatherer` node that serves `GatherContext.actio
 ### llm_interface
 1) Implement `CreatePayload.srv` server (new in `gen_bt_interfaces/srv/CreatePayload.srv`).
 2) Validate `subtree_contract_json` and `context_snapshot_json`, ensuring required keys/attachments exist; return `RETRY` on missing context vs `ERROR` on schema issues.
-3) Prompt/tooling: include context JSON + attachment URIs; allow MCP tools to load referenced files if needed. Return `payload_json` with blackboard-ready values and `tool_trace_json`.
+3) Prompting: include context JSON + attachment URIs and return `payload_json`
+   with blackboard-ready values. GPS trees generate `gps_waypoints`; map-frame
+   trees generate `waypoints`.
 4) Streaming/logging: emit short `reasoning` string and persist tool traces alongside existing LangChain logs.
 
 ### mission_coordinator

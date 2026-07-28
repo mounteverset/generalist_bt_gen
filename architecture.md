@@ -47,9 +47,9 @@ the current mission coordinator runtime does not call it.
 | `mission_coordinator` | Owns the runtime orchestration. It exposes `/mission_coordinator/execute_tree`, tracks one active mission session, selects a tree, gathers context, builds a payload, waits for optional operator approval, supports payload refinement after rejection, dispatches to `bt_executor`, and maps the BT result into a mission result. | Action server: `/mission_coordinator/execute_tree`. Clients: `/llm_interface/select_behavior_tree`, `/context_gatherer/gather`, `/llm_interface/create_payload`, `/bt_executor/execute_tree`. Services: `/mission_coordinator/status`, `/mission_coordinator/control`, `/mission_coordinator/operator_decision` plus per-process operator-decision alias. |
 | `mission_reasoner` | Validates mission commands before BT selection. It optionally asks `llm_interface` to extract structured requirements, then compares those requirements plus deterministic command rules against the configured system description and BT metadata. It returns accept, clarification, or refusal and can narrow the BT candidate list. | Service: `/mission_reasoner/validate_mission`. Client: `/llm_interface/extract_mission_requirements`. Config: `config/system_description.yaml`, `config/tree_metadata.yaml`. |
 | `llm_interface` | Provides LangChain-backed requirement extraction, selection, and payload services. Requirement extraction maps free-form commands into structured capability requirements. Selection chooses from the configured tree catalog. Payload generation maps context plus a subtree contract into blackboard JSON, with optional multimodal image attachments and optional schema normalization. If configured LLM calls fail, selection and payload generation have heuristic fallbacks. | Services: `/llm_interface/extract_mission_requirements`, `/llm_interface/select_behavior_tree`, `/llm_interface/create_payload`, `/llm_interface/plan_subtree`. Providers implemented in code: Gemini, OpenAI, OpenRouter. |
-| `context_gatherer` | Serves a `GatherContext` action. It subscribes to robot state and sensor topics, captures requested context keys, saves image/map artifacts under `/tmp/context_gatherer` by default, and returns structured JSON plus attachment URIs. It also calls helper services for annotated SLAM maps, satellite-map annotation/fetching, and FindAnything object-location lookup. | Action server: `/context_gatherer/gather`. Inputs include `/odom`, optional pose covariance, GPS, RGB/depth camera topics, battery state, map topic, and `/language_processor/find_object_locations`. |
+| `context_gatherer` | Serves a `GatherContext` action. It subscribes to robot state and sensor topics, captures requested context keys, saves image/map/OSM artifacts under `/tmp/context_gatherer` by default, and returns structured JSON plus attachment URIs. It also calls helper services for annotated SLAM maps, satellite-map annotation/fetching, and FindAnything object-location lookup, and queries Overpass directly for route-relevant OpenStreetMap geometry. | Action server: `/context_gatherer/gather`. Inputs include `/odom`, optional pose covariance, GPS, RGB/depth camera topics, battery state, map topic, and `/language_processor/find_object_locations`; external inputs include MapTiler and Overpass. |
 | `bt_executor` | Subclasses `BT::TreeExecutionServer`. It loads BT XML and robot action plugins, exposes `/bt_executor/execute_tree`, creates a fresh `BT::Tree` for each action goal, seeds the blackboard from the goal payload, publishes textual status and active tree root name, and returns the final BT result. | Action server: `/bt_executor/execute_tree`. Publishes `/mission_coordinator/status_text` and `/mission_coordinator/active_subtree`. Loads XML from `bt_executor/trees` and plugins from `robot_actions/lib`. |
-| `robot_actions` | BehaviorTree.CPP/BehaviorTree.ROS2 plugins used by the XML trees. Current registered nodes include `MoveTo`, `TakePicture`/`TakePhoto`, `GetCurrentPose`, `DistanceTraveled`, `FindObjectLocation`/`FindAnything`, `LogTemperature`, `RestartNode`, and `ParseWaypoints`. | Nav2 `NavigateToPose`, FindAnything object-location service, RGB image and odometry topics, trigger-style ROS services, blackboard ports. |
+| `robot_actions` | BehaviorTree.CPP/BehaviorTree.ROS2 plugins used by the XML trees. Current registered nodes include map-frame `MoveTo`/`ParseWaypoints`, geographic `MoveToGPS`/`ParseGpsWaypoints`, `TakePicture`/`TakePhoto`, `GetCurrentPose`, `DistanceTraveled`, `FindObjectLocation`/`FindAnything`, `LogTemperature`, and `RestartNode`. | Nav2 `NavigateToPose` and `FollowGPSWaypoints`, FindAnything object-location service, RGB image and odometry topics, trigger-style ROS services, blackboard ports. |
 | `gen_bt_interfaces` | Custom action/service contracts shared by Python and C++ packages. | `MissionCommand`, `GatherContext`, `CreatePayload`, `SelectBehaviorTree`, `PlanSubtree`, `GetMissionState`, `MissionControl`, `OperatorDecision`, and related services. |
 
 There is no implemented `bt_updater` package in the current repository.
@@ -60,10 +60,12 @@ The mission coordinator selects from a configured catalog, not by scanning all X
 files at runtime. The configured catalog is first filtered by `mission_reasoner`
 using static capability metadata.
 
-`config/tree_metadata.yaml` contains metadata for `temperature_logging.xml`,
-`navigate_and_photograph.xml`, and `explore_area.xml`. Only
-`temperature_logging.xml` is present in `src/bt_executor/trees`; the others are
-catalogue-level future trees.
+`config/tree_metadata.yaml` and
+`src/mission_coordinator/config/mission_coordinator_params.yaml` contain the
+five mission-selectable tree IDs. Each selectable ID has a matching XML file in
+`src/bt_executor/trees`. `360_rgb_sweep.xml` is also bundled there, but is an
+internal context-capture routine and is intentionally absent from the selectable
+mission catalogue.
 
 The coordinator reads metadata to decide:
 
@@ -71,31 +73,31 @@ The coordinator reads metadata to decide:
 - `context_requirements`: passed to `context_gatherer`.
 - `blackboard_contract`: passed to `llm_interface/create_payload`.
 
-## Implemented Behavior Tree
+## Implemented Behavior Trees
 
-`src/bt_executor/trees/temperature_logging.xml` is the executable tree currently
-used by the default stack:
+| Tree | Catalogue role | Route contract | Main robot actions |
+| --- | --- | --- | --- |
+| `temperature_logging.xml` | Selectable | `waypoints`: map-frame `x,y,yaw` | `MoveTo`, `LogTemperature` |
+| `gps_waypoint_navigation.xml` | Selectable | `gps_waypoints`: `lat,lon`, `lat,lon,yaw`, or `lat,lon,altitude,yaw` | `MoveToGPS` |
+| `gps_temperature_logging.xml` | Selectable | `gps_waypoints`, plus optional `logfile_path` | `MoveToGPS`, `LogTemperature` |
+| `navigate_and_photograph.xml` | Selectable | `waypoints`: map-frame `x,y,yaw` | `MoveTo`, `DistanceTraveled`, `TakePhoto` |
+| `explore_area.xml` | Selectable | map-frame `waypoints`, `area_polygon`, and `frontiers` | `MoveTo` |
+| `360_rgb_sweep.xml` | Internal context routine | current pose plus camera/output options | `GetCurrentPose`, `MoveTo`, `TakePhoto` |
 
-```text
-BehaviorTree ID="temperature_logging.xml"
-  Sequence name="TemperatureLoggingMission"
-    ParseWaypoints raw_waypoints="{waypoints}"
-    LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="SUCCESS"
-      Sequence name="VisitWaypoint"
-        MoveTo pose="{active_waypoint}" action_name="/a200_0000/navigate_to_pose"
-        LogTemperature logfile_path="{logfile_path}"
-```
+Map-frame routes and geographic routes deliberately use different blackboard
+keys and parsers. The generic `waypoints` contract rejects latitude/longitude so
+geographic values cannot be silently sent to `NavigateToPose`. The two GPS trees
+preserve latitude/longitude in `gps_waypoints`; `ParseGpsWaypoints` validates
+each point and `MoveToGPS` sends it to Nav2 `FollowGPSWaypoints`.
 
-The tree expects a `waypoints` payload field formatted as semicolon-separated
-`x,y,yaw` waypoints. `GeneralistBehaviorTreeServer::onTreeCreated` also sets:
+`GeneralistBehaviorTreeServer::onTreeCreated` sets:
 
 - `user_command` to the raw `ExecuteTree.Goal.payload` string.
 - `logfile_path` to `/tmp/mission_temp_log.txt` before loading payload values.
-- `waypoints_raw` to an empty string.
 - each top-level and nested JSON payload value into the BT blackboard.
 
-If the payload contains a `waypoints` field, it is also explicitly written to the
-`waypoints` blackboard key as either the string value or serialized JSON.
+If the payload contains a route field, it is written under its contract key:
+`waypoints` for map-frame trees or `gps_waypoints` for geographic trees.
 
 ## Runtime Flow
 
@@ -195,9 +197,10 @@ Important runtime details:
   configured LangChain provider when enabled and falls back to the first tree if
   the model is unavailable or returns an invalid choice.
 - `CreatePayload`: builds blackboard JSON from context, tree contract, operator
-  feedback, prior rejected payloads, and optional image attachments. It can coerce
-  waypoint variants into the `waypoints` string contract and optionally ask a
-  normalizer model to repair schema mismatches.
+  feedback, prior rejected payloads, and optional image attachments. It can
+  coerce route variants into either the map-frame `waypoints` contract or the
+  geographic `gps_waypoints` contract and optionally ask a normalizer model to
+  repair schema mismatches.
 - `PlanSubtree`: returns a templated default BT XML string. This is a stub and is
   not wired into the current mission execution path.
 
@@ -219,6 +222,7 @@ implemented requirements include:
 - `GPS_FIX`
 - `ANNOTATED_SLAM_MAP_IMAGE`
 - `SATELLITE_MAP` and `SATELLITE_TILE`
+- `OSM_CONTEXT`
 - `FIND_ANYTHING`
 
 Unknown requirement strings are logged and skipped. The action result can still
@@ -230,10 +234,20 @@ GPS/request hints, deterministic mission-text keywords, and optional Overpass
 features, then returns the primary overview through the existing `uri` fields and
 all generated maps under `SATELLITE_MAP.map_artifacts`.
 
+For `OSM_CONTEXT`, the gatherer uses the GPS fix or geographic hint as its
+center and retrieves highway geometry, surfaces, access/barrier data, water
+features, and relevant points through Overpass. Mission extent is dynamic:
+roundtrip-like requests use at least 850 m and lake requests use at least
+1200 m, overriding the 750 m general default. Lake-route results rank path-like,
+unpaved, and water-adjacent linear features before truncating the payload to the
+configured maximum, so source-order roads no longer displace useful gravel or
+shore paths.
+
 ## Configuration and Observability
 
 - BehaviorTree.ROS2 parameters configure the executor action name, tick frequency,
-  Groot2 port, BT XML directories, and plugin directories.
+  Groot2 port, BT XML directories, plugin directories, and the default
+  `FollowGPSWaypoints` action.
 - `bt_executor` custom parameters configure plugin discovery, Nav2/service names,
   status topics, debug logging, and failure handling.
 - `mission_coordinator` parameters configure the mission action, services,
@@ -243,6 +257,9 @@ all generated maps under `SATELLITE_MAP.map_artifacts`.
   payload settings, and schema normalization.
 - CLI and web UIs write JSONL transcripts under `~/.generalist_bt/chat_logs`.
 - `context_gatherer` writes artifacts under `/tmp/context_gatherer` by default.
+- The Husky navigation simulation can launch `navsat_transform_node` by default,
+  exposing `/fromLL` for Nav2 geographic waypoint conversion. This interface is
+  only meaningful when odometry, IMU, and GPS share a valid global reference.
 - BehaviorTree.ROS2 creates a Groot2 publisher for each created tree on the
   configured port.
 - `mission_reasoner` reads the static system description from
@@ -265,5 +282,3 @@ working runtime loop:
 - Chaining multiple selected subtrees for one user mission.
 - Executing newly generated XML without restarting or relaunching.
 - MCP-backed tool traces for LLM planning and payload generation.
-- Additional XML trees referenced by metadata, such as `navigate_and_photograph.xml`
-  and `explore_area.xml`.

@@ -1,12 +1,38 @@
 # generalist_bt_gen
 
-This repository contains a software module which runs a behavior tree for an autonomous mobile robot. Whenever the behavior tree executor detects that the BT in its current form has got limitations and can not complete its mission with the available behaviors it will query an LLM in order for it to generate a new subtree which purpose it is to be expand the domain of the robot. The tree then gets relaunched and the robot can finish its task with the new and improved BT guiding its action.
+This repository contains a ROS 2 stack that validates a natural-language mission,
+selects a known behavior tree, gathers the tree's required context, generates a
+blackboard payload, and executes the tree on an autonomous mobile robot.
+Runtime tree regeneration remains a planned extension; the current mission path
+selects from the configured catalogue.
 
-The general idea is to have a given set of BT skills that call ROS 2 services/actions, while a **mission coordinator** node outside the tree first asks `mission_reasoner` whether the mission is compatible with the robot capabilities. The reasoner can ask `llm_interface` to extract structured mission requirements, but the final capability decision remains deterministic. After that gate, the coordinator talks to the LLM to decide **which** subtree/entry point should run next. It also triggers tree regeneration when the skill catalog is insufficient. The BT itself remains a pure execution layer.
+The general idea is to have a given set of BT skills that call ROS 2 services/actions, while a **mission coordinator** node outside the tree first asks `mission_reasoner` whether the mission is compatible with the robot capabilities. The reasoner can ask `llm_interface` to extract structured mission requirements, but the final capability decision remains deterministic. After that gate, the coordinator talks to the LLM to decide **which** subtree/entry point should run next. The BT itself remains a pure execution layer.
 
 The way to interact with the system is by chat, either via CLI or via a simple web interface; both talk to the mission coordinator action server.
 
-All "Thinking" (LLM calls, plan validation, regeneration) now happens **outside** the BT. The coordinator gathers context (cameras, GPS, satellite map) via `context_gatherer`, queries LangChain, and then instructs `bt_executor` which subtree to execute. Blackboard updates produced by the LLM are injected before the BT run; no dedicated LLM plugins live inside the tree anymore.
+All current "thinking" (LLM calls, mission validation, selection, and payload
+generation) happens **outside** the BT. The coordinator gathers context
+(cameras, GPS, OpenStreetMap geometry, satellite maps) via `context_gatherer`,
+queries LangChain, and then instructs `bt_executor` which subtree to execute.
+Blackboard updates produced by the LLM are injected before the BT run; no
+dedicated LLM plugins live inside the tree.
+
+## Tree catalogue and route coordinates
+
+The current mission-selectable catalogue is:
+
+| Tree | Route coordinates | Purpose |
+| --- | --- | --- |
+| `temperature_logging.xml` | Map-frame `waypoints` (`x,y,yaw`) | Navigate and log temperature |
+| `gps_waypoint_navigation.xml` | Geographic `gps_waypoints` (`lat,lon[,yaw]`) | Follow a GPS/OSM route |
+| `gps_temperature_logging.xml` | Geographic `gps_waypoints` | Follow a GPS route and log temperature |
+| `navigate_and_photograph.xml` | Map-frame `waypoints` | Navigate and photograph by distance |
+| `explore_area.xml` | Map-frame route/area fields | Execute a generated exploration route |
+
+`360_rgb_sweep.xml` is bundled as an internal active-context routine, not a
+mission-selection candidate. Geographic routes deliberately use a separate
+payload key and `MoveToGPS` action node so latitude/longitude is not interpreted
+as map-frame meters by `MoveTo`.
 
 ## Installation
 
@@ -128,6 +154,11 @@ API keys forwarded with `docker compose exec -e` exist only in that process; the
 
 For testing behavior trees without physical hardware, use the Clearpath Husky A200 simulation with Gazebo Harmonic.
 
+`clearpath_a200_navigation_sim.launch.py` starts the mock GPS publisher and
+enables `navsat_transform_node` by default. This exposes `/fromLL` for Nav2
+`FollowGPSWaypoints`; it does not make the solar-farm world geographically match
+an external OSM route.
+
 ### Install Husky Simulation
 
 ```bash
@@ -168,20 +199,23 @@ Learn more: [Using tmux with ROS](./docs/tmux_ros_guide.md)
 - BehaviorTree.ROS2 as behavior tree wrapper
 - **Gazebo Harmonic** - 3D simulator (via ros-jazzy-ros-gz)
 - **Clearpath Husky A200** - Simulated robot platform
-- LangChain to use PromptTemplates and Tool Calls / MCP servers
-- OpenAI API / Gemini API / Claude API / Gemini Robotics 1.5 https://ai.google.dev/gemini-api/docs/robotics-overview
-- MCP Servers:
-  - ROS2 MCP server https://github.com/robotmcp/ros-mcp-server
-  - OpenStreetMapMCP https://github.com/wiseman/osm-mcp
+- LangChain for requirement extraction, tree selection, and payload generation
+- OpenAI, Gemini, or OpenRouter API providers
+- MapTiler for annotated map imagery
+- OpenStreetMap Overpass API for route geometry, surfaces, access, barriers, and
+  water features
 
 ## Repo structure
 
 - project_roadmap.md -> currently working on v0.5
 - bt_executor -> extends BehaviorTree.ROS2 with needed functionality
-- robot_actions -> robot specific behavior tree actions like Drive, TakePicture etc.
+- robot_actions -> robot-specific BT actions such as `MoveTo`, `MoveToGPS`,
+  `TakePhoto`, and the waypoint parsers
 - mission_coordinator -> orchestrates LLM planning + bt_executor goals
 - mission_reasoner -> checks natural-language missions against robot capabilities before BT selection
-- llm_interface/context_gatherer -> LangChain
+- llm_interface -> LangChain-backed requirement extraction, tree selection, and
+  payload generation
+- context_gatherer -> ROS sensor, satellite-map, and OpenStreetMap context
 
 For the complete handoff from implemented BT.CPP robot action plugins to a
 running mission, see

@@ -43,7 +43,7 @@
                 <mxCell id="mc_dec_tree" value="Reasoner accepts&#xa;and tree found?" style="rhombus;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
                     <mxGeometry x="50" y="310" width="80" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="mc_plan_call" value="If no tree:&#xa;Call PlanSubtree" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
+                <mxCell id="mc_plan_call" value="If no tree:&#xa;return no-match" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
                     <mxGeometry x="120" y="320" width="120" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="mc_call_gather" value="Call GatherContext&#xa;action client" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_mc" vertex="1">
@@ -82,7 +82,7 @@
                 <mxCell id="llm_select" value="Rank candidate trees&#xa;(SelectBehaviorTree)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
                     <mxGeometry x="30" y="240" width="120" height="50" as="geometry"/>
                 </mxCell>
-                <mxCell id="llm_plan" value="Generate BT XML&#xa;(PlanSubtree)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
+                <mxCell id="llm_plan" value="PlanSubtree stub&#xa;(not in runtime path)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
                     <mxGeometry x="30" y="320" width="120" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="llm_payload" value="Build blackboard payload&#xa;(CreatePayload)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_llm" vertex="1">
@@ -91,7 +91,7 @@
                 <mxCell id="lane_ctx" value="Context Gatherer" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
                     <mxGeometry x="560" y="40" width="180" height="800" as="geometry"/>
                 </mxCell>
-                <mxCell id="ctx_collect" value="Collect sensor data, pose,&#xa;images (stubbed)" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ctx" vertex="1">
+                <mxCell id="ctx_collect" value="Collect sensors + pose,&#xa;satellite maps + OSM routes" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_ctx" vertex="1">
                     <mxGeometry x="30" y="420" width="120" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="lane_bt" value="BT Executor" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" parent="1" vertex="1">
@@ -111,7 +111,7 @@
                         <mxRectangle x="920" y="40" width="170" height="30" as="alternateBounds"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="robot_nav" value="MoveTo → NavigateToPose&#xa;action server" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_robot" vertex="1">
+                <mxCell id="robot_nav" value="MoveTo → NavigateToPose&#xa;MoveToGPS → FollowGPSWaypoints" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_robot" vertex="1">
                     <mxGeometry x="30" y="670" width="120" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="robot_sensors" value="LogTemperature / TakePicture&#xa;Trigger services" style="rounded=1;whiteSpace=wrap;html=1;" parent="lane_robot" vertex="1">
@@ -129,10 +129,7 @@
                 <mxCell id="e6" parent="1" source="llm_select" target="mc_dec_tree" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="e8" parent="1" source="mc_plan_call" target="llm_plan" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
-                </mxCell>
-                <mxCell id="e9" parent="1" source="llm_plan" target="mc_call_gather" edge="1">
+                <mxCell id="e8" parent="1" source="mc_plan_call" target="mc_return" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="e10" parent="1" source="mc_call_gather" target="ctx_collect" edge="1">
