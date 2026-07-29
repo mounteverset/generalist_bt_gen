@@ -158,11 +158,30 @@ def _install_ros_stubs() -> None:
 
 _install_ros_stubs()
 
+import mission_coordinator.node as coordinator_node
 from mission_coordinator.node import DEFAULT_KNOWN_TREE_ENTRIES, MissionCoordinatorNode
 
 
 def _tree_ids(entries):
     return [entry.split('::', 1)[0] for entry in entries]
+
+
+def test_default_tree_metadata_file_uses_package_share_directory(monkeypatch):
+    package_share = Path('/opt/ros/share/mission_coordinator')
+
+    def get_package_share_directory(package_name):
+        assert package_name == 'mission_coordinator'
+        return str(package_share)
+
+    monkeypatch.setattr(
+        coordinator_node,
+        'get_package_share_directory',
+        get_package_share_directory,
+    )
+
+    assert coordinator_node.default_tree_metadata_file() == str(
+        package_share / 'config' / 'tree_metadata.yaml'
+    )
 
 
 def test_selectable_tree_catalog_is_consistent_across_code_config_and_metadata():

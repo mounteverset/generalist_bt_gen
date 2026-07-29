@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from gen_bt_interfaces.srv import ExtractMissionRequirements, ValidateMission
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -18,6 +19,14 @@ from mission_reasoner.reasoner import (
     ValidationResult,
     parse_tree_catalog,
 )
+
+
+def default_system_description_file() -> str:
+    return str(
+        Path(get_package_share_directory('mission_reasoner'))
+        / 'config'
+        / 'system_description.yaml'
+    )
 
 
 class MissionReasonerNode(Node):
@@ -40,7 +49,7 @@ class MissionReasonerNode(Node):
         if not self.has_parameter('system_description_file'):
             self.declare_parameter(
                 'system_description_file',
-                '/home/luke/generalist_bt_gen/config/system_description.yaml',
+                default_system_description_file(),
             )
         if not self.has_parameter('enable_debug_logging'):
             self.declare_parameter('enable_debug_logging', False)

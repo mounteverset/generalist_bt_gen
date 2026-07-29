@@ -10,7 +10,13 @@ setup(
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml', 'README.md', 'implementation_plan.md']),
-        ('share/' + package_name + '/config', ['config/mission_coordinator_params.yaml']),
+        (
+            'share/' + package_name + '/config',
+            [
+                'config/mission_coordinator_params.yaml',
+                '../../config/tree_metadata.yaml',
+            ],
+        ),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

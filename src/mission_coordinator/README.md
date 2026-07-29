@@ -38,6 +38,7 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | `bt_timeout_sec` | Timeout for BT executor action. | `120.0` |
 | `spin_period_sec` | Main executor spin period. | `0.1` |
 | `transcript_directory` | Directory for mission transcripts/logs. | `~/.generalist_bt/mission_logs` |
+| `tree_metadata_file` | Behavior-tree metadata. An explicit path can override the package-relative default. | Installed `mission_coordinator/config/tree_metadata.yaml` |
 
 ## Selectable tree catalogue
 

@@ -37,6 +37,7 @@ Relevant parameters:
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
+| `system_description_file` | Installed `mission_reasoner/config/system_description.yaml` | System capability description. An explicit path can override the package-relative default. |
 | `enable_llm_extraction` | `true` | Enables the semantic extraction call before deterministic validation. |
 | `mission_requirements_service` | `/llm_interface/extract_mission_requirements` | LLM extraction service name. |
 | `llm_service_wait_timeout_sec` | `2.0` | Startup/service-discovery wait before falling back. |

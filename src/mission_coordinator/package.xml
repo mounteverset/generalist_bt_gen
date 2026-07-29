@@ -11,6 +11,7 @@
   <depend>std_msgs</depend>
   <depend>action_msgs</depend>
   <depend>gen_bt_interfaces</depend>
+  <exec_depend>ament_index_python</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

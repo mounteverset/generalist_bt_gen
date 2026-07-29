@@ -12,6 +12,7 @@ import yaml
 
 import rclpy
 from action_msgs.msg import GoalStatus
+from ament_index_python.packages import get_package_share_directory
 from btcpp_ros2_interfaces.action import ExecuteTree
 from btcpp_ros2_interfaces.msg import NodeStatus
 from gen_bt_interfaces.action import MissionCommand, GatherContext
@@ -48,6 +49,14 @@ DEFAULT_KNOWN_TREE_ENTRIES = (
         'LLM-generated map-frame frontier waypoints.'
     ),
 )
+
+
+def default_tree_metadata_file() -> str:
+    return str(
+        Path(get_package_share_directory('mission_coordinator'))
+        / 'config'
+        / 'tree_metadata.yaml'
+    )
 
 
 class _YieldOnce:
@@ -266,7 +275,9 @@ class MissionCoordinatorNode(Node):
             spin_period_sec=float(declare('spin_period_sec', 0.1)),
             transcript_directory=transcript_dir,
             known_trees=declare('known_trees', known_trees_default) or known_trees_default,
-            tree_metadata_file=declare('tree_metadata_file', ''),
+            tree_metadata_file=declare(
+                'tree_metadata_file', default_tree_metadata_file()
+            ),
             system_description_file=declare('system_description_file', ''),
             plan_review_max_refinements=int(declare('plan_review_max_refinements', 1)),
         )
