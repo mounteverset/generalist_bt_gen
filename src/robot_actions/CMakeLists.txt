@@ -12,7 +12,6 @@ find_package(nav2_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(geographic_msgs REQUIRED)
-find_package(language_feature_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -26,7 +25,6 @@ set(dependencies
   nav_msgs
   geometry_msgs
   geographic_msgs
-  language_feature_msgs
   rclcpp
   std_srvs
   sensor_msgs
@@ -39,7 +37,6 @@ add_library(${PROJECT_NAME} SHARED
   src/gps_waypoint_utils.cpp
   src/take_picture.cpp
   src/distance_traveled.cpp
-  src/find_object_location.cpp
   src/get_current_pose.cpp
   src/log_temperature.cpp
   src/restart_node.cpp

@@ -48,7 +48,7 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | `gps_waypoint_navigation.xml` | geographic `gps_waypoints` | plain GPS/OSM route |
 | `gps_temperature_logging.xml` | geographic `gps_waypoints` | GPS route + temperature |
 | `navigate_and_photograph.xml` | map-frame `waypoints` | navigation + photos |
-| `find_and_drive_to_nearest_object.xml` | object query | find best match + navigation |
+| `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | object-context planning + navigation |
 | `explore_area.xml` | map-frame exploration fields | area exploration |
 
 The authoritative metadata and payload contracts are in

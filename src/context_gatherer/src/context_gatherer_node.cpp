@@ -504,6 +504,7 @@ private:
     std::lock_guard<std::mutex> lock(data_mutex_);
     if (latest_odom_) {
       context_json["ROBOT_POSE"] = {
+        {"frame_id", latest_odom_->header.frame_id},
         {"x", latest_odom_->pose.pose.position.x},
         {"y", latest_odom_->pose.pose.position.y},
         {"z", latest_odom_->pose.pose.position.z},
@@ -527,6 +528,7 @@ private:
 
     if (latest_pose_cov_) {
       context_json["ROBOT_POSE"] = {
+        {"frame_id", latest_pose_cov_->header.frame_id},
         {"x", latest_pose_cov_->pose.pose.position.x},
         {"y", latest_pose_cov_->pose.pose.position.y},
         {"z", latest_pose_cov_->pose.pose.position.z},

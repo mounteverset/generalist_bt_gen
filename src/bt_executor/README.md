@@ -42,7 +42,7 @@ Key parameters:
 | `plugin_directories` | Additional directories scanned for ROS BT plugins. Accepts absolute paths or `package/subfolder` entries resolved relative to the package prefix. | `["robot_actions/lib"]` |
 | `nav2_action_name` | Default action server name used by the `MoveTo` BT node (can still be overridden per-node via the `action_name` input port). | `"/navigate_to_pose"` |
 | `nav2_follow_gps_waypoints_action_name` | Default action server name used by the `MoveToGPS` BT node. | `"/follow_gps_waypoints"` |
-| `log_temperature_service_name` / `take_photo_image_topic` / `get_current_pose_pose_topic` / `distance_traveled_odom_topic` / `get_current_pose_odom_topic` / `find_anything_service_name` | Default service/topic names used by the respective `robot_actions` sensing/perception nodes. `TakePicture`/`TakePhoto`, `DistanceTraveled`, and `GetCurrentPose` can override image/pose/odometry topics with input ports. `FindObjectLocation`/`FindAnything` can override the service with the standard `service_name` port. | `"/log_temperature"`, `"/a200_0000/sensors/camera_0/color/image"`, `"/a200_0000/pose"`, `"/a200_0000/platform/odom/filtered"`, `"/a200_0000/platform/odom/filtered"`, `"/language_processor/find_object_locations"` |
+| `log_temperature_service_name` / `take_photo_image_topic` / `get_current_pose_pose_topic` / `distance_traveled_odom_topic` / `get_current_pose_odom_topic` | Default service/topic names used by the respective `robot_actions` sensing nodes. `TakePicture`/`TakePhoto`, `DistanceTraveled`, and `GetCurrentPose` can override image/pose/odometry topics with input ports. | `"/log_temperature"`, `"/a200_0000/sensors/camera_0/color/image"`, `"/a200_0000/pose"`, `"/a200_0000/platform/odom/filtered"`, `"/a200_0000/platform/odom/filtered"` |
 | `behavior_trees` | List of `package/subfolder` entries that contain BT XML files to pre-register. | `["bt_executor/trees"]` |
 | `status_topic` / `active_node_topic` | Topics publishing textual status + active subtree for UI/mission coordinator. | `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree` |
 | `enable_debug_logging` | Enables verbose BT execution logs (per-tick blackboard dump + robot action debug traces). Keep `false` for normal operation. | `false` |
@@ -67,7 +67,7 @@ This loads `config/bt_executor_params.yaml`, which points the server at the tree
 | `gps_waypoint_navigation.xml` | geographic `gps_waypoints` | Selectable GPS route |
 | `gps_temperature_logging.xml` | geographic `gps_waypoints` | Selectable GPS route + temperature |
 | `navigate_and_photograph.xml` | map-frame `waypoints` | Selectable route + RGB capture |
-| `find_and_drive_to_nearest_object.xml` | natural-language `object` query | Selectable best-match search + navigation |
+| `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | Selectable object-context route + navigation |
 | `explore_area.xml` | map-frame exploration fields | Selectable exploration route |
 | `360_rgb_sweep.xml` | pose/camera options | Internal context routine |
 

@@ -45,8 +45,8 @@ DEFAULT_KNOWN_TREE_ENTRIES = (
     ),
     'navigate_and_photograph.xml::Navigate through map-frame waypoints and take RGB photos.',
     (
-        'find_and_drive_to_nearest_object.xml::Find the best matching object '
-        'and drive to its location.'
+        'find_and_drive_to_nearest_object.xml::Plan map-frame waypoints from '
+        'FindAnything context and drive to the selected object location.'
     ),
     (
         'explore_area.xml::Explore an operator-defined ground area with '

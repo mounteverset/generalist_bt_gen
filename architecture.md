@@ -49,7 +49,7 @@ the current mission coordinator runtime does not call it.
 | `llm_interface` | Provides LangChain-backed requirement extraction, selection, and payload services. Requirement extraction maps free-form commands into structured capability requirements. Selection chooses from the configured tree catalog. Payload generation maps context plus a subtree contract into blackboard JSON, with optional multimodal image attachments and optional schema normalization. If configured LLM calls fail, selection and payload generation have heuristic fallbacks. | Services: `/llm_interface/extract_mission_requirements`, `/llm_interface/select_behavior_tree`, `/llm_interface/create_payload`, `/llm_interface/plan_subtree`. Providers implemented in code: Gemini, OpenAI, OpenRouter. |
 | `context_gatherer` | Serves a `GatherContext` action. It subscribes to robot state and sensor topics, captures requested context keys, saves image/map/OSM artifacts under `/tmp/context_gatherer` by default, and returns structured JSON plus attachment URIs. It also calls helper services for annotated SLAM maps, satellite-map annotation/fetching, and FindAnything object-location lookup, and queries Overpass directly for route-relevant OpenStreetMap geometry. | Action server: `/context_gatherer/gather`. Inputs include `/odom`, optional pose covariance, GPS, RGB/depth camera topics, battery state, map topic, and `/language_processor/find_object_locations`; external inputs include MapTiler and Overpass. |
 | `bt_executor` | Subclasses `BT::TreeExecutionServer`. It loads BT XML and robot action plugins, exposes `/bt_executor/execute_tree`, creates a fresh `BT::Tree` for each action goal, seeds the blackboard from the goal payload, publishes textual status and active tree root name, and returns the final BT result. | Action server: `/bt_executor/execute_tree`. Publishes `/mission_coordinator/status_text` and `/mission_coordinator/active_subtree`. Loads XML from `bt_executor/trees` and plugins from `robot_actions/lib`. |
-| `robot_actions` | BehaviorTree.CPP/BehaviorTree.ROS2 plugins used by the XML trees. Current registered nodes include map-frame `MoveTo`/`ParseWaypoints`, geographic `MoveToGPS`/`ParseGpsWaypoints`, `TakePicture`/`TakePhoto`, `GetCurrentPose`, `DistanceTraveled`, `FindObjectLocation`/`FindAnything`, `LogTemperature`, and `RestartNode`. | Nav2 `NavigateToPose` and `FollowGPSWaypoints`, FindAnything object-location service, RGB image and odometry topics, trigger-style ROS services, blackboard ports. |
+| `robot_actions` | BehaviorTree.CPP/BehaviorTree.ROS2 plugins used by the XML trees. Current registered nodes include map-frame `MoveTo`/`ParseWaypoints`, geographic `MoveToGPS`/`ParseGpsWaypoints`, `TakePicture`/`TakePhoto`, `GetCurrentPose`, `DistanceTraveled`, `LogTemperature`, and `RestartNode`. FindAnything is planning context and is not registered as a BT action. | Nav2 `NavigateToPose` and `FollowGPSWaypoints`, RGB image and odometry topics, trigger-style ROS services, blackboard ports. |
 | `gen_bt_interfaces` | Custom action/service contracts shared by Python and C++ packages. | `MissionCommand`, `GatherContext`, `CreatePayload`, `SelectBehaviorTree`, `PlanSubtree`, `GetMissionState`, `MissionControl`, `OperatorDecision`, and related services. |
 
 There is no implemented `bt_updater` package in the current repository.
@@ -62,7 +62,7 @@ using static capability metadata.
 
 `config/tree_metadata.yaml` and
 `src/mission_coordinator/config/mission_coordinator_params.yaml` contain the
-five mission-selectable tree IDs. Each selectable ID has a matching XML file in
+six mission-selectable tree IDs. Each selectable ID has a matching XML file in
 `src/bt_executor/trees`. `360_rgb_sweep.xml` is also bundled there, but is an
 internal context-capture routine and is intentionally absent from the selectable
 mission catalogue.
@@ -81,6 +81,7 @@ The coordinator reads metadata to decide:
 | `gps_waypoint_navigation.xml` | Selectable | `gps_waypoints`: `lat,lon`, `lat,lon,yaw`, or `lat,lon,altitude,yaw` | `MoveToGPS` |
 | `gps_temperature_logging.xml` | Selectable | `gps_waypoints`, plus optional `logfile_path` | `MoveToGPS`, `LogTemperature` |
 | `navigate_and_photograph.xml` | Selectable | `waypoints`: map-frame `x,y,yaw` | `MoveTo`, `DistanceTraveled`, `TakePhoto` |
+| `find_and_drive_to_nearest_object.xml` | Selectable | FindAnything-derived map-frame `waypoints` | `ParseWaypoints`, `MoveTo` |
 | `explore_area.xml` | Selectable | map-frame `waypoints`, `area_polygon`, and `frontiers` | `MoveTo` |
 | `360_rgb_sweep.xml` | Internal context routine | current pose plus camera/output options | `GetCurrentPose`, `MoveTo`, `TakePhoto` |
 
@@ -227,6 +228,12 @@ implemented requirements include:
 
 Unknown requirement strings are logged and skipped. The action result can still
 succeed with whatever context was collected.
+
+`find_and_drive_to_nearest_object.xml` requests `ROBOT_POSE` and
+`FIND_ANYTHING`. The gatherer calls the object-location service before payload
+generation, so `llm_interface` can select and order returned locations as
+map-frame waypoints. The executable tree only parses and navigates those planned
+waypoints; it does not call FindAnything itself.
 
 For `SATELLITE_MAP`, `context_gatherer` can dynamically choose an overview zoom
 and optional detail maps without an LLM call. It derives mission extent from

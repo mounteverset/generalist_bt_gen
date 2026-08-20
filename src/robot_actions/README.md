@@ -13,7 +13,6 @@ ROS - related nodes will be making use of the boilerplate classes in behaviortre
 | ParseGpsWaypoints | `SyncActionNode` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | Validates and queues semicolon-separated geographic waypoints |
 | TakePicture / TakePhoto | `SyncActionNode` | `image_topic`, `output_directory`, `filename_prefix`, `timeout_ms`, `filepath` (output) | Saves the latest RGB image from a configurable topic to disk |
 | GetCurrentPose | `SyncActionNode` | `pose_topic`, `pose_timeout_ms`, `odom_topic`, `odom_timeout_ms`, `current_x`/`current_y`/`current_yaw`/`current_pose`, fixed-yaw `sweep_pose_*` outputs | Reads one map pose sample, or odometry as fallback, and exposes the current pose plus fixed-yaw sweep poses |
-| FindObjectLocation / FindAnything | `RosServiceNode<language_feature_msgs::srv::FindObjectLocations>` | `object`, `max_results`, `default_yaw`, `x`/`y`/`yaw`/`pose`/`frame_id` (outputs) | Calls FindAnything and exposes the first returned object point as a 2D pose |
 | LogTemperature | `RosServiceNode<std_srvs::srv::Trigger>` | `logfile_path` (input) | Requests a temperature capture/logging service |
 | RestartNode | `RosServiceNode<std_srvs::srv::SetBool>` | `node_name` (input) | Asks supervisor service to restart the specified node |
 | DistanceTraveled | `StatefulActionNode` | `interval_m`, `odom_topic`, `odom_timeout_ms`, `distance_accumulated_m` (output) | Returns `SUCCESS` whenever the configured odometry distance interval has been traveled, otherwise `RUNNING` |

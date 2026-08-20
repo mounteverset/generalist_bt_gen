@@ -13,13 +13,13 @@
                 <mxCell id="llm" value="llm_interface&#xa;- Services: ExtractMissionRequirements, SelectBehaviorTree, CreatePayload&#xa;- PlanSubtree stub (not used by coordinator)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" parent="1" vertex="1">
                     <mxGeometry x="-190" y="10" width="220" height="110" as="geometry"/>
                 </mxCell>
-                <mxCell id="ctx" value="context_gatherer&#xa;- Action server: GatherContext (/context_gatherer/gather)&#xa;- Sensors + SLAM/satellite/OSM route context&#xa;- Produces context_json + attachments" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                <mxCell id="ctx" value="context_gatherer&#xa;- Action server: GatherContext (/context_gatherer/gather)&#xa;- Sensors + SLAM/satellite/OSM/FindAnything context&#xa;- Produces context_json + attachments" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
                     <mxGeometry x="-190" y="570" width="240" height="110" as="geometry"/>
                 </mxCell>
                 <mxCell id="bt" value="bt_executor (GeneralistBehaviorTreeServer)&#xa;- Action server: ExecuteTree (/bt_executor/execute_tree)&#xa;- Publishes: status_text, active_subtree topics&#xa;- Loads robot_actions plugins" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="1" vertex="1">
                     <mxGeometry x="390" y="235" width="230" height="150" as="geometry"/>
                 </mxCell>
-                <mxCell id="plugins" value="robot_actions BT plugins&#xa;- MoveTo / MoveToGPS&#xa;- ParseWaypoints / ParseGpsWaypoints&#xa;- GetCurrentPose / DistanceTraveled&#xa;- LogTemperature / TakePhoto&#xa;- FindAnything / RestartNode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
+                <mxCell id="plugins" value="robot_actions BT plugins&#xa;- MoveTo / MoveToGPS&#xa;- ParseWaypoints / ParseGpsWaypoints&#xa;- GetCurrentPose / DistanceTraveled&#xa;- LogTemperature / TakePhoto&#xa;- RestartNode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="1" vertex="1">
                     <mxGeometry x="760" y="220" width="220" height="150" as="geometry"/>
                 </mxCell>
                 <mxCell id="nav2" value="Nav2 actions&#xa;/a200_0000/navigate_to_pose&#xa;/a200_0000/follow_gps_waypoints&#xa;+ /fromLL conversion" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">

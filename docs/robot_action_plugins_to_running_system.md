@@ -134,6 +134,7 @@ Current XML bundle:
 | `gps_waypoint_navigation.xml` | Selectable geographic route |
 | `gps_temperature_logging.xml` | Selectable geographic route + temperature |
 | `navigate_and_photograph.xml` | Selectable map-frame navigation + photos |
+| `find_and_drive_to_nearest_object.xml` | Selectable navigation through waypoints planned from FindAnything context |
 | `explore_area.xml` | Selectable map-frame exploration route |
 | `360_rgb_sweep.xml` | Internal context-capture routine |
 
@@ -146,7 +147,6 @@ Current registered node IDs:
 | `TakePicture` / `TakePhoto` | inputs `image_topic`, `output_directory`, `filename_prefix`, `timeout_ms`; output `filepath` | RGB `sensor_msgs/Image` topic |
 | `GetCurrentPose` | inputs `odom_topic`, `odom_timeout_ms`; outputs `current_x`, `current_y`, `current_yaw`, `current_pose`, `current_frame_id`, fixed-yaw `sweep_pose_*` strings | Odometry topic |
 | `DistanceTraveled` | inputs `interval_m`, `odom_topic`, output `distance_accumulated_m` | Odometry topic |
-| `FindObjectLocation` / `FindAnything` | inputs `object`, `max_results`, `default_yaw`, standard `service_name`; outputs `x`, `y`, `yaw`, `pose`, `frame_id` | `language_feature_msgs/FindObjectLocations` service |
 | `LogTemperature` | input `logfile_path`, standard `service_name` | `std_srvs/Trigger` temperature service |
 | `RestartNode` | input `node_name`, standard `service_name` | `std_srvs/SetBool` restart service |
 | `ParseWaypoints` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | local BT utility |
@@ -281,7 +281,6 @@ For the current trees:
 | `TakePicture` / `TakePhoto` | `/a200_0000/sensors/camera_0/color/image` or configured `take_photo_image_topic` |
 | `GetCurrentPose` | `/odom` or configured `get_current_pose_odom_topic` |
 | `DistanceTraveled` | `/odom` or configured `distance_traveled_odom_topic` |
-| `FindObjectLocation` / `FindAnything` | `/language_processor/find_object_locations` or configured `find_anything_service_name` |
 
 Useful checks:
 

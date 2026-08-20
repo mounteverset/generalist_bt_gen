@@ -64,6 +64,18 @@ def test_selects_find_and_drive_tree_for_nearest_object_mission():
     assert 'navigation.waypoints' in result.matched_capabilities
 
 
+def test_find_and_drive_metadata_routes_find_anything_through_planning_context():
+    tree = next(
+        item for item in _trees()
+        if item['id'] == 'find_and_drive_to_nearest_object.xml'
+    )
+
+    assert tree['context_requirements'] == ['ROBOT_POSE', 'FIND_ANYTHING']
+    assert 'payload.parse_waypoints' in tree['required_capabilities']
+    assert 'waypoints' in tree['blackboard_contract']
+    assert 'object' not in tree['blackboard_contract']
+
+
 def test_selects_gps_temperature_tree_for_explicit_geographic_waypoints():
     result = _reasoner().validate(
         'Drive through these GPS waypoints and log temperature.',

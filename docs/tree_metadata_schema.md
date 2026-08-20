@@ -102,6 +102,10 @@ routes use `gps_waypoints` and are consumed by
 | `FIND_ANYTHING` | Object-location candidates | configured FindAnything service |
 | `RGB360SWEEP` | Active six-heading RGB context sweep | internal `360_rgb_sweep.xml` execution |
 
+Object-targeted trees request `FIND_ANYTHING` here so the service response is
+available to payload generation. FindAnything is not an executable BT node; the
+tree consumes the map-frame `waypoints` selected from this context.
+
 ## Capability Fields
 
 | Field | Description |

@@ -12,7 +12,8 @@ The way to interact with the system is by chat, either via CLI or via a simple w
 
 All current "thinking" (LLM calls, mission validation, selection, and payload
 generation) happens **outside** the BT. The coordinator gathers context
-(cameras, GPS, OpenStreetMap geometry, satellite maps) via `context_gatherer`,
+(cameras, GPS, OpenStreetMap geometry, satellite maps, and FindAnything object
+locations) via `context_gatherer`,
 queries LangChain, and then instructs `bt_executor` which subtree to execute.
 Blackboard updates produced by the LLM are injected before the BT run; no
 dedicated LLM plugins live inside the tree.
@@ -27,6 +28,7 @@ The current mission-selectable catalogue is:
 | `gps_waypoint_navigation.xml` | Geographic `gps_waypoints` (`lat,lon[,yaw]`) | Follow a GPS/OSM route |
 | `gps_temperature_logging.xml` | Geographic `gps_waypoints` | Follow a GPS route and log temperature |
 | `navigate_and_photograph.xml` | Map-frame `waypoints` | Navigate and photograph by distance |
+| `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | Plan from object-location context and navigate |
 | `explore_area.xml` | Map-frame route/area fields | Execute a generated exploration route |
 
 `360_rgb_sweep.xml` is bundled as an internal active-context routine, not a

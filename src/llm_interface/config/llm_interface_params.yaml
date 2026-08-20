@@ -159,6 +159,35 @@ llm_interface:
           9. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):
+        "find_and_drive_to_nearest_object.xml": |
+          You are planning an object-targeted map-frame route for a Clearpath Husky A200.
+          Generate the blackboard payload for find_and_drive_to_nearest_object.xml.
+
+          SUBTREE_ID: {subtree_id}
+          USER_COMMAND: {user_command}
+
+          CONTEXT (sensor/perception data):
+          {context_json}
+
+          CONTRACT (required blackboard keys with types/defaults):
+          {contract_json}
+
+          ATTACHMENT_URIS: {attachment_uris}
+
+          Required output:
+          - "waypoints": selected FindAnything locations as "x,y,yaw; ...".
+          - "waypoint_frame_id": the common frame_id reported for the selected locations.
+
+          Planning rules:
+          1. Use only locations returned in FIND_ANYTHING. Never invent object locations.
+          2. For a singular or nearest-object request, choose one result. Use ROBOT_POSE to select the nearest candidate when distances can be compared in the same frame.
+          3. For an explicit plural or all-matches request, include the relevant returned locations in an efficient order starting near ROBOT_POSE.
+          4. All selected locations must share one frame_id. Map-frame x/y values belong in "waypoints"; do not use geographic latitude/longitude.
+          5. Orient each yaw toward the next waypoint. For a single or final waypoint, preserve a reliable supplied yaw or use 0.0.
+          6. If FIND_ANYTHING has no successful locations, or its locations cannot be expressed safely in one navigation frame, return an empty JSON object.
+          7. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
+
+          OUTPUT (JSON only):
         "explore_area.xml": |
           You are planning a static exploration route for a Clearpath Husky A200 ground robot.
           Generate the blackboard payload for explore_area.xml.

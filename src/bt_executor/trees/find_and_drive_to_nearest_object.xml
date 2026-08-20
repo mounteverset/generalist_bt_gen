@@ -1,26 +1,26 @@
 <?xml version="1.0"?>
 <!--
 Tree Name: find_and_drive_to_nearest_object.xml
-Description: Query FindAnything for the best matching object and drive to the
-             returned map location with Nav2.
+Description: Drive through object-location waypoints selected by the planner
+             from FindAnything context gathered before BT execution.
 Usage Instructions:
-  - Payload must include "object" as a natural-language object description.
-  - FindAnything is limited to one result, which is forwarded directly to MoveTo.
+  - Payload must include "waypoints" derived from FIND_ANYTHING context.
+  - Payload may include "waypoint_frame_id"; it defaults to "map".
 -->
 <root BTCPP_format="4" main_tree_to_execute="find_and_drive_to_nearest_object.xml">
   <BehaviorTree ID="find_and_drive_to_nearest_object.xml">
     <Sequence name="FindAndDriveToNearestObjectMission">
-      <FindAnything
-        name="FindBestMatchingObject"
-        object="{object}"
-        max_results="1"
-        pose="{object_pose}"
-        frame_id="{object_frame_id}" />
-      <MoveTo
-        name="DriveToBestMatch"
-        pose="{object_pose}"
-        frame_id="{object_frame_id}"
-        action_name="/a200_0000/navigate_to_pose" />
+      <ParseWaypoints
+        raw_waypoints="{waypoints}"
+        waypoint_queue="{waypoint_queue}"
+        waypoint_count="{waypoint_count}" />
+      <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="FAILURE">
+        <MoveTo
+          name="DriveToObjectMatch"
+          pose="{active_waypoint}"
+          frame_id="{waypoint_frame_id}"
+          action_name="/a200_0000/navigate_to_pose" />
+      </LoopString>
     </Sequence>
   </BehaviorTree>
 </root>
