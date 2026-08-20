@@ -175,6 +175,36 @@ trees:
         required: false
         default: 50
 
+  - id: "find_and_drive_to_nearest_object.xml"
+    description: "Find the best object match for a natural-language description and navigate to its location."
+    mission_intents:
+      - "find_object"
+      - "navigate_to_object"
+    required_capabilities:
+      - "locomotion.ground"
+      - "navigation.waypoints"
+      - "localization.odometry"
+      - "mapping.slam"
+      - "sensing.rgb_image"
+      - "perception.object_location"
+    unsupported_requirements:
+      - "locomotion.flight"
+      - "manipulation.pick_place"
+      - "sampling.soil"
+    selection_constraints:
+      max_range_m: 5000
+    context_requirements: []
+    blackboard_contract:
+      object:
+        type: "string"
+        required: true
+        schema:
+          type: "string"
+          description: "Natural-language description of the object to locate, without navigation instructions."
+          minLength: 1
+          examples:
+            - "red chair"
+
   - id: "explore_area.xml"
     description: "Explore an operator-defined ground area by executing LLM-generated map-frame frontier or coverage waypoints."
     mission_intents:

@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<!--
+Tree Name: find_and_drive_to_nearest_object.xml
+Description: Query FindAnything for the best matching object and drive to the
+             returned map location with Nav2.
+Usage Instructions:
+  - Payload must include "object" as a natural-language object description.
+  - FindAnything is limited to one result, which is forwarded directly to MoveTo.
+-->
+<root BTCPP_format="4" main_tree_to_execute="find_and_drive_to_nearest_object.xml">
+  <BehaviorTree ID="find_and_drive_to_nearest_object.xml">
+    <Sequence name="FindAndDriveToNearestObjectMission">
+      <FindAnything
+        name="FindBestMatchingObject"
+        object="{object}"
+        max_results="1"
+        pose="{object_pose}"
+        frame_id="{object_frame_id}" />
+      <MoveTo
+        name="DriveToBestMatch"
+        pose="{object_pose}"
+        frame_id="{object_frame_id}"
+        action_name="/a200_0000/navigate_to_pose" />
+    </Sequence>
+  </BehaviorTree>
+</root>

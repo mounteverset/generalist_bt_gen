@@ -52,6 +52,18 @@ def test_accepts_ground_navigation_and_photos():
     assert 'sensing.rgb_image' in result.matched_capabilities
 
 
+def test_selects_find_and_drive_tree_for_nearest_object_mission():
+    result = _reasoner().validate(
+        'Find the nearest red chair and drive to it.',
+        _trees(),
+    )
+
+    assert result.status_code == ACCEPT
+    assert result.candidate_trees == ['find_and_drive_to_nearest_object.xml']
+    assert 'perception.object_location' in result.matched_capabilities
+    assert 'navigation.waypoints' in result.matched_capabilities
+
+
 def test_selects_gps_temperature_tree_for_explicit_geographic_waypoints():
     result = _reasoner().validate(
         'Drive through these GPS waypoints and log temperature.',

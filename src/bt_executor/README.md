@@ -67,6 +67,7 @@ This loads `config/bt_executor_params.yaml`, which points the server at the tree
 | `gps_waypoint_navigation.xml` | geographic `gps_waypoints` | Selectable GPS route |
 | `gps_temperature_logging.xml` | geographic `gps_waypoints` | Selectable GPS route + temperature |
 | `navigate_and_photograph.xml` | map-frame `waypoints` | Selectable route + RGB capture |
+| `find_and_drive_to_nearest_object.xml` | natural-language `object` query | Selectable best-match search + navigation |
 | `explore_area.xml` | map-frame exploration fields | Selectable exploration route |
 | `360_rgb_sweep.xml` | pose/camera options | Internal context routine |
 
