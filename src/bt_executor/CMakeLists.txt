@@ -7,6 +7,7 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(behaviortree_ros2 REQUIRED)
@@ -18,6 +19,7 @@ find_package(nav2_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
 set(dependencies
+  ament_index_cpp
   rclcpp
   rclcpp_action
   behaviortree_ros2
@@ -27,6 +29,15 @@ set(dependencies
   nlohmann_json
   nav2_msgs
   std_srvs
+)
+
+add_executable(bt_factory_check src/bt_factory_check.cpp)
+ament_target_dependencies(
+  bt_factory_check
+  ament_index_cpp
+  behaviortree_ros2
+  behaviortree_cpp
+  rclcpp
 )
 
 add_executable(bt_executor_node
@@ -58,7 +69,7 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
-install(TARGETS bt_executor_node
+install(TARGETS bt_executor_node bt_factory_check
   EXPORT export_${PROJECT_NAME}
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
