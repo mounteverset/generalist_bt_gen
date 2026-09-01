@@ -71,6 +71,7 @@ def test_review_input_includes_context_contract_and_image_uri():
     assert review_input['payload_json']['waypoints'] == '1.0,2.0,0.0'
     assert review_input['subtree_contract_json']['waypoints']['type'] == 'string'
     assert review_input['context_focus']['OSM_CONTEXT']['linear_features'][0]['name'] == 'service road'
+    assert review_input['context_snapshot']['ROBOT_POSE']['x'] == 0.0
     assert review_input['review_image_uri'].endswith('plan_review.png')
 
 
@@ -98,3 +99,31 @@ def test_fallback_review_rejects_explore_waypoint_outside_area_polygon():
     assert review['recommended_action'] == 'regenerate'
     assert review['findings'][0]['category'] == 'mission_fulfillment'
     assert review['findings'][0]['waypoint_indices'] == [1]
+
+
+def test_fallback_review_rejects_waypoint_in_blocked_region():
+    node = PlanReviewerNode.__new__(PlanReviewerNode)
+    review_input = {
+        'map_available': True,
+        'waypoints': [{'index': 1, 'x': 15.0, 'y': 10.0}],
+        'context_snapshot': {
+            'blocked_regions': [
+                {
+                    'id': 'wet_patch',
+                    'polygon': [
+                        [12.0, 8.0],
+                        [18.0, 8.0],
+                        [18.0, 12.0],
+                        [12.0, 12.0],
+                    ],
+                }
+            ]
+        },
+    }
+    render_info = {'waypoint_pixels': [], 'waypoint_area_checks': []}
+
+    review = node._fallback_review(review_input, render_info)
+
+    assert review['status'] == 'reject'
+    assert review['recommended_action'] == 'regenerate'
+    assert review['findings'][0]['guard'] == 'blocked_or_exclusion_region'

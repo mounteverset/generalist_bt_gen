@@ -17,7 +17,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'Pillow>=9'],
     zip_safe=True,
     maintainer='luke',
     maintainer_email='Lukas.E@web.de',

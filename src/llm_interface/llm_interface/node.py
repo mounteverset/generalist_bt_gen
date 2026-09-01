@@ -38,6 +38,7 @@ try:
 except ModuleNotFoundError:
     ChatOpenRouter = None
 from rclpy.node import Node
+from llm_interface.payload_validation import generated_payload_errors
 
 DEFAULT_LLM_PROVIDER = 'gemini'
 SUPPORTED_LLM_PROVIDERS = {'gemini', 'openai', 'openrouter'}
@@ -1517,13 +1518,8 @@ class LLMInterfaceNode(Node):
         contract: dict,
         context: dict,
     ) -> List[str]:
-        matches, errors = self._payload_matches_contract(payload, contract)
-        validation_errors = list(errors if not matches else [])
-        if isinstance(contract, dict) and 'waypoints' in contract:
-            validation_errors.extend(self._waypoint_payload_errors(payload, context))
-        if isinstance(contract, dict) and 'gps_waypoints' in contract:
-            validation_errors.extend(self._gps_waypoint_payload_errors(payload))
-        return validation_errors
+        del subtree_id
+        return generated_payload_errors(payload, contract, context)
 
     def _waypoint_payload_errors(self, payload: dict, context: dict) -> List[str]:
         errors: List[str] = []

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
-
-import yaml
-
 
 ACCEPT = 0
 CLARIFY = 1
@@ -43,6 +41,12 @@ class MissionReasoner:
 
     @classmethod
     def from_yaml_file(cls, path: str) -> 'MissionReasoner':
+        try:
+            import yaml
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                'PyYAML is required only when loading MissionReasoner from YAML.'
+            ) from exc
         with open(path, 'r', encoding='utf-8') as handle:
             data = yaml.safe_load(handle) or {}
         return cls(data)
@@ -93,6 +97,14 @@ class MissionReasoner:
             )
             result.reasoning['debug_info'] = debug_info
             return result
+
+        context_admission = self._validate_context_admission(context)
+        if context_admission is not None:
+            context_admission.matched_capabilities = sorted(
+                requested & self.supported_capabilities
+            )
+            context_admission.reasoning['debug_info'] = debug_info
+            return context_admission
 
         clarification = self._clarification_question(command, context)
         if clarification:
@@ -226,7 +238,7 @@ class MissionReasoner:
 
     def _clarification_question(self, command: str, context: Any) -> str:
         normalized = self._normalize(command)
-        context_keys = set(context.keys()) if isinstance(context, dict) else set()
+        context_keys = self._context_key_inventory(context)
         for rule in self.clarification_rules:
             keywords = rule.get('keywords', []) or []
             if not any(self._keyword_matches(normalized, keyword) for keyword in keywords):
@@ -240,6 +252,34 @@ class MissionReasoner:
                 continue
             return str(rule.get('question', '')).strip()
         return ''
+
+    @classmethod
+    def _context_key_inventory(cls, context: Any) -> set[str]:
+        """Return semantic keys from the full structured context envelope."""
+        keys: set[str] = set()
+
+        def visit(value: Any) -> None:
+            if isinstance(value, Mapping):
+                for raw_key, nested in value.items():
+                    key = str(raw_key).strip().lower()
+                    if key:
+                        keys.add(key)
+                    visit(nested)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str):
+                        keys.add(item.strip().lower())
+                    else:
+                        visit(item)
+
+        visit(context)
+        if keys.intersection({'routes', 'route_definition', 'ordered_waypoints'}):
+            keys.update({'route', 'waypoints'})
+        if keys.intersection({'named_points', 'waypoint', 'waypoints'}):
+            keys.add('waypoints')
+        if keys.intersection({'target_areas', 'area_polygon', 'area_polygon_geo'}):
+            keys.add('target_area')
+        return keys
 
     def _has_area_definition(self, command: str, context: Any) -> bool:
         if isinstance(context, Mapping):
@@ -318,6 +358,260 @@ class MissionReasoner:
                 missing_capabilities=['platform.range'],
             )
         return None
+
+    def _validate_context_admission(
+        self, context: Any
+    ) -> Optional[ValidationResult]:
+        if not isinstance(context, Mapping):
+            return None
+
+        if context.get('evidence_quality') == 'insufficient_text_only':
+            return ValidationResult(
+                status_code=CLARIFY,
+                message='The requested named area has no spatial definition.',
+                clarification_question=(
+                    'What boundary, polygon, radius, or named map area should be used?'
+                ),
+                reasoning={'guard': 'context.area_definition'},
+            )
+
+        route_length = self._context_number(
+            context, 'route_length_m', 'ROUTE_LENGTH_M'
+        )
+        context_max_range = self._context_number(
+            context, 'platform_max_range_m', 'PLATFORM_MAX_RANGE_M'
+        )
+        max_range = context_max_range or self._float_platform_value('max_range_m')
+        if (
+            route_length is not None
+            and max_range is not None
+            and route_length > max_range
+        ):
+            return ValidationResult(
+                status_code=REFUSE,
+                message=(
+                    f'Mission route ({route_length:g} m) exceeds platform '
+                    f'endurance ({max_range:g} m).'
+                ),
+                reasoning={
+                    'guard': 'context.range',
+                    'route_length_m': route_length,
+                    'max_range_m': max_range,
+                },
+                missing_capabilities=['platform.range'],
+            )
+
+        battery = self._context_number(context, 'battery_percent', 'BATTERY_PERCENT')
+        battery_state = self._context_mapping(
+            context, 'battery_state', 'BATTERY_STATE'
+        )
+        if battery is None and battery_state:
+            battery = self._mapping_number(battery_state, 'percentage', 'percent')
+        threshold = self._context_number(
+            context,
+            'minimum_start_battery_percent',
+            'MINIMUM_START_BATTERY_PERCENT',
+        )
+        if (
+            battery is not None
+            and threshold is not None
+            and battery < threshold
+        ):
+            return ValidationResult(
+                status_code=REFUSE,
+                message=(
+                    f'Current battery ({battery:g}%) is below the declared '
+                    f'{threshold:g}% mission admission threshold.'
+                ),
+                reasoning={
+                    'guard': 'context.battery_admission',
+                    'battery_percent': battery,
+                    'minimum_start_battery_percent': threshold,
+                },
+                missing_capabilities=['platform.energy'],
+            )
+
+        map_point = self._context_mapping(
+            context, 'map_checkpoint_K', 'MAP_CHECKPOINT_K'
+        )
+        gps_point = self._context_mapping(
+            context,
+            'gps_checkpoint_K_converted_to_map',
+            'GPS_CHECKPOINT_K_CONVERTED_TO_MAP',
+        )
+        tolerance = self._context_number(
+            context,
+            'allowed_position_disagreement_m',
+            'ALLOWED_POSITION_DISAGREEMENT_M',
+        )
+        if map_point and gps_point and tolerance is not None:
+            distance = self._point_distance(map_point, gps_point)
+            if distance is not None and distance > tolerance:
+                return ValidationResult(
+                    status_code=CLARIFY,
+                    message='Map and GPS evidence disagree for checkpoint K.',
+                    clarification_question=(
+                        f'Checkpoint K differs by {distance:.1f} m between map and '
+                        'GPS evidence. Which source should be corrected?'
+                    ),
+                    reasoning={
+                        'guard': 'context.cross_source_consistency',
+                        'disagreement_m': distance,
+                        'allowed_disagreement_m': tolerance,
+                    },
+                )
+
+        p9 = self._context_mapping(context, 'P9')
+        allowed_polygon = context.get('allowed_polygon') or context.get(
+            'ALLOWED_POLYGON'
+        )
+        if p9 and isinstance(allowed_polygon, list):
+            point = self._xy(p9)
+            if point is not None and not self._point_in_polygon(
+                point, allowed_polygon
+            ):
+                return ValidationResult(
+                    status_code=REFUSE,
+                    message='P9 lies outside the allowed mission polygon.',
+                    reasoning={
+                        'guard': 'context.geofence',
+                        'point': list(point),
+                        'allowed_polygon': allowed_polygon,
+                    },
+                    missing_capabilities=['navigation.safe_target'],
+                )
+
+        slam = self._context_mapping(
+            context, 'annotated_slam_map', 'ANNOTATED_SLAM_MAP_IMAGE'
+        )
+        osm = self._context_mapping(context, 'osm_context', 'OSM_CONTEXT')
+        tolerance = self._context_number(
+            context, 'cross_source_tolerance_m', 'CROSS_SOURCE_TOLERANCE_M'
+        )
+        slam_polygon = slam.get('derived_area_polygon') if slam else None
+        osm_polygon = osm.get('area_polygon') if osm else None
+        if (
+            isinstance(slam_polygon, list)
+            and isinstance(osm_polygon, list)
+            and tolerance is not None
+        ):
+            slam_center = self._polygon_center(slam_polygon)
+            osm_center = self._polygon_center(osm_polygon)
+            if slam_center is not None and osm_center is not None:
+                distance = math.dist(slam_center, osm_center)
+                if distance > tolerance:
+                    return ValidationResult(
+                        status_code=CLARIFY,
+                        message='Spatial context sources disagree.',
+                        clarification_question=(
+                            f'The map sources disagree by {distance:.1f} m. '
+                            'Which area definition is authoritative?'
+                        ),
+                        reasoning={
+                            'guard': 'context.cross_source_consistency',
+                            'disagreement_m': distance,
+                            'allowed_disagreement_m': tolerance,
+                        },
+                    )
+        return None
+
+    @staticmethod
+    def _context_mapping(
+        context: Mapping[str, Any], *keys: str
+    ) -> Mapping[str, Any]:
+        for key in keys:
+            value = context.get(key)
+            if isinstance(value, Mapping):
+                return value
+        return {}
+
+    @staticmethod
+    def _mapping_number(
+        mapping: Mapping[str, Any], *keys: str
+    ) -> Optional[float]:
+        for key in keys:
+            try:
+                return float(mapping.get(key))
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    @classmethod
+    def _context_number(
+        cls, context: Mapping[str, Any], *keys: str
+    ) -> Optional[float]:
+        return cls._mapping_number(context, *keys)
+
+    @staticmethod
+    def _xy(mapping: Mapping[str, Any]) -> Optional[tuple[float, float]]:
+        try:
+            return float(mapping['x']), float(mapping['y'])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _point_distance(
+        cls, first: Mapping[str, Any], second: Mapping[str, Any]
+    ) -> Optional[float]:
+        first_xy = cls._xy(first)
+        second_xy = cls._xy(second)
+        if first_xy is None or second_xy is None:
+            return None
+        return math.dist(first_xy, second_xy)
+
+    @staticmethod
+    def _point_in_polygon(
+        point: tuple[float, float], polygon: Sequence[Sequence[float]]
+    ) -> bool:
+        try:
+            vertices = [(float(item[0]), float(item[1])) for item in polygon]
+        except (IndexError, TypeError, ValueError):
+            return False
+        if len(vertices) < 3:
+            return False
+        x, y = point
+        inside = False
+        previous_x, previous_y = vertices[-1]
+        for current_x, current_y in vertices:
+            cross = (x - current_x) * (previous_y - current_y) - (
+                y - current_y
+            ) * (previous_x - current_x)
+            if (
+                abs(cross) < 1e-9
+                and min(current_x, previous_x) - 1e-9
+                <= x
+                <= max(current_x, previous_x) + 1e-9
+                and min(current_y, previous_y) - 1e-9
+                <= y
+                <= max(current_y, previous_y) + 1e-9
+            ):
+                return True
+            if (current_y > y) != (previous_y > y):
+                crossing_x = (
+                    (previous_x - current_x)
+                    * (y - current_y)
+                    / (previous_y - current_y)
+                    + current_x
+                )
+                if x < crossing_x:
+                    inside = not inside
+            previous_x, previous_y = current_x, current_y
+        return inside
+
+    @staticmethod
+    def _polygon_center(
+        polygon: Sequence[Sequence[float]],
+    ) -> Optional[tuple[float, float]]:
+        try:
+            vertices = [(float(item[0]), float(item[1])) for item in polygon]
+        except (IndexError, TypeError, ValueError):
+            return None
+        if not vertices:
+            return None
+        return (
+            sum(item[0] for item in vertices) / len(vertices),
+            sum(item[1] for item in vertices) / len(vertices),
+        )
 
     def _extract_constraint_float(
         self, extracted_requirements: Mapping[str, Any], key: str

@@ -12,6 +12,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from .renderer import load_json_value, render_plan_review_image
+from .safety_validation import deterministic_plan_findings
 
 try:
     from langchain_core.messages import HumanMessage
@@ -170,6 +171,7 @@ class PlanReviewerNode(Node):
             'frontier_pixels': render_info.get('frontier_pixels') or [],
             'waypoint_area_checks': render_info.get('waypoint_area_checks') or [],
             'render_warnings': render_info.get('render_warnings') or [],
+            'context_snapshot': context if isinstance(context, dict) else {},
             'context_focus': {
                 'OSM_CONTEXT': context.get('OSM_CONTEXT') if isinstance(context, dict) else None,
                 'SATELLITE_MAP': context.get('SATELLITE_MAP') if isinstance(context, dict) else None,
@@ -207,6 +209,14 @@ class PlanReviewerNode(Node):
                 }
             )
             parsed['recommended_action'] = 'submit_to_operator'
+        deterministic_findings = deterministic_plan_findings(review_input)
+        if deterministic_findings:
+            parsed['status'] = 'reject'
+            parsed['summary'] = (
+                'Deterministic safety validation rejected the generated plan.'
+            )
+            parsed.setdefault('findings', []).extend(deterministic_findings)
+            parsed['recommended_action'] = 'block'
         return self._normalize_review(parsed)
 
     def _invoke_llm(self, review_input: Dict[str, Any], image_path: str) -> str:
@@ -274,8 +284,13 @@ class PlanReviewerNode(Node):
     ) -> Dict[str, Any]:
         findings = []
         status = 'pass'
+        deterministic_findings = deterministic_plan_findings(review_input)
+        if deterministic_findings:
+            status = 'reject'
+            findings.extend(deterministic_findings)
         if not review_input.get('map_available'):
-            status = 'warn'
+            if status != 'reject':
+                status = 'warn'
             findings.append(
                 {
                     'severity': 'warning',

@@ -76,6 +76,29 @@ def test_find_and_drive_metadata_routes_find_anything_through_planning_context()
     assert 'object' not in tree['blackboard_contract']
 
 
+def test_accepts_document_command_with_structured_routes_context():
+    result = _reasoner().validate(
+        'Document the supplied ground route R1 by taking photographs.',
+        _trees(),
+        context_json=json.dumps(
+            {
+                'available_context': ['ROUTE_DEFINITION', 'RGB_IMAGE'],
+                'routes': {
+                    'R1': {
+                        'ordered_waypoints': [
+                            {'x': 0.0, 'y': 0.0, 'yaw': 0.0},
+                            {'x': 10.0, 'y': 0.0, 'yaw': 0.0},
+                        ]
+                    }
+                },
+            }
+        ),
+    )
+
+    assert result.status_code == ACCEPT
+    assert 'navigate_and_photograph.xml' in result.candidate_trees
+
+
 def test_selects_gps_temperature_tree_for_explicit_geographic_waypoints():
     result = _reasoner().validate(
         'Drive through these GPS waypoints and log temperature.',
@@ -201,3 +224,57 @@ def test_refuses_range_extracted_by_llm_requirements():
 
     assert result.status_code == REFUSE
     assert 'platform.range' in result.missing_capabilities
+
+
+def test_refuses_low_battery_from_context_before_tree_selection():
+    result = _reasoner().validate(
+        'Cover the marked field now.',
+        _trees(),
+        context_json=json.dumps(
+            {
+                'battery_percent': 12.0,
+                'minimum_start_battery_percent': 20.0,
+            }
+        ),
+    )
+
+    assert result.status_code == REFUSE
+    assert result.reasoning['guard'] == 'context.battery_admission'
+
+
+def test_clarifies_cross_source_checkpoint_conflict():
+    result = _reasoner().validate(
+        'Drive to checkpoint K and log temperature.',
+        _trees(),
+        context_json=json.dumps(
+            {
+                'map_checkpoint_K': {'x': 20.0, 'y': 10.0},
+                'gps_checkpoint_K_converted_to_map': {'x': 220.0, 'y': 110.0},
+                'allowed_position_disagreement_m': 5.0,
+            }
+        ),
+    )
+
+    assert result.status_code == CLARIFY
+    assert result.reasoning['guard'] == 'context.cross_source_consistency'
+
+
+def test_refuses_named_target_outside_allowed_polygon():
+    result = _reasoner().validate(
+        'Go to P9 and take route photographs on the way.',
+        _trees(),
+        context_json=json.dumps(
+            {
+                'P9': {'x': 80.0, 'y': 80.0},
+                'allowed_polygon': [
+                    [0.0, 0.0],
+                    [50.0, 0.0],
+                    [50.0, 50.0],
+                    [0.0, 50.0],
+                ],
+            }
+        ),
+    )
+
+    assert result.status_code == REFUSE
+    assert result.reasoning['guard'] == 'context.geofence'
