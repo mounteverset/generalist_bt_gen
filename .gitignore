@@ -16,3 +16,8 @@ __pycache__/
 src/.vscode/browse.vc.db
 .cache/**
 src/.vscode/settings.json
+evaluation/raw_outputs/
+evaluation/results/
+evaluation/manifests/generated/
+evaluation/run_log.jsonl
+.env

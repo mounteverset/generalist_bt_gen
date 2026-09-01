@@ -1,0 +1,86 @@
+{
+  "protocol_version": "1.1.0-draft",
+  "freeze_status": "draft",
+  "experiment": "E3",
+  "purpose": "Separate mission complexity from the choice-space size presented to each method.",
+  "m1_action_library": {
+    "method": "M1",
+    "base_manifest": "bt_node_manifest.json",
+    "base_action_node_count": 10,
+    "base_node_descriptions": {
+      "MoveTo": "Effect: Navigates to one supplied pose. Applicability: A map- or robot-frame pose is the requested destination.",
+      "MoveToGPS": "Effect: Navigates to one supplied geographic pose. Applicability: A latitude-longitude GPS goal is the requested destination.",
+      "TakePicture": "Effect: Saves one camera image to disk. Applicability: The mission requests a single visible-light photograph.",
+      "TakePhoto": "Effect: Saves one camera image to disk. Applicability: Alias used when the mission requests a single visible-light photograph.",
+      "DistanceTraveled": "Effect: Reports success when the configured odometry distance interval is reached. Applicability: An action must repeat by traveled distance.",
+      "GetCurrentPose": "Effect: Returns the robot's current localized pose. Applicability: Current map-frame position or derived observation poses are required.",
+      "LogTemperature": "Effect: Reads and persists a temperature sample. Applicability: The mission requests temperature logging.",
+      "RestartNode": "Effect: Restarts one named ROS node. Applicability: The mission explicitly requests recovery of that node.",
+      "ParseWaypoints": "Effect: Parses inline map-frame waypoints into an iteration queue. Applicability: The mission supplies x,y,yaw waypoint tuples.",
+      "ParseGpsWaypoints": "Effect: Parses inline geographic waypoints into an iteration queue. Applicability: The mission supplies latitude-longitude GPS tuples."
+    },
+    "distractor_catalogue": "m1_action_distractors.json",
+    "distractor_selection": "Use the first action_node_count minus 10 entries from the frozen distractor catalogue.",
+    "control_node_policy": "BehaviorTree.CPP control nodes and their order are identical in every condition and are not included in action_node_count.",
+    "node_order": {
+      "algorithm": "sha256_sort",
+      "seed": "m1-action-library-order-v1",
+      "key_fields": [
+        "paraphrase_id"
+      ],
+      "pairing_rule": "Use the same hash rank for shared nodes across all scale levels, models, and repetitions of a mission paraphrase."
+    },
+    "variants": [
+      {
+        "id": "M1-N12",
+        "label": "12 action nodes",
+        "action_node_count": 12,
+        "distractor_count": 2
+      },
+      {
+        "id": "M1-N24",
+        "label": "24 action nodes",
+        "action_node_count": 24,
+        "distractor_count": 14
+      },
+      {
+        "id": "M1-N50",
+        "label": "50 action nodes",
+        "action_node_count": 50,
+        "distractor_count": 40
+      },
+      {
+        "id": "M1-N100",
+        "label": "100 action nodes",
+        "action_node_count": 100,
+        "distractor_count": 90
+      }
+    ]
+  },
+  "m3_tree_catalogue": {
+    "method": "M3",
+    "variants": [
+      {
+        "id": "CS1",
+        "label": "minimal_relevant",
+        "status": "ready",
+        "catalogue_rule": "Expected tree plus one incompatible current tree."
+      },
+      {
+        "id": "CS2",
+        "label": "current_system",
+        "status": "ready",
+        "catalogue_rule": "All six current Husky tree templates."
+      },
+      {
+        "id": "CS3",
+        "label": "expanded_distractors",
+        "status": "blocked",
+        "catalogue_rule": "Current catalogue plus versioned metadata-only distractors.",
+        "blocker": "Synthetic tree metadata and its frozen order have not been specified yet."
+      }
+    ]
+  },
+  "confound_control": "Use the same mission, context, model, provider, prompt wording, and repetition index across variants. For M1 change only the declared custom-node library; for M3 change only the tree catalogue.",
+  "freeze_requirement": "Freeze this file, the distractor catalogue, and the runner before scored runs."
+}

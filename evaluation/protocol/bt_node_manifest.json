@@ -1,0 +1,140 @@
+{
+  "manifest_version": "1.0.0",
+  "source": {
+    "registration": "src/robot_actions/src/plugin_registration.cpp",
+    "ports": "src/robot_actions/src and src/robot_actions/include",
+    "behavior_tree_format": "4"
+  },
+  "validation_scope": {
+    "static_interface_check": "Checks registered node names, declared ports, required inputs, XML structure, and blackboard data flow.",
+    "factory_load_check": "Must be performed separately with the compiled ROS 2 workspace. Static validation is not reported as a factory-load pass."
+  },
+  "global_attributes": [
+    "name",
+    "_autoremap"
+  ],
+  "control_nodes": {
+    "Sequence": {
+      "ports": {}
+    },
+    "ReactiveSequence": {
+      "ports": {}
+    },
+    "Fallback": {
+      "ports": {}
+    },
+    "ReactiveFallback": {
+      "ports": {}
+    },
+    "Parallel": {
+      "ports": {
+        "success_count": {"direction": "input", "type": "int", "required": true},
+        "failure_count": {"direction": "input", "type": "int", "required": true}
+      }
+    },
+    "LoopString": {
+      "ports": {
+        "queue": {"direction": "input", "type": "SharedQueue<string>", "required": true},
+        "value": {"direction": "output", "type": "string", "required": true},
+        "if_empty": {"direction": "input", "type": "NodeStatus", "required": false}
+      }
+    },
+    "KeepRunningUntilFailure": {
+      "ports": {}
+    },
+    "Precondition": {
+      "ports": {
+        "if": {"direction": "input", "type": "script", "required": true},
+        "else": {"direction": "input", "type": "NodeStatus", "required": true}
+      }
+    }
+  },
+  "registered_nodes": {
+    "MoveTo": {
+      "ports": {
+        "pose": {"direction": "input", "type": "string", "required": true},
+        "frame_id": {"direction": "input", "type": "string", "required": false},
+        "action_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "MoveToGPS": {
+      "ports": {
+        "gps_pose": {"direction": "input", "type": "string", "required": true},
+        "action_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "TakePicture": {
+      "ports": {
+        "image_topic": {"direction": "input", "type": "string", "required": false},
+        "output_directory": {"direction": "input", "type": "string", "required": false},
+        "filename_prefix": {"direction": "input", "type": "string", "required": false},
+        "timeout_ms": {"direction": "input", "type": "int", "required": false},
+        "filepath": {"direction": "output", "type": "string", "required": false}
+      }
+    },
+    "TakePhoto": {
+      "alias_of": "TakePicture",
+      "ports": {
+        "image_topic": {"direction": "input", "type": "string", "required": false},
+        "output_directory": {"direction": "input", "type": "string", "required": false},
+        "filename_prefix": {"direction": "input", "type": "string", "required": false},
+        "timeout_ms": {"direction": "input", "type": "int", "required": false},
+        "filepath": {"direction": "output", "type": "string", "required": false}
+      }
+    },
+    "DistanceTraveled": {
+      "ports": {
+        "interval_m": {"direction": "input", "type": "double", "required": false},
+        "odom_topic": {"direction": "input", "type": "string", "required": false},
+        "odom_timeout_ms": {"direction": "input", "type": "int", "required": false},
+        "distance_accumulated_m": {"direction": "output", "type": "double", "required": false}
+      }
+    },
+    "GetCurrentPose": {
+      "ports": {
+        "pose_topic": {"direction": "input", "type": "string", "required": false},
+        "pose_timeout_ms": {"direction": "input", "type": "int", "required": false},
+        "odom_topic": {"direction": "input", "type": "string", "required": false},
+        "odom_timeout_ms": {"direction": "input", "type": "int", "required": false},
+        "current_x": {"direction": "output", "type": "double", "required": false},
+        "current_y": {"direction": "output", "type": "double", "required": false},
+        "current_yaw": {"direction": "output", "type": "double", "required": false},
+        "current_pose": {"direction": "output", "type": "string", "required": false},
+        "current_frame_id": {"direction": "output", "type": "string", "required": false},
+        "sweep_pose_000": {"direction": "output", "type": "string", "required": false},
+        "sweep_pose_060": {"direction": "output", "type": "string", "required": false},
+        "sweep_pose_120": {"direction": "output", "type": "string", "required": false},
+        "sweep_pose_180": {"direction": "output", "type": "string", "required": false},
+        "sweep_pose_240": {"direction": "output", "type": "string", "required": false},
+        "sweep_pose_300": {"direction": "output", "type": "string", "required": false},
+        "sweep_pose_360": {"direction": "output", "type": "string", "required": false}
+      }
+    },
+    "LogTemperature": {
+      "ports": {
+        "logfile_path": {"direction": "input", "type": "string", "required": false},
+        "service_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "RestartNode": {
+      "ports": {
+        "node_name": {"direction": "input", "type": "string", "required": true},
+        "service_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "ParseWaypoints": {
+      "ports": {
+        "raw_waypoints": {"direction": "input", "type": "string", "required": true},
+        "waypoint_queue": {"direction": "output", "type": "SharedQueue<string>", "required": true},
+        "waypoint_count": {"direction": "output", "type": "int", "required": true}
+      }
+    },
+    "ParseGpsWaypoints": {
+      "ports": {
+        "raw_waypoints": {"direction": "input", "type": "string", "required": true},
+        "waypoint_queue": {"direction": "output", "type": "SharedQueue<string>", "required": true},
+        "waypoint_count": {"direction": "output", "type": "int", "required": true}
+      }
+    }
+  }
+}

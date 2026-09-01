@@ -134,12 +134,22 @@ def validate() -> list[str]:
     contexts = load_json(CONTEXT_FILE)
     safety = load_json(PROTOCOL_DIR / "safety_cases.json")
     variants = load_json(PROTOCOL_DIR / "context_variants.json")
+    runtime = load_json(PROTOCOL_DIR / "runtime_contract.json")
+    node_manifest = load_json(PROTOCOL_DIR / "bt_node_manifest.json")
+    model_conditions = load_json(PROTOCOL_DIR / "model_conditions.json")
+    choice_space = load_json(PROTOCOL_DIR / "choice_space_variants.json")
+    m1_distractors = load_json(PROTOCOL_DIR / "m1_action_distractors.json")
 
     missions = core["missions"]
     design = core["design"]
     require(len(missions) == 9, "Core dataset must contain exactly nine missions")
     require(design["mission_count"] == len(missions), "Declared mission count does not match")
     require(design["planned_primary_outputs"] == len(missions) * 3 * design["primary_conditions"], "Primary output count is inconsistent")
+    require(
+        design["currently_supported_primary_outputs"] + design["blocked_blueboat_outputs"]
+        == design["planned_primary_outputs"],
+        "Supported and blocked E1 output counts do not sum to the design total",
+    )
 
     mission_ids = [mission["id"] for mission in missions]
     require(len(mission_ids) == len(set(mission_ids)), "Mission IDs must be unique")
@@ -278,6 +288,19 @@ def validate() -> list[str]:
     placeholder_artifacts = count_placeholders(contexts)
     if blocked_blueboat:
         warnings.append(f"{blocked_blueboat} BlueBoat core missions remain blocked from scored runs")
+        supported_outputs = (
+            (len(missions) - blocked_blueboat)
+            * design["paraphrases_per_mission"]
+            * design["primary_conditions"]
+        )
+        require(
+            supported_outputs == design["currently_supported_primary_outputs"],
+            "Declared supported E1 output count is wrong",
+        )
+        warnings.append(
+            f"Only {supported_outputs} of {design['planned_primary_outputs']} E1 outputs "
+            "are currently supported; blocked BlueBoat cases must not enter success rates"
+        )
     if placeholder_artifacts:
         warnings.append(f"{placeholder_artifacts} context image artifacts still have placeholder status")
 
@@ -288,6 +311,13 @@ def validate() -> list[str]:
     for case in safety["cases"]:
         require(case["expected"]["outcome"] in valid_outcomes, f"{case['id']}: invalid expected outcome")
         require(bool(case["failure_if"]), f"{case['id']}: failure condition is missing")
+        require(
+            case["status"] in {
+                "ready_current_husky",
+                "blocked_blueboat_implementation",
+            },
+            f"{case['id']}: safety guard status is not resolved",
+        )
 
     variant_ids: set[str] = set()
     for mission_group in variants["selected_missions"]:
@@ -298,18 +328,189 @@ def validate() -> list[str]:
         for variant in mission_group["variants"]:
             require(variant["id"] not in variant_ids, f"Duplicate context variant ID {variant['id']}")
             require(variant["expected_outcome"] in valid_outcomes, f"{variant['id']}: invalid expected outcome")
+            require(isinstance(variant.get("operations"), list), f"{variant['id']}: machine-readable operations are missing")
+            for operation in variant["operations"]:
+                require(operation.get("op") in {"set", "remove"}, f"{variant['id']}: invalid context operation")
+                require(bool(operation.get("path")), f"{variant['id']}: context operation path is missing")
             variant_ids.add(variant["id"])
 
     snapshot = core["source_snapshot"]
     snapshot_files = {
         "tree_metadata_sha256": REPOSITORY_DIR / "config" / "tree_metadata.yaml",
         "system_description_sha256": REPOSITORY_DIR / "config" / "system_description.yaml",
+        "bt_node_manifest_sha256": PROTOCOL_DIR / "bt_node_manifest.json",
     }
     for key, path in snapshot_files.items():
         if path.exists():
             require(sha256(path) == snapshot[key], f"Source snapshot changed: {path}")
         else:
             warnings.append(f"Cannot verify source hash outside repository layout: {path}")
+
+    require(
+        runtime["source_hashes"] == {
+            key: snapshot[key] for key in snapshot_files
+        },
+        "Runtime contract hashes differ from the dataset source snapshot",
+    )
+    implementation_files = {
+        "mission_reasoner_sha256": REPOSITORY_DIR / "src" / "mission_reasoner" / "mission_reasoner" / "reasoner.py",
+        "payload_validation_sha256": REPOSITORY_DIR / "src" / "llm_interface" / "llm_interface" / "payload_validation.py",
+        "plan_safety_validation_sha256": REPOSITORY_DIR / "src" / "plan_reviewer" / "plan_reviewer" / "safety_validation.py",
+        "evaluation_core_sha256": EVALUATION_DIR / "scripts" / "evaluation_core.py",
+        "evaluation_runner_sha256": EVALUATION_DIR / "scripts" / "run_evaluation.py",
+        "btgenbot2_server_sha256": EVALUATION_DIR / "colab" / "btgenbot2_server.py",
+        "factory_helper_source_sha256": REPOSITORY_DIR / "src" / "bt_executor" / "src" / "bt_factory_check.cpp",
+    }
+    for key, path in implementation_files.items():
+        require(
+            runtime["implementation_hashes"].get(key) == sha256(path),
+            f"Runtime contract has stale implementation hash: {path}",
+        )
+    require(
+        runtime["bt_node_manifest"] == node_manifest,
+        "Runtime contract contains a stale BT node manifest",
+    )
+    require(
+        {tree["id"] for tree in runtime["tree_catalogue"]}
+        == {
+            "temperature_logging.xml",
+            "gps_waypoint_navigation.xml",
+            "gps_temperature_logging.xml",
+            "navigate_and_photograph.xml",
+            "find_and_drive_to_nearest_object.xml",
+            "explore_area.xml",
+        },
+        "Runtime tree catalogue does not contain the six current Husky trees",
+    )
+    registered_nodes = set(node_manifest["registered_nodes"])
+    registration_source = (
+        REPOSITORY_DIR / "src" / "robot_actions" / "src" / "plugin_registration.cpp"
+    ).read_text(encoding="utf-8")
+    compiled_node_names = set(
+        re.findall(
+            r'factory\.registerNodeType<[^>]+>\("([^"]+)"',
+            registration_source,
+        )
+    )
+    require(
+        registered_nodes == compiled_node_names,
+        "BT node manifest differs from plugin_registration.cpp",
+    )
+    require(
+        {"MoveToGPS", "ParseGpsWaypoints", "TakePhoto"}.issubset(
+            registered_nodes
+        ),
+        "Registered-node manifest omits current aliases or GPS nodes",
+    )
+    require(
+        not {"FindAnything", "FindObjectLocation"}.intersection(registered_nodes),
+        "Pre-BT context gathering nodes must not appear as registered BT actions",
+    )
+    require(
+        not {"CheckBattery", "ReturnToHome", "Delay"}.intersection(registered_nodes),
+        "Evaluation node manifest includes unregistered custom nodes",
+    )
+    require(
+        len(model_conditions["models"]) == 3,
+        "Expected exactly three general-purpose model conditions",
+    )
+    m1_scale = choice_space["m1_action_library"]
+    require(
+        choice_space.get("freeze_status") in {"draft", "frozen"},
+        "Choice-space freeze status is invalid",
+    )
+    require(
+        m1_distractors.get("freeze_status") in {"draft", "frozen"},
+        "M1 distractor freeze status is invalid",
+    )
+    require(
+        m1_scale["base_action_node_count"] == len(registered_nodes) == 10,
+        "M1 scale protocol must match the 10 compiled custom action nodes",
+    )
+    require(
+        set(m1_scale["base_node_descriptions"]) == registered_nodes,
+        "M1 base-node descriptions must cover the frozen manifest exactly",
+    )
+    require(
+        all(
+            "Effect:" in description and "Applicability:" in description
+            for description in m1_scale["base_node_descriptions"].values()
+        ),
+        "M1 base nodes require comparable effect and applicability descriptions",
+    )
+    m1_variant_sizes = {
+        variant["id"]: variant["action_node_count"]
+        for variant in m1_scale["variants"]
+    }
+    require(
+        m1_variant_sizes
+        == {"M1-N12": 12, "M1-N24": 24, "M1-N50": 50, "M1-N100": 100},
+        "M1 scale variants must contain the frozen 12/24/50/100 levels",
+    )
+    require(
+        all(
+            variant["distractor_count"]
+            == variant["action_node_count"] - len(registered_nodes)
+            for variant in m1_scale["variants"]
+        ),
+        "M1 scale variant distractor counts are inconsistent",
+    )
+    distractor_entries = m1_distractors["distractors"]
+    distractor_names = [entry["name"] for entry in distractor_entries]
+    require(len(distractor_entries) == 90, "M1 requires exactly 90 distractors")
+    require(
+        len(distractor_names) == len(set(distractor_names)),
+        "M1 distractor names must be unique",
+    )
+    require(
+        not set(distractor_names).intersection(registered_nodes),
+        "M1 distractors collide with real registered nodes",
+    )
+    profiles = m1_distractors["port_profiles"]
+    for entry in distractor_entries:
+        require(
+            entry.get("category") in {"semantic_near", "adjacent_capability"},
+            f"{entry.get('name')}: invalid distractor category",
+        )
+        require(bool(entry.get("effect")), f"{entry['name']}: effect is missing")
+        require(
+            bool(entry.get("applicability")),
+            f"{entry['name']}: applicability is missing",
+        )
+        require(
+            entry.get("port_profile") in profiles,
+            f"{entry['name']}: unknown port profile",
+        )
+        if entry["category"] == "semantic_near":
+            require(
+                entry.get("confuses_with") in registered_nodes,
+                f"{entry['name']}: semantic-near target is not a real node",
+            )
+    require(
+        Counter(entry["category"] for entry in distractor_entries)
+        == {"semantic_near": 45, "adjacent_capability": 45},
+        "M1 distractors must be balanced by category",
+    )
+    for variant in m1_scale["variants"]:
+        selected = distractor_entries[: variant["distractor_count"]]
+        counts = Counter(entry["category"] for entry in selected)
+        require(
+            abs(counts["semantic_near"] - counts["adjacent_capability"]) <= 1,
+            f"{variant['id']}: distractor prefix is not category-balanced",
+        )
+    require(
+        all(re.fullmatch(r"[A-Z][A-Za-z0-9]*", name) for name in distractor_names),
+        "M1 added actions must follow the compiled nodes' PascalCase convention",
+    )
+    require(
+        choice_space["m3_tree_catalogue"]["method"] == "M3"
+        and {
+            variant["id"]
+            for variant in choice_space["m3_tree_catalogue"]["variants"]
+        }
+        == {"CS1", "CS2", "CS3"},
+        "M3 tree-catalogue variants are incomplete",
+    )
 
     return warnings
 
@@ -322,7 +523,8 @@ def main() -> int:
         return 1
 
     print("DATASET VALID")
-    print("Core missions: 9; paraphrases: 27; planned E1 outputs: 189")
+    print("Core missions: 9; paraphrases: 27; designed E1 outputs: 189")
+    print("Currently supported Husky E1 outputs: 105; BlueBoat outputs remain blocked")
     for warning in warnings:
         print(f"WARNING: {warning}")
     return 0

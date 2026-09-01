@@ -1,0 +1,39 @@
+{
+  "protocol_version": "1.0.0-draft",
+  "scored_run_rule": "A scored remote run must resolve to exactly one allowed provider, with fallback and response caching disabled. Record the returned provider, model revision where exposed, request body, usage, cost, and attempt history.",
+  "models": {
+    "gpt-5.6-sol": {
+      "model_id": "openai/gpt-5.6-sol",
+      "label": "Large general-purpose",
+      "temperature": 0.0,
+      "max_tokens": 8192,
+      "reasoning": {"effort": "xhigh"},
+      "provider_only": ["openai"],
+      "provider_freeze_status": "draft_verify_with_preflight"
+    },
+    "gemini-3.5-flash": {
+      "model_id": "google/gemini-3.5-flash",
+      "label": "Medium general-purpose",
+      "temperature": 0.0,
+      "max_tokens": 8192,
+      "provider_only": [],
+      "provider_freeze_status": "blocked_select_one_openrouter_provider"
+    },
+    "gemma-4-26b": {
+      "model_id": "google/gemma-4-26b-a4b-it",
+      "label": "Small general-purpose",
+      "temperature": 0.0,
+      "max_tokens": 4096,
+      "provider_only": [],
+      "provider_freeze_status": "blocked_select_one_openrouter_provider"
+    }
+  },
+  "local_model": {
+    "key": "btgenbot2",
+    "base_model": "meta-llama/Llama-3.2-1B-Instruct",
+    "adapter": "AIRLab-POLIMI/llama-3.2-1b-it-ft-lora-bt",
+    "base_revision": "9213176726f574b556790deb65791e0c5aa438b6",
+    "adapter_revision": null,
+    "freeze_status": "blocked_pin_huggingface_revisions_before_scored_run"
+  }
+}

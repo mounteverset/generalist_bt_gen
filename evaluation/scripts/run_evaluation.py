@@ -1,590 +1,1494 @@
 #!/usr/bin/env python3
-"""
-Thesis Evaluation Runner — E1 Core Method and Model Comparison.
+"""Reproducible E1-E4 thesis evaluation runner.
 
-Generates prompts and calls LLM APIs for all 9 missions × 3 paraphrases × 7 conditions
-(M1+M3 across 3 models, plus M2 BTGenBot-2) = 189 primary outputs.
-
-All general-purpose models route through OpenRouter (single API key).
-BTGenBot-2 routes through a Colab endpoint.
-
-Usage:
-  # Dry-run: generate all prompts without calling APIs
-  python3 evaluation/scripts/run_evaluation.py --dry-run
-
-  # Run all 5 Husky missions (all methods, all models)
-  OPENROUTER_API_KEY=*** python3 evaluation/scripts/run_evaluation.py --methods M1,M3 --models all --platform husky
-
-  # Single mission test run
-  python3 evaluation/scripts/run_evaluation.py --mission S1 --paraphrase S1-P1 --models gpt-5.6-sol --platform husky
-
-  # M2 (BTGenBot-2) via Colab endpoint
-  python3 evaluation/scripts/run_evaluation.py --methods M2 --colab-url https://xxxx.ngrok.io --platform husky
-
-  # Full E1: M1+M3+M2
-  OPENROUTER_API_KEY=*** python3 evaluation/scripts/run_evaluation.py \\
-    --methods M1,M3,M2 --models all --colab-url https://xxxx.ngrok.io --platform husky
-
-Environment:
-  OPENROUTER_API_KEY  — OpenRouter API key (required for M1/M3)
-  OLLAMA_HOST         — Optional: local Ollama for Gemma fallback (default http://localhost:11434)
+The runner preserves every raw first output. Transport retries and M3 semantic
+refinement are logged separately so first-attempt validity is never inflated.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
+import copy
+import hashlib
 import json
+import mimetypes
 import os
-import subprocess
+import platform as host_platform
+import random
+import socket
 import sys
 import time
+import urllib.error
 import urllib.request
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Mapping, Optional
 
-# ---------- paths ----------
-REPO = Path(__file__).resolve().parents[2]
-EVAL_DIR = REPO / "evaluation"
-PROTOCOL = EVAL_DIR / "protocol"
-FIXTURES = EVAL_DIR / "fixtures" / "context"
-PROMPTS_DIR = EVAL_DIR / "prompts"
-RAW_OUTPUTS = EVAL_DIR / "raw_outputs"
+from evaluation_core import (
+    EVALUATION,
+    FIXTURES,
+    PROTOCOL,
+    REPO,
+    analyze_xml_node_usage,
+    apply_context_operations,
+    build_m1_prompt,
+    build_m2_prompt,
+    build_m3_payload_prompt,
+    build_m3_requirements_prompt,
+    build_m3_selection_prompt,
+    canonical_json,
+    compare_payload_to_reference,
+    condition_id,
+    context_variant,
+    extract_xml_parameters,
+    load_json,
+    materialize_m1_action_library,
+    multimodal_preflight,
+    parse_decision,
+    parse_json_object,
+    parse_payload_response,
+    review_payload,
+    run_factory_check,
+    score_xml_against_mission,
+    sha256,
+    tree_by_id,
+    validate_xml_interface,
+    write_json,
+)
 
-# ---------- model config ----------
-# All general-purpose models route through OpenRouter.
-# Short keys are used on the CLI; OpenRouter IDs are used in API calls.
-MODELS = {
-    "gpt-5.6-sol": {
-        "openrouter_id": "openai/gpt-5.6-sol",
-        "label": "Large (GPT-5.6-Sol)",
-        "temperature": 0.0,
-        "max_tokens": 8192,
-        "reasoning": {"effort": "xhigh"},
-    },
-    "gemini-3.5-flash": {
-        "openrouter_id": "google/gemini-3.5-flash",
-        "label": "Medium (Gemini 3.5 Flash)",
-        "temperature": 0.0,
-        "max_tokens": 8192,
-    },
-    "gemma-4-26b": {
-        "openrouter_id": "google/gemma-4-26b-a4b-it",
-        "label": "Small (Gemma 4 26B)",
-        "temperature": 0.0,
-        "max_tokens": 4096,
-        "fallback_ollama": True,  # also runnable locally
-    },
-}
+sys.path.insert(0, str(REPO / "src" / "mission_reasoner"))
+sys.path.insert(0, str(REPO / "src" / "llm_interface"))
+from mission_reasoner.reasoner import ACCEPT, CLARIFY, REFUSE, MissionReasoner
+from llm_interface.payload_validation import generated_payload_errors
 
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 
-# ---------- helpers ----------
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_OUTPUT = EVALUATION / "raw_outputs"
+DEFAULT_LOG = EVALUATION / "run_log.jsonl"
+TRANSIENT_HTTP_CODES = {408, 409, 429, 502, 503, 504}
 
-def load_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as fh:
-        return json.load(fh)
 
-def save_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2, ensure_ascii=False)
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-def load_prompt(name: str) -> str:
-    path = PROMPTS_DIR / name
-    if not path.exists():
-        raise FileNotFoundError(f"Prompt template not found: {path}")
-    return path.read_text(encoding="utf-8")
 
-def serialize_context(context: dict) -> str:
-    clean = {}
-    for key, value in context.items():
-        if key in ("evidence_quality", "implementation_note", "agreement_rule"):
+def normalize_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(
+            str(item.get("text", "")) if isinstance(item, dict) else str(item)
+            for item in value
+        )
+    return "" if value is None else str(value)
+
+
+def redacted_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    return {
+        key: ("<redacted>" if key.lower() == "authorization" else value)
+        for key, value in headers.items()
+    }
+
+
+def response_cost(response: Mapping[str, Any]) -> float:
+    candidates = [
+        response.get("cost"),
+        (response.get("usage") or {}).get("cost")
+        if isinstance(response.get("usage"), Mapping)
+        else None,
+    ]
+    for value in candidates:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
             continue
-        clean[key] = value
-    return json.dumps(clean, indent=2, ensure_ascii=False)
+    return 0.0
 
-# ---------- prompt builders ----------
 
-def build_m1_prompt(mission: dict, paraphrase: dict, context: dict) -> tuple[str, str]:
-    system = load_prompt("m1_system.txt")
-    user_parts = [
-        "## Mission",
-        paraphrase["text"],
-        "",
-        "## Context",
-        serialize_context(context),
-        "",
-        "## Instructions",
-        "Generate the complete BehaviorTree.CPP XML for this mission.",
-        "Use ONLY the action nodes listed in the system prompt. Output ONLY valid XML.",
-    ]
-    if "forbidden_assumptions" in mission.get("requirements", {}):
-        user_parts.insert(1, "## Constraints")
-        for c in mission["requirements"]["forbidden_assumptions"]:
-            user_parts.insert(2, f"- {c}")
-        user_parts.insert(3, "")
-    return system, "\n".join(user_parts)
+def retry_delay(headers: Mapping[str, str], attempt: int) -> float:
+    raw = headers.get("Retry-After") or headers.get("retry-after")
+    try:
+        return min(60.0, max(0.0, float(raw)))
+    except (TypeError, ValueError):
+        return min(30.0, 2.0 ** attempt + random.random())
 
-def build_m3_selection_prompt(mission: dict, paraphrase: dict, context: dict) -> tuple[str, str]:
-    system = load_prompt("m3_selection_system.txt")
-    user = "\n".join([
-        "## Mission",
-        paraphrase["text"],
-        "",
-        "## Context",
-        serialize_context(context),
-        "",
-        "## Task",
-        "Select the most appropriate tree from the catalogue, or determine that no suitable tree exists.",
-    ])
-    return system, user
 
-def build_m3_payload_prompt(mission: dict, paraphrase: dict, context: dict, tree_id: str) -> tuple[str, str]:
-    system = load_prompt("m3_payload_system.txt")
-    user_parts = [
-        "## Mission",
-        paraphrase["text"],
-        "",
-        "## Selected Tree",
-        tree_id,
-        "",
-        "## Context",
-        serialize_context(context),
-        "",
-        "## Task",
-        f"Generate a valid blackboard payload for {tree_id} that fulfills this mission.",
-    ]
-    if "constraints" in mission.get("requirements", {}):
-        user_parts.insert(1, "## Constraints")
-        for c in mission["requirements"]["constraints"]:
-            user_parts.insert(2, f"- {c}")
-    return system, "\n".join(user_parts)
+def http_json(
+    url: str,
+    body: Mapping[str, Any],
+    headers: Mapping[str, str],
+    *,
+    timeout_s: int,
+    max_transport_retries: int,
+    dry_run: bool,
+) -> dict[str, Any]:
+    request_record = {
+        "url": url,
+        "headers": redacted_headers(headers),
+        "body": body,
+        "timeout_s": timeout_s,
+    }
+    if dry_run:
+        return {
+            "dry_run": True,
+            "request": request_record,
+            "attempts": [],
+            "content": "",
+            "raw_response": None,
+            "latency_s": 0.0,
+            "cost_usd": 0.0,
+        }
 
-# ---------- M2 (BTGenBot-2) action spec ----------
+    attempts: list[dict[str, Any]] = []
+    started = time.monotonic()
+    for attempt_index in range(max_transport_retries + 1):
+        attempt_started = time.monotonic()
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode("utf-8"),
+            headers=dict(headers),
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_s) as response:
+                raw_body = response.read().decode("utf-8")
+                parsed = json.loads(raw_body)
+                attempts.append(
+                    {
+                        "attempt": attempt_index + 1,
+                        "http_status": response.status,
+                        "latency_s": round(time.monotonic() - attempt_started, 3),
+                        "response_headers": dict(response.headers.items()),
+                    }
+                )
+                return {
+                    "request": request_record,
+                    "attempts": attempts,
+                    "raw_response": parsed,
+                    "latency_s": round(time.monotonic() - started, 3),
+                    "cost_usd": response_cost(parsed),
+                }
+        except urllib.error.HTTPError as exc:
+            response_headers = dict(exc.headers.items()) if exc.headers else {}
+            raw_error = exc.read().decode("utf-8", errors="replace")
+            retryable = exc.code in TRANSIENT_HTTP_CODES
+            delay = retry_delay(response_headers, attempt_index)
+            attempts.append(
+                {
+                    "attempt": attempt_index + 1,
+                    "http_status": exc.code,
+                    "error_body": raw_error,
+                    "retryable": retryable,
+                    "retry_delay_s": delay if retryable else 0.0,
+                    "latency_s": round(time.monotonic() - attempt_started, 3),
+                    "response_headers": response_headers,
+                }
+            )
+            if not retryable or attempt_index >= max_transport_retries:
+                break
+            time.sleep(delay)
+        except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+            delay = retry_delay({}, attempt_index)
+            attempts.append(
+                {
+                    "attempt": attempt_index + 1,
+                    "error": str(exc),
+                    "retryable": True,
+                    "retry_delay_s": delay,
+                    "latency_s": round(time.monotonic() - attempt_started, 3),
+                }
+            )
+            if attempt_index >= max_transport_retries:
+                break
+            time.sleep(delay)
+        except (json.JSONDecodeError, ValueError) as exc:
+            attempts.append(
+                {
+                    "attempt": attempt_index + 1,
+                    "error": f"invalid JSON response: {exc}",
+                    "retryable": False,
+                    "latency_s": round(time.monotonic() - attempt_started, 3),
+                }
+            )
+            break
+    return {
+        "request": request_record,
+        "attempts": attempts,
+        "raw_response": None,
+        "error": attempts[-1].get("error")
+        or f"HTTP {attempts[-1].get('http_status')}",
+        "content": "",
+        "latency_s": round(time.monotonic() - started, 3),
+        "cost_usd": 0.0,
+    }
 
-BTGENBOT2_ACTIONS = "\n".join([
-    "MoveTo(pose: string, action_name: string)",
-    "ParseWaypoints(raw_waypoints: string, waypoint_queue: string, waypoint_count: string)",
-    "LoopString(queue: string, value: string, if_empty: string)",
-    "LogTemperature(logfile_path: string)",
-    "TakePhoto(image_topic: string, output_directory: string, filename_prefix: string, timeout_ms: int, filepath: string)",
-    "DistanceTraveled(interval_m: double, odom_topic: string, odom_timeout_ms: int, distance_accumulated_m: double)",
-    "KeepRunningUntilFailure()",
-    "FindObjectLocation(object_query: string, object_pose: string)",
-    "CheckBattery(min_percent: double, battery_percent: double, low_battery: bool)",
-    "ReturnToHome(home_pose: string, action_name: string)",
-    "Sequence",
-    "Parallel(success_count: int, failure_count: int)",
-    "Fallback",
-    "Delay(delay_ms: int)",
-])
 
-def build_m2_prompt(mission: dict, paraphrase: dict) -> tuple[str, str]:
-    task = paraphrase["text"]
-    extras = []
-    if "constraints" in mission.get("requirements", {}):
-        extras.append("Constraints: " + "; ".join(mission["requirements"]["constraints"]))
-    if "forbidden_assumptions" in mission.get("requirements", {}):
-        extras.append("; ".join(mission["requirements"]["forbidden_assumptions"]))
-    if extras:
-        task = f"{task} {' '.join(extras)}"
-    return task, BTGENBOT2_ACTIONS
+def image_message_content(user_text: str, image_paths: Iterable[Path]) -> list[dict[str, Any]]:
+    content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
+    for path in image_paths:
+        media_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type};base64,{encoded}"},
+            }
+        )
+    return content
 
-# ---------- artifact saving ----------
 
-def save_artifact(run_id: str, files: dict[str, Any]) -> Path:
-    path = RAW_OUTPUTS / run_id
-    path.mkdir(parents=True, exist_ok=True)
-    for name, content in files.items():
-        save_json(path / name, content)
-    return path
-
-# ---------- API callers ----------
-
-def call_openrouter(model_cfg: dict, system: str, user: str, dry_run: bool) -> dict:
-    """Call any model via OpenRouter (OpenAI-compatible API)."""
+def call_openrouter(
+    model: Mapping[str, Any],
+    system: str,
+    user: str,
+    *,
+    image_paths: Iterable[Path],
+    seed: int,
+    dry_run: bool,
+    timeout_s: int,
+    max_transport_retries: int,
+) -> dict[str, Any]:
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key and not dry_run:
-        return {"error": "OPENROUTER_API_KEY not set", "raw_response": None}
-
-    if dry_run:
-        return {"dry_run": True, "model": model_cfg["openrouter_id"], "provider": "openrouter"}
-
+        return {"error": "OPENROUTER_API_KEY is not set", "cost_usd": 0.0}
+    paths = list(image_paths)
+    user_content: Any = image_message_content(user, paths) if paths else user
     body: dict[str, Any] = {
-        "model": model_cfg["openrouter_id"],
+        "model": model["model_id"],
         "messages": [
             {"role": "system", "content": system},
-            {"role": "user", "content": user},
+            {"role": "user", "content": user_content},
         ],
-        "temperature": model_cfg["temperature"],
-        "max_tokens": model_cfg["max_tokens"],
+        "temperature": model["temperature"],
+        "max_tokens": model["max_tokens"],
+        "seed": seed,
     }
-    if "reasoning" in model_cfg:
-        body["reasoning"] = model_cfg["reasoning"]
-
-    req = urllib.request.Request(
-        f"{OPENROUTER_BASE}/chat/completions",
-        data=json.dumps(body).encode(),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+    if model.get("reasoning"):
+        body["reasoning"] = model["reasoning"]
+    providers = model.get("provider_only", [])
+    if providers:
+        body["provider"] = {
+            "only": providers,
+            "allow_fallbacks": False,
+            "require_parameters": True,
+            "data_collection": "deny",
+        }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "X-OpenRouter-Cache": "false",
+        "X-OpenRouter-Metadata": "enabled",
+        "HTTP-Referer": "https://github.com/generalist-bt-gen/evaluation",
+        "X-Title": "Generalist BT thesis evaluation",
+    }
+    result = http_json(
+        OPENROUTER_URL,
+        body,
+        headers,
+        timeout_s=timeout_s,
+        max_transport_retries=max_transport_retries,
+        dry_run=dry_run,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            result = json.loads(resp.read())
-        choice = result["choices"][0]
-        content = choice["message"].get("content", "")
-        # OpenRouter may include reasoning in a separate field
-        if "reasoning" in choice["message"] and not content:
-            content = choice["message"]["reasoning"]
-        return {
-            "raw_response": result,
-            "content": content,
-            "model": result.get("model", model_cfg["openrouter_id"]),
-            "usage": result.get("usage", {}),
-        }
-    except Exception as exc:
-        return {"error": str(exc), "raw_response": None}
-
-
-def call_ollama(model_key: str, system: str, user: str, dry_run: bool) -> dict:
-    """Call local Ollama (Gemma fallback)."""
-    if dry_run:
-        return {"dry_run": True, "model": model_key, "provider": "ollama"}
-
-    try:
-        result = subprocess.run(
-            ["ollama", "run", model_key, "--format", "json"],
-            input=json.dumps({
-                "model": model_key,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                "stream": False,
-                "options": {"temperature": 0.0, "num_predict": 4096},
-            }),
-            capture_output=True, text=True, timeout=300,
-        )
-        if result.returncode != 0:
-            return {"error": result.stderr, "raw_response": None}
-        data = json.loads(result.stdout)
-        return {
-            "raw_response": data,
-            "content": data.get("message", {}).get("content", ""),
-            "model": model_key,
-            "usage": data.get("eval_count"),
-        }
-    except subprocess.TimeoutExpired:
-        return {"error": "Timeout after 300s", "raw_response": None}
-    except Exception as exc:
-        return {"error": str(exc), "raw_response": None}
-
-
-def call_colab(colab_url: str, task: str, actions: str, dry_run: bool) -> dict:
-    """Call BTGenBot-2 via Colab endpoint."""
-    if dry_run:
-        return {"dry_run": True, "model": "BTGenBot-2", "provider": "colab"}
-
-    body = {"task": task, "actions": actions, "max_new_tokens": 2048}
-    req = urllib.request.Request(
-        f"{colab_url.rstrip('/')}/generate",
-        data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+    raw = result.get("raw_response")
+    if isinstance(raw, Mapping):
+        choices = raw.get("choices") or []
+        if choices:
+            message = choices[0].get("message", {})
+            result["content"] = normalize_content(message.get("content"))
+            result["finish_reason"] = choices[0].get("finish_reason")
+        result["returned_model"] = raw.get("model")
+        result["returned_provider"] = raw.get("provider")
+        result["usage"] = raw.get("usage", {})
+    result["model_id"] = model["model_id"]
+    result["requested_provider_only"] = providers
+    returned_provider = result.get("returned_provider")
+    result["provider_verified"] = (
+        str(returned_provider).lower().replace(" ", "-") in providers
+        if returned_provider and providers
+        else None
     )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            result = json.loads(resp.read())
-        return {
-            "raw_response": result,
-            "content": result.get("xml", ""),
-            "model": "BTGenBot-2",
-        }
-    except Exception as exc:
-        return {"error": str(exc), "raw_response": None}
-
-
-def call_llm(model_key: str, system: str, user: str, dry_run: bool) -> dict:
-    """Route model key → API call. Prefers OpenRouter, falls back to Ollama for Gemma."""
-    cfg = MODELS[model_key]
-    start = time.monotonic()
-
-    # Try OpenRouter first (all models available there)
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if api_key or dry_run:
-        result = call_openrouter(cfg, system, user, dry_run)
-    elif cfg.get("fallback_ollama"):
-        result = call_ollama(model_key, system, user, dry_run)
-    else:
-        result = {"error": "OPENROUTER_API_KEY not set and no local fallback available",
-                  "raw_response": None}
-
-    result["latency_s"] = round(time.monotonic() - start, 3)
-    result["model_key"] = model_key
+    result["seed"] = seed
+    result["cache_disabled_requested"] = True
     return result
 
-# ---------- main ----------
+
+def call_colab(
+    colab_url: str,
+    task: str,
+    actions: str,
+    *,
+    seed: int,
+    dry_run: bool,
+    timeout_s: int,
+    max_transport_retries: int,
+) -> dict[str, Any]:
+    token = os.environ.get("COLAB_EVAL_TOKEN", "")
+    if not token and not dry_run:
+        return {"error": "COLAB_EVAL_TOKEN is not set", "cost_usd": 0.0}
+    body = {
+        "task": task,
+        "actions": actions,
+        "max_new_tokens": 2048,
+        "seed": seed,
+    }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    result = http_json(
+        f"{colab_url.rstrip('/')}/generate",
+        body,
+        headers,
+        timeout_s=timeout_s,
+        max_transport_retries=max_transport_retries,
+        dry_run=dry_run,
+    )
+    raw = result.get("raw_response")
+    if isinstance(raw, Mapping):
+        result["content"] = normalize_content(
+            raw.get("raw_text", raw.get("xml", ""))
+        )
+        result["extracted_xml"] = raw.get("extracted_xml", raw.get("xml"))
+        result["generation_metadata"] = raw.get("metadata", {})
+        result["raw_output_preserved"] = "raw_text" in raw
+    result["model_id"] = "BTGenBot-2"
+    result["seed"] = seed
+    return result
+
+
+def method_outcome(action: Optional[str]) -> str:
+    outcomes = {
+        "plan": "plan",
+        "select": "plan",
+        "clarify": "clarification",
+        "refuse": "refusal",
+    }
+    return outcomes.get(str(action), "invalid")
+
+
+def btgenbot_revision_errors(
+    metadata: Mapping[str, Any], model_conditions: Mapping[str, Any]
+) -> list[str]:
+    """Verify that a Colab result came from the model revisions in the protocol."""
+    local_model = model_conditions["local_model"]
+    expected = {
+        "base_model": local_model.get("base_model"),
+        "base_revision": local_model.get("base_revision"),
+        "adapter_model": local_model.get("adapter"),
+        "adapter_revision": local_model.get("adapter_revision"),
+    }
+    errors = [
+        f"{field} does not match the frozen protocol"
+        for field, expected_value in expected.items()
+        if not expected_value or metadata.get(field) != expected_value
+    ]
+    if metadata.get("revision_freeze_status") != "frozen":
+        errors.append("model revisions were not frozen by the Colab runtime")
+    return errors
+
+
+def direct_result(
+    method: str,
+    raw_output: str,
+    mission: Mapping[str, Any],
+    expected_outcome: str,
+    runtime: Mapping[str, Any],
+    factory_helper: Optional[Path],
+    context: Mapping[str, Any],
+    decision_envelope: bool = False,
+) -> dict[str, Any]:
+    decision = None
+    if decision_envelope:
+        decision, errors = parse_decision(raw_output)
+        outcome = method_outcome(decision.get("action") if decision else None)
+        if outcome != "plan":
+            return {
+                "decision": decision,
+                "decision_outcome": outcome,
+                "expected_outcome": expected_outcome,
+                "correct_outcome": outcome == expected_outcome,
+                "automated_task_success": outcome == expected_outcome,
+                "first_attempt_valid": not errors,
+                "validation": {"decision_errors": errors},
+            }
+        raw_xml = decision.get("xml", "") if decision else ""
+        if not isinstance(raw_xml, str) or not raw_xml:
+            errors.append("plan decision has no XML artifact")
+            raw_xml = ""
+    else:
+        errors = []
+        raw_xml = raw_output
+
+    if errors:
+        return {
+            "decision": decision,
+            "decision_outcome": "invalid_plan",
+            "expected_outcome": expected_outcome,
+            "correct_outcome": False,
+            "automated_task_success": False,
+            "first_attempt_valid": False,
+            "validation": {"decision_errors": errors},
+        }
+    xml_validation = validate_xml_interface(
+        raw_xml, runtime["bt_node_manifest"], initial_blackboard=()
+    )
+    factory = run_factory_check(raw_xml, factory_helper)
+    xml_validation.update(factory)
+    semantic = score_xml_against_mission(raw_xml, mission)
+    scale_condition = runtime.get("evaluation_condition", {})
+    node_usage = analyze_xml_node_usage(
+        raw_xml,
+        runtime["bt_node_manifest"],
+        scale_condition.get("distractor_names", []),
+    )
+    port_errors = [
+        error
+        for error in xml_validation.get("errors", [])
+        if "undeclared port" in error or "missing required port" in error
+    ]
+    action_library_metrics = {
+        **node_usage,
+        "required_node_recall": semantic.get("required_node_recall"),
+        "distractor_use": bool(node_usage["used_distractor_nodes"]),
+        "distractor_use_count": len(node_usage["used_distractor_nodes"]),
+        "invented_node_count": len(node_usage["invented_nodes"]),
+        "port_errors": port_errors,
+        "port_error_count": len(port_errors),
+    }
+    extracted_parameters = extract_xml_parameters(raw_xml)
+    spatial_review = review_payload(extracted_parameters, context, mission)
+    first_valid = bool(
+        xml_validation["syntax_valid"]
+        and xml_validation["interface_valid_static"]
+        and factory.get("factory_load") != "fail"
+    )
+    return {
+        "decision": decision,
+        "decision_outcome": "plan" if first_valid else "invalid_plan",
+        "expected_outcome": expected_outcome,
+        "correct_outcome": first_valid and expected_outcome == "plan",
+        "automated_task_success": bool(
+            first_valid
+            and expected_outcome == "plan"
+            and semantic["required_nodes_present"]
+            and semantic["concrete_values_present"]
+            and spatial_review["approved"]
+            and not action_library_metrics["distractor_use"]
+        ),
+        "first_attempt_valid": first_valid,
+        "validation": {
+            "xml": xml_validation,
+            "automated_semantics": semantic,
+            "action_library_metrics": action_library_metrics,
+            "extracted_parameters": extracted_parameters,
+            "spatial_review": spatial_review,
+        },
+    }
+
+
+def reasoner_result_dict(result: Any) -> dict[str, Any]:
+    status = {ACCEPT: "plan", CLARIFY: "clarification", REFUSE: "refusal"}.get(
+        result.status_code, "error"
+    )
+    return {
+        "outcome": status,
+        "status_code": result.status_code,
+        "message": result.message,
+        "clarification_question": result.clarification_question,
+        "reasoning": result.reasoning,
+        "matched_capabilities": result.matched_capabilities,
+        "missing_capabilities": result.missing_capabilities,
+        "candidate_trees": result.candidate_trees,
+    }
+
+
+def requirements_shape_errors(value: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    expected = {
+        "required_capabilities": list,
+        "mission_intents": list,
+        "constraints": dict,
+        "ambiguities": list,
+        "rationale": str,
+    }
+    for key, expected_type in expected.items():
+        if not isinstance(value.get(key), expected_type):
+            errors.append(f"requirements field '{key}' must be {expected_type.__name__}")
+    return errors
+
+
+def execute_m3(
+    item: Mapping[str, Any],
+    model: Mapping[str, Any],
+    runtime: Mapping[str, Any],
+    *,
+    seed: int,
+    image_paths: Iterable[Path],
+    dry_run: bool,
+    timeout_s: int,
+    max_transport_retries: int,
+    refinement_attempts: int,
+    scored: bool,
+) -> dict[str, Any]:
+    mission = item["mission"]
+    mission_text = item["paraphrase"]["text"]
+    context = item["context"]
+    stages: list[dict[str, Any]] = []
+
+    requirements_system, requirements_user = build_m3_requirements_prompt(
+        mission_text, context, runtime
+    )
+    requirements_call = call_openrouter(
+        model,
+        requirements_system,
+        requirements_user,
+        image_paths=image_paths,
+        seed=seed,
+        dry_run=dry_run,
+        timeout_s=timeout_s,
+        max_transport_retries=max_transport_retries,
+    )
+    stages.append({"stage": "requirements", **requirements_call})
+    if requirements_call.get("error"):
+        return {"status": "transport_error", "stages": stages}
+    if scored and requirements_call.get("provider_verified") is not True:
+        return {
+            "status": "protocol_error",
+            "reason": "requirements provider could not be verified",
+            "stages": stages,
+        }
+    extracted_requirements: dict[str, Any] = {}
+    requirements_errors: list[str] = []
+    if not dry_run:
+        parsed, requirements_errors = parse_json_object(requirements_call["content"])
+        if parsed:
+            extracted_requirements = parsed
+            requirements_errors.extend(requirements_shape_errors(parsed))
+
+    reasoner = MissionReasoner(runtime["system_description"])
+    gate = reasoner.validate(
+        mission_text,
+        runtime["tree_catalogue"],
+        canonical_json(context),
+        extracted_requirements,
+    )
+    gate_record = reasoner_result_dict(gate)
+    gate_record["requirements_parse_errors"] = requirements_errors
+    stages.append({"stage": "mission_reasoner", **gate_record})
+
+    deterministic_outcome = gate_record["outcome"]
+    if deterministic_outcome != "plan":
+        return {
+            "status": deterministic_outcome,
+            "decision_outcome": deterministic_outcome,
+            "expected_outcome": item["expected_outcome"],
+            "correct_outcome": deterministic_outcome == item["expected_outcome"],
+            "automated_task_success": (
+                deterministic_outcome == item["expected_outcome"]
+            ),
+            "first_attempt_valid": not requirements_errors,
+            "stages": stages,
+        }
+
+    candidates = gate.candidate_trees
+    selection_system, selection_user = build_m3_selection_prompt(
+        mission_text, context, runtime, candidates
+    )
+    selection_call = call_openrouter(
+        model,
+        selection_system,
+        selection_user,
+        image_paths=image_paths,
+        seed=seed,
+        dry_run=dry_run,
+        timeout_s=timeout_s,
+        max_transport_retries=max_transport_retries,
+    )
+    stages.append({"stage": "selection", **selection_call})
+    if selection_call.get("error"):
+        return {"status": "transport_error", "stages": stages}
+    if scored and selection_call.get("provider_verified") is not True:
+        return {
+            "status": "protocol_error",
+            "reason": "selection provider could not be verified",
+            "stages": stages,
+        }
+    selection: Optional[dict[str, Any]] = None
+    selection_errors: list[str] = []
+    if dry_run:
+        expected_tree = mission.get("expected", {}).get("tree_id")
+        selected_tree_id = (
+            expected_tree if expected_tree in candidates else (candidates[0] if candidates else None)
+        )
+    else:
+        selection, selection_errors = parse_json_object(selection_call["content"])
+        selected_tree_id = selection.get("tree_id") if selection else None
+        if selection and not isinstance(selection.get("rationale"), str):
+            selection_errors.append("selection rationale must be a string")
+        confidence = selection.get("confidence") if selection else None
+        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+            selection_errors.append("selection confidence must be numeric")
+        elif not 0.0 <= float(confidence) <= 1.0:
+            selection_errors.append("selection confidence must be within [0, 1]")
+        if selected_tree_id not in candidates:
+            selection_errors.append("selected tree is not in deterministic candidate set")
+    stages.append(
+        {
+            "stage": "selection_validation",
+            "selection": selection,
+            "errors": selection_errors,
+            "candidate_trees": candidates,
+        }
+    )
+    if selection_errors or not selected_tree_id:
+        return {
+            "status": "validation_failed",
+            "decision_outcome": "invalid_plan",
+            "expected_outcome": item["expected_outcome"],
+            "correct_outcome": False,
+            "automated_task_success": False,
+            "first_attempt_valid": False,
+            "stages": stages,
+        }
+
+    tree = tree_by_id(runtime, selected_tree_id)
+    if tree is None:
+        return {"status": "protocol_error", "stages": stages}
+    contract = tree.get("blackboard_contract", {})
+    payload_system, payload_user = build_m3_payload_prompt(
+        mission_text, context, tree
+    )
+    payload_call = call_openrouter(
+        model,
+        payload_system,
+        payload_user,
+        image_paths=image_paths,
+        seed=seed,
+        dry_run=dry_run,
+        timeout_s=timeout_s,
+        max_transport_retries=max_transport_retries,
+    )
+    stages.append({"stage": "payload_attempt_1", **payload_call})
+    if payload_call.get("error"):
+        return {"status": "transport_error", "stages": stages}
+    if scored and payload_call.get("provider_verified") is not True:
+        return {
+            "status": "protocol_error",
+            "reason": "payload provider could not be verified",
+            "stages": stages,
+        }
+    if dry_run:
+        return {
+            "status": "dry_run",
+            "decision_outcome": "plan",
+            "expected_outcome": item["expected_outcome"],
+            "correct_outcome": None,
+            "first_attempt_valid": None,
+            "selected_tree": selected_tree_id,
+            "stages": stages,
+        }
+
+    first_raw_output = payload_call["content"]
+    payload, payload_errors = parse_payload_response(first_raw_output)
+    if payload is not None:
+        payload_errors.extend(generated_payload_errors(payload, contract, context))
+        payload_errors.extend(review_payload(payload, context, mission)["errors"])
+    first_attempt_valid = bool(
+        not requirements_errors
+        and not selection_errors
+        and payload is not None
+        and not payload_errors
+    )
+    stages.append(
+        {
+            "stage": "payload_validation_1",
+            "payload": payload,
+            "errors": payload_errors,
+        }
+    )
+
+    final_payload = payload
+    final_errors = list(payload_errors)
+    prior_raw = first_raw_output
+    for refinement_index in range(refinement_attempts):
+        if not final_errors:
+            break
+        payload_system, payload_user = build_m3_payload_prompt(
+            mission_text,
+            context,
+            tree,
+            prior_output=prior_raw,
+            validation_errors=final_errors,
+        )
+        refinement_call = call_openrouter(
+            model,
+            payload_system,
+            payload_user,
+            image_paths=image_paths,
+            seed=seed + refinement_index + 1,
+            dry_run=False,
+            timeout_s=timeout_s,
+            max_transport_retries=max_transport_retries,
+        )
+        attempt_number = refinement_index + 2
+        stages.append(
+            {"stage": f"payload_attempt_{attempt_number}", **refinement_call}
+        )
+        if refinement_call.get("error"):
+            break
+        if scored and refinement_call.get("provider_verified") is not True:
+            final_errors.append("refinement provider could not be verified")
+            break
+        prior_raw = refinement_call["content"]
+        final_payload, final_errors = parse_payload_response(prior_raw)
+        if final_payload is not None:
+            final_errors.extend(
+                generated_payload_errors(final_payload, contract, context)
+            )
+            final_errors.extend(
+                review_payload(final_payload, context, mission)["errors"]
+            )
+        stages.append(
+            {
+                "stage": f"payload_validation_{attempt_number}",
+                "payload": final_payload,
+                "errors": final_errors,
+            }
+        )
+
+    final_valid = final_payload is not None and not final_errors
+    reference = (
+        compare_payload_to_reference(final_payload, mission)
+        if final_payload is not None and mission.get("expected", {}).get("canonical_payload")
+        else {}
+    )
+    actual_outcome = "plan" if final_valid else "invalid_plan"
+    exact_reference_required = (
+        mission.get("complexity", {})
+        .get("scores", {})
+        .get("spatial_reasoning", 0)
+        < 2
+    )
+    return {
+        "status": "complete" if final_valid else "validation_failed",
+        "decision_outcome": actual_outcome,
+        "expected_outcome": item["expected_outcome"],
+        "correct_outcome": actual_outcome == item["expected_outcome"],
+        "automated_task_success": bool(
+            final_valid
+            and selected_tree_id == mission.get("expected", {}).get("tree_id")
+            and (
+                not exact_reference_required
+                or not reference
+                or reference.get("reference_match")
+            )
+        ),
+        "first_attempt_valid": first_attempt_valid,
+        "selected_tree": selected_tree_id,
+        "expected_tree": mission.get("expected", {}).get("tree_id"),
+        "tree_match": selected_tree_id == mission.get("expected", {}).get("tree_id"),
+        "final_payload": final_payload,
+        "final_validation_errors": final_errors,
+        "reference_comparison": reference,
+        "stages": stages,
+    }
+
+
+def get_cost(record: Mapping[str, Any]) -> float:
+    total = 0.0
+    for stage in record.get("stages", []):
+        try:
+            total += float(stage.get("cost_usd", 0.0))
+        except (TypeError, ValueError):
+            pass
+    if "api_call" in record:
+        try:
+            total += float(record["api_call"].get("cost_usd", 0.0))
+        except (TypeError, ValueError):
+            pass
+    return total
+
+
+def find_mission(core: Mapping[str, Any], mission_id: str) -> dict[str, Any]:
+    for mission in core["missions"]:
+        if mission["id"] == mission_id:
+            return mission
+    raise KeyError(mission_id)
+
+
+def build_work_items(
+    experiment: str,
+    core: Mapping[str, Any],
+    contexts: Mapping[str, Any],
+    variants: Mapping[str, Any],
+    safety: Mapping[str, Any],
+    choice_space: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    if experiment == "E1":
+        for mission in core["missions"]:
+            for paraphrase in mission["paraphrases"]:
+                items.append(
+                    {
+                        "mission": mission,
+                        "paraphrase": paraphrase,
+                        "context": contexts["fixtures"][mission["id"]],
+                        "expected_outcome": mission["expected"]["outcome"],
+                        "variant_id": None,
+                    }
+                )
+    elif experiment == "E3":
+        method_variants = (
+            (
+                "M1",
+                choice_space["m1_action_library"]["variants"],
+            ),
+            (
+                "M3",
+                choice_space["m3_tree_catalogue"]["variants"],
+            ),
+        )
+        for mission in core["missions"]:
+            for paraphrase in mission["paraphrases"]:
+                for method, scale_variants in method_variants:
+                    for scale_variant in scale_variants:
+                        items.append(
+                            {
+                                "mission": mission,
+                                "paraphrase": paraphrase,
+                                "context": contexts["fixtures"][mission["id"]],
+                                "expected_outcome": mission["expected"]["outcome"],
+                                "variant_id": scale_variant["id"],
+                                "variant_method": method,
+                            }
+                        )
+    elif experiment == "E2":
+        for group in variants["selected_missions"]:
+            mission = find_mission(core, group["mission_id"])
+            base_context = contexts["fixtures"][mission["id"]]
+            for variant in group["variants"]:
+                materialized, _ = context_variant(
+                    variants, mission["id"], variant["id"], base_context
+                )
+                for paraphrase in mission["paraphrases"]:
+                    items.append(
+                        {
+                            "mission": mission,
+                            "paraphrase": paraphrase,
+                            "context": materialized,
+                            "expected_outcome": variant["expected_outcome"],
+                            "variant_id": variant["id"],
+                        }
+                    )
+    elif experiment == "E4":
+        for case in safety["cases"]:
+            expected = dict(case["expected"])
+            pseudo_mission = {
+                "id": case["id"],
+                "title": case["title"],
+                "platform": case["platform"],
+                "support_status": (
+                    "blocked_blueboat_implementation"
+                    if case["status"] == "blocked_blueboat_implementation"
+                    else "implemented_catalogue"
+                ),
+                "complexity": {"label": "adverse"},
+                "requirements": {},
+                "expected": {
+                    "outcome": expected["outcome"],
+                    "tree_id": expected.get("tree_id"),
+                    "canonical_payload": {},
+                },
+            }
+            items.append(
+                {
+                    "mission": pseudo_mission,
+                    "paraphrase": {"id": f"{case['id']}-P1", "text": case["mission"]},
+                    "context": dict(case.get("context_overrides", {})),
+                    "expected_outcome": expected["outcome"],
+                    "variant_id": case["id"],
+                    "safety_case": case,
+                }
+            )
+    else:
+        raise ValueError(f"Unsupported experiment {experiment}")
+    return items
+
+
+def narrow_runtime_for_e3(
+    runtime: Mapping[str, Any],
+    item: Mapping[str, Any],
+    choice_space: Mapping[str, Any],
+    distractor_catalogue: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], Optional[str]]:
+    variant = item.get("variant_id")
+    method = item.get("variant_method")
+    if method == "M1":
+        narrowed, condition = materialize_m1_action_library(
+            runtime,
+            choice_space,
+            distractor_catalogue,
+            str(variant),
+            item["paraphrase"]["id"],
+        )
+        return narrowed, condition, None
+    if method != "M3":
+        return copy.deepcopy(dict(runtime)), {}, f"Unsupported E3 method {method}"
+
+    variant_config = next(
+        (
+            entry
+            for entry in choice_space["m3_tree_catalogue"]["variants"]
+            if entry.get("id") == variant
+        ),
+        None,
+    )
+    if variant_config is None:
+        return copy.deepcopy(dict(runtime)), {}, f"Unknown M3 variant {variant}"
+    if variant_config.get("status") == "blocked":
+        return (
+            copy.deepcopy(dict(runtime)),
+            {},
+            str(variant_config.get("blocker", "M3 variant is blocked")),
+        )
+
+    narrowed = copy.deepcopy(dict(runtime))
+    expected = item["mission"].get("expected", {}).get("tree_id")
+    catalogue = runtime["tree_catalogue"]
+    if variant == "CS1":
+        chosen = [tree for tree in catalogue if tree.get("id") == expected]
+        distractor = next(
+            (tree for tree in catalogue if tree.get("id") != expected), None
+        )
+        if distractor:
+            chosen.append(distractor)
+        narrowed["tree_catalogue"] = chosen
+    elif variant != "CS2":
+        return narrowed, {}, f"M3 variant {variant} has no materialization rule"
+
+    tree_ids = [tree["id"] for tree in narrowed["tree_catalogue"]]
+    catalogue_hash = hashlib.sha256(canonical_json(tree_ids).encode("utf-8")).hexdigest()
+    condition = {
+        "method": "M3",
+        "variant_id": variant,
+        "tree_count": len(tree_ids),
+        "tree_ids": tree_ids,
+        "tree_catalogue_sha256": catalogue_hash,
+    }
+    narrowed["evaluation_condition"] = condition
+    return narrowed, condition, None
+
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Thesis E1 Evaluation Runner")
-    p.add_argument("--dry-run", action="store_true", help="Generate prompts without API calls")
-    p.add_argument("--methods", default="M1,M3", help="Comma-separated: M1,M3,M2")
-    p.add_argument("--models", default="all", help="Comma-separated model keys or 'all'")
-    p.add_argument("--platform", default="all", help="husky, blueboat, or all")
-    p.add_argument("--mission", help="Single mission ID (e.g., S1)")
-    p.add_argument("--paraphrase", help="Single paraphrase ID (e.g., S1-P1)")
-    p.add_argument("--colab-url", help="BTGenBot-2 Colab endpoint URL (for M2)")
-    p.add_argument("--output-dir", default=str(RAW_OUTPUTS), help="Output directory")
-    p.add_argument("--log", default=str(EVAL_DIR / "run_log.jsonl"), help="Run log path")
-    return p.parse_args()
+    parser = argparse.ArgumentParser(description="Thesis evaluation runner")
+    parser.add_argument("--experiment", choices=("E1", "E2", "E3", "E4"), default="E1")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--scored", action="store_true")
+    parser.add_argument(
+        "--methods",
+        help="Comma-separated M1,M2,M3. Defaults to M3 for E2, M1,M3 for E3, and all methods otherwise.",
+    )
+    parser.add_argument("--models", default="all")
+    parser.add_argument("--platform", choices=("all", "husky", "blueboat"), default="all")
+    parser.add_argument("--mission")
+    parser.add_argument("--paraphrase")
+    parser.add_argument("--variant")
+    parser.add_argument("--repetitions", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--colab-url")
+    parser.add_argument("--multimodal", action="store_true")
+    parser.add_argument("--factory-helper")
+    parser.add_argument("--m3-refinement-attempts", type=int, default=1)
+    parser.add_argument("--max-transport-retries", type=int, default=3)
+    parser.add_argument("--timeout-s", type=int, default=60)
+    parser.add_argument("--max-cost-usd", type=float)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--log", type=Path, default=DEFAULT_LOG)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--force", action="store_true")
+    return parser.parse_args()
+
+
+def preflight_scored(
+    args: argparse.Namespace,
+    core: Mapping[str, Any],
+    model_conditions: Mapping[str, Any],
+    methods: Iterable[str],
+    models: Iterable[str],
+    choice_space: Mapping[str, Any],
+    m1_distractors: Mapping[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    if not args.scored:
+        return errors
+    if core.get("freeze_status") != "frozen":
+        errors.append("core_missions.json is not frozen")
+    if args.experiment == "E3" and choice_space.get("freeze_status") != "frozen":
+        errors.append("choice_space_variants.json is not frozen")
+    if (
+        args.experiment == "E3"
+        and "M1" in methods
+        and m1_distractors.get("freeze_status") != "frozen"
+    ):
+        errors.append("m1_action_distractors.json is not frozen")
+    for key in models:
+        model = model_conditions["models"][key]
+        if model.get("provider_freeze_status") != "frozen":
+            errors.append(f"{key}: provider is not frozen")
+        if len(model.get("provider_only", [])) != 1:
+            errors.append(f"{key}: exactly one provider_only entry is required")
+    if "M2" in methods:
+        local = model_conditions["local_model"]
+        if local.get("freeze_status") != "frozen":
+            errors.append("BTGenBot-2 base and adapter revisions are not frozen")
+        if not args.colab_url:
+            errors.append("M2 requires --colab-url")
+    return errors
+
+
+def conditions_per_item(
+    methods: Iterable[str], model_keys: Iterable[str], repetitions: int
+) -> int:
+    general_methods = sum(method in ("M1", "M3") for method in methods)
+    local_methods = sum(method == "M2" for method in methods)
+    return (
+        general_methods * len(list(model_keys)) + local_methods
+    ) * repetitions
 
 
 def main() -> int:
     args = parse_args()
+    if args.repetitions < 1:
+        print("--repetitions must be at least 1", file=sys.stderr)
+        return 2
+    if not 1 <= args.timeout_s <= 60:
+        print("--timeout-s must be between 1 and 60", file=sys.stderr)
+        return 2
 
-    missions_data = load_json(PROTOCOL / "core_missions.json")
+    core = load_json(PROTOCOL / "core_missions.json")
     contexts = load_json(FIXTURES / "core_contexts.json")
+    variants = load_json(PROTOCOL / "context_variants.json")
+    safety = load_json(PROTOCOL / "safety_cases.json")
+    runtime = load_json(PROTOCOL / "runtime_contract.json")
+    model_conditions = load_json(PROTOCOL / "model_conditions.json")
+    choice_space = load_json(PROTOCOL / "choice_space_variants.json")
+    m1_distractors = load_json(PROTOCOL / "m1_action_distractors.json")
 
-    methods = [m.strip().upper() for m in args.methods.split(",")]
+    default_methods = {
+        "E2": "M3",
+        "E3": "M1,M3",
+    }.get(args.experiment, "M1,M2,M3")
+    method_text = args.methods or default_methods
+    methods = [value.strip().upper() for value in method_text.split(",") if value.strip()]
+    unknown_methods = sorted(set(methods) - {"M1", "M2", "M3"})
+    if unknown_methods:
+        print(f"Unknown methods: {unknown_methods}", file=sys.stderr)
+        return 2
+    if args.experiment == "E2" and methods != ["M3"]:
+        print(
+            "E2 is a within-method context ablation for M3; use --methods M3.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.experiment == "E3" and not set(methods).issubset({"M1", "M3"}):
+        print(
+            "E3 scales the M1 action library and M3 tree catalogue; use M1 and/or M3.",
+            file=sys.stderr,
+        )
+        return 2
     if args.models == "all":
-        model_keys = list(MODELS.keys())
+        model_keys = list(model_conditions["models"])
     else:
-        model_keys = [m.strip() for m in args.models.split(",")]
+        model_keys = [value.strip() for value in args.models.split(",") if value.strip()]
+    unknown_models = sorted(set(model_keys) - set(model_conditions["models"]))
+    if unknown_models:
+        print(f"Unknown models: {unknown_models}", file=sys.stderr)
+        return 2
+    scored_errors = preflight_scored(
+        args,
+        core,
+        model_conditions,
+        methods,
+        model_keys,
+        choice_space,
+        m1_distractors,
+    )
+    if scored_errors:
+        print("SCORED RUN BLOCKED:", file=sys.stderr)
+        for error in scored_errors:
+            print(f"- {error}", file=sys.stderr)
+        return 2
 
-    unknown = [m for m in model_keys if m not in MODELS]
-    if unknown:
-        print(f"Unknown models: {unknown}", file=sys.stderr)
-        print(f"Available: {list(MODELS.keys())}", file=sys.stderr)
-        return 1
-
-    missions = missions_data["missions"]
+    items = build_work_items(
+        args.experiment,
+        core,
+        contexts,
+        variants,
+        safety,
+        choice_space,
+    )
+    if args.experiment == "E3":
+        items = [item for item in items if item.get("variant_method") in methods]
     if args.platform != "all":
-        missions = [m for m in missions if m["platform"] == args.platform]
+        items = [
+            item for item in items if item["mission"]["platform"] == args.platform
+        ]
     if args.mission:
-        missions = [m for m in missions if m["id"] == args.mission]
+        items = [item for item in items if item["mission"]["id"] == args.mission]
+    if args.paraphrase:
+        items = [
+            item for item in items if item["paraphrase"]["id"] == args.paraphrase
+        ]
+    if args.variant:
+        items = [item for item in items if item.get("variant_id") == args.variant]
 
-    log_path = Path(args.log)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    args.log.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path = args.manifest or (
+        EVALUATION / "manifests" / "generated" / f"{args.experiment}_{utc_now().replace(':', '-')}.json"
+    )
+    manifest = {
+        "experiment": args.experiment,
+        "started_at": utc_now(),
+        "scored": args.scored,
+        "dry_run": args.dry_run,
+        "methods": methods,
+        "models": model_keys,
+        "repetitions": args.repetitions,
+        "seed_base": args.seed,
+        "runtime_contract_sha256": sha256(PROTOCOL / "runtime_contract.json"),
+        "model_conditions_sha256": sha256(PROTOCOL / "model_conditions.json"),
+        "core_dataset_sha256": sha256(PROTOCOL / "core_missions.json"),
+        "context_fixtures_sha256": sha256(FIXTURES / "core_contexts.json"),
+        "context_variants_sha256": sha256(PROTOCOL / "context_variants.json"),
+        "choice_space_variants_sha256": sha256(
+            PROTOCOL / "choice_space_variants.json"
+        ),
+        "m1_action_distractors_sha256": sha256(
+            PROTOCOL / "m1_action_distractors.json"
+        ),
+        "choice_space_freeze_status": choice_space.get("freeze_status"),
+        "m1_action_distractors_freeze_status": m1_distractors.get(
+            "freeze_status"
+        ),
+        "safety_cases_sha256": sha256(PROTOCOL / "safety_cases.json"),
+        "repository_commit": runtime["repository_commit"],
+        "host": {
+            "python": sys.version,
+            "platform": host_platform.platform(),
+        },
+        "output_dir": str(args.output_dir.resolve()),
+        "blocked_platform_rule": "BlueBoat cases are recorded as blocked and never counted as supported runs until its implementation contract is frozen.",
+        "multimodal": args.multimodal,
+    }
+    write_json(manifest_path, manifest)
 
-    total = 0
-    skipped = 0
-    errors = 0
-
-    for mission in missions:
-        mid = mission["id"]
-        platform = mission["platform"]
-
+    total = skipped = failed = completed = 0
+    cumulative_cost = 0.0
+    factory_helper = Path(args.factory_helper) if args.factory_helper else None
+    for item in items:
+        mission = item["mission"]
+        active_methods = (
+            [item["variant_method"]]
+            if item.get("variant_method")
+            else methods
+        )
+        item_condition_count = conditions_per_item(
+            active_methods, model_keys, args.repetitions
+        )
         if mission["support_status"] != "implemented_catalogue":
-            print(f"SKIP {mid}: {mission['support_status']}")
-            skipped += 3 * (len(methods) * len(model_keys) + (1 if "M2" in methods else 0))
+            skipped += item_condition_count
+            print(f"BLOCKED {mission['id']}: {mission['support_status']}")
             continue
+        run_runtime, scale_condition, e3_blocker = (
+            narrow_runtime_for_e3(
+                runtime,
+                item,
+                choice_space,
+                m1_distractors,
+            )
+            if args.experiment == "E3"
+            else (dict(runtime), {}, None)
+        )
+        if e3_blocker:
+            skipped += item_condition_count
+            print(f"BLOCKED {mission['id']} {item.get('variant_id')}: {e3_blocker}")
+            continue
+        image_paths: list[Path] = []
+        if args.multimodal:
+            image_paths, image_errors = multimodal_preflight(item["context"])
+            if image_errors:
+                skipped += item_condition_count
+                print(
+                    f"BLOCKED {mission['id']} multimodal: "
+                    + "; ".join(image_errors)
+                )
+                continue
 
-        paraphrases = mission["paraphrases"]
-        if args.paraphrase:
-            paraphrases = [p for p in paraphrases if p["id"] == args.paraphrase]
-
-        context = contexts["fixtures"].get(mid, {})
-
-        for paraphrase in paraphrases:
-            pid = paraphrase["id"]
-
-            for model_key in model_keys:
-                cfg = MODELS[model_key]
-
-                # --- M1: Direct BT XML Generation ---
-                if "M1" in methods:
+        for method in active_methods:
+            condition_models = ["btgenbot2"] if method == "M2" else model_keys
+            for model_key in condition_models:
+                for repetition in range(1, args.repetitions + 1):
                     total += 1
-                    run_id = f"E1_M1_{model_key}_{pid}_{uuid.uuid4().hex[:8]}"
-                    print(f"RUN M1 {pid} [{cfg['label']}] ", end="", flush=True)
-
-                    system, user = build_m1_prompt(mission, paraphrase, context)
-                    metadata = {
-                        "run_id": run_id, "experiment": "E1", "method": "M1",
-                        "mission_id": mid, "paraphrase_id": pid,
-                        "model_key": model_key, "model_label": cfg["label"],
-                        "openrouter_id": cfg["openrouter_id"],
-                        "platform": platform, "complexity": mission["complexity"]["label"],
-                        "temperature": cfg["temperature"], "max_tokens": cfg["max_tokens"],
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                    save_artifact(run_id, {
-                        "system_prompt.json": {"content": system},
-                        "user_prompt.json": {"content": user},
-                        "metadata.json": metadata,
-                    })
-
-                    result = call_llm(model_key, system, user, args.dry_run)
-                    result["run_id"] = run_id
-                    result["method"] = "M1"
-                    with log_path.open("a") as log:
-                        log.write(json.dumps(result) + "\n")
-
-                    status = "ERROR" if result.get("error") else ("DRY-RUN" if result.get("dry_run") else "OK")
-                    extra = f" ({result.get('latency_s', '?')}s)" if status == "OK" else f": {result.get('error', '')}"
-                    print(f"{status}{extra}")
-                    if result.get("error"):
-                        errors += 1
-
-                    save_artifact(run_id, {"result.json": result})
-
-                # --- M3: Catalogue Selection + Payload ---
-                if "M3" in methods:
-                    # Step 1: Tree selection
-                    total += 1
-                    sel_id = f"E1_M3_sel_{model_key}_{pid}_{uuid.uuid4().hex[:8]}"
-                    print(f"RUN M3-select {pid} [{cfg['label']}] ", end="", flush=True)
-
-                    system, user = build_m3_selection_prompt(mission, paraphrase, context)
-                    metadata_sel = {
-                        "run_id": sel_id, "experiment": "E1", "method": "M3", "stage": "selection",
-                        "mission_id": mid, "paraphrase_id": pid,
-                        "model_key": model_key, "model_label": cfg["label"],
-                        "openrouter_id": cfg["openrouter_id"],
-                        "platform": platform, "complexity": mission["complexity"]["label"],
-                        "temperature": cfg["temperature"],
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
-                    save_artifact(sel_id, {
-                        "system_prompt.json": {"content": system},
-                        "user_prompt.json": {"content": user},
-                        "metadata.json": metadata_sel,
-                    })
-
-                    sel_result = call_llm(model_key, system, user, args.dry_run)
-                    sel_result["run_id"] = sel_id
-                    sel_result["method"] = "M3_selection"
-                    with log_path.open("a") as log:
-                        log.write(json.dumps(sel_result) + "\n")
-
-                    if sel_result.get("error"):
-                        print(f"ERROR: {sel_result['error']}")
-                        errors += 1
+                    seed = args.seed + repetition - 1
+                    identifier = condition_id(
+                        [
+                            args.experiment,
+                            method,
+                            model_key,
+                            mission["id"],
+                            item["paraphrase"]["id"],
+                            item.get("variant_id") or "base",
+                            repetition,
+                            sha256(PROTOCOL / "runtime_contract.json"),
+                            scale_condition.get("action_library_sha256")
+                            or scale_condition.get("tree_catalogue_sha256")
+                            or "base",
+                        ]
+                    )
+                    artifact_dir = args.output_dir / identifier
+                    result_path = artifact_dir / "result.json"
+                    if result_path.exists() and not args.force:
+                        skipped += 1
+                        print(f"RESUME {identifier}: result already exists")
                         continue
-                    elif sel_result.get("dry_run"):
-                        print("DRY-RUN")
-                    else:
-                        print(f"OK ({sel_result.get('latency_s', '?')}s)")
+                    if (
+                        args.max_cost_usd is not None
+                        and cumulative_cost >= args.max_cost_usd
+                    ):
+                        print("BUDGET LIMIT REACHED")
+                        manifest["finished_at"] = utc_now()
+                        manifest["cumulative_cost_usd"] = cumulative_cost
+                        manifest["stopped_by_budget"] = True
+                        write_json(manifest_path, manifest)
+                        return 0
 
-                    save_artifact(sel_id, {"result.json": sel_result})
-
-                    # Step 2: Parse selection → generate payload
-                    try:
-                        sel_data = json.loads(sel_result.get("content", "{}"))
-                        tree_id = sel_data.get("tree_id")
-                        action = sel_data.get("action")
-                    except json.JSONDecodeError:
-                        tree_id = None
-                        action = "parse_error"
-
-                    if action in ("refuse", "clarify", "parse_error") or tree_id is None:
-                        combined = {
-                            "run_id": sel_id, "method": "M3",
-                            "mission_id": mid, "paraphrase_id": pid,
-                            "model_key": model_key,
-                            "selection": sel_data if isinstance(sel_data, dict) else {"raw": sel_result.get("content")},
-                            "payload": None,
-                            "status": action or "no_tree_selected",
-                        }
-                    else:
-                        # Step 2: Payload generation
-                        pyld_id = f"E1_M3_pyld_{model_key}_{pid}_{uuid.uuid4().hex[:8]}"
-                        print(f"  M3-payload {pid} [{cfg['label']}] tree={tree_id} ", end="", flush=True)
-
-                        system_p, user_p = build_m3_payload_prompt(mission, paraphrase, context, tree_id)
-                        metadata_pyld = {
-                            "run_id": pyld_id, "experiment": "E1", "method": "M3", "stage": "payload",
-                            "mission_id": mid, "paraphrase_id": pid,
-                            "model_key": model_key, "model_label": cfg["label"],
-                            "openrouter_id": cfg["openrouter_id"],
-                            "selected_tree": tree_id, "selection_run_id": sel_id,
-                            "temperature": cfg["temperature"],
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                        save_artifact(pyld_id, {
-                            "system_prompt.json": {"content": system_p},
-                            "user_prompt.json": {"content": user_p},
-                            "metadata.json": metadata_pyld,
-                        })
-
-                        pyld_result = call_llm(model_key, system_p, user_p, args.dry_run)
-                        pyld_result["run_id"] = pyld_id
-                        pyld_result["method"] = "M3_payload"
-                        pyld_result["selected_tree"] = tree_id
-                        with log_path.open("a") as log:
-                            log.write(json.dumps(pyld_result) + "\n")
-
-                        if pyld_result.get("error"):
-                            print(f"ERROR: {pyld_result['error']}")
-                            errors += 1
-                        elif pyld_result.get("dry_run"):
-                            print("DRY-RUN")
-                        else:
-                            print(f"OK ({pyld_result.get('latency_s', '?')}s)")
-
-                        save_artifact(pyld_id, {"result.json": pyld_result})
-
-                        combined = {
-                            "run_id": sel_id, "method": "M3",
-                            "mission_id": mid, "paraphrase_id": pid,
-                            "model_key": model_key,
-                            "selection": sel_data if isinstance(sel_data, dict) else {"raw": sel_result.get("content")},
-                            "payload": pyld_result.get("content"),
-                            "status": "ok",
-                        }
-
-                    save_artifact(sel_id, {"m3_combined.json": combined})
-
-            # --- M2: BTGenBot-2 via Colab ---
-            if "M2" in methods:
-                if not args.colab_url:
-                    print(f"SKIP M2 {pid}: --colab-url required")
-                    skipped += 1
-                else:
-                    total += 1
-                    run_id = f"E1_M2_btgenbot2_{pid}_{uuid.uuid4().hex[:8]}"
-                    print(f"RUN M2 {pid} [BTGenBot-2] ", end="", flush=True)
-
-                    task, actions = build_m2_prompt(mission, paraphrase)
-                    metadata = {
-                        "run_id": run_id, "experiment": "E1", "method": "M2",
-                        "mission_id": mid, "paraphrase_id": pid,
-                        "model_key": "BTGenBot-2", "model_label": "Specialist (fine-tuned)",
-                        "platform": platform, "complexity": mission["complexity"]["label"],
-                        "colab_url": args.colab_url,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    artifact_dir.mkdir(parents=True, exist_ok=True)
+                    request_record = {
+                        "condition_id": identifier,
+                        "experiment": args.experiment,
+                        "method": method,
+                        "model_key": model_key,
+                        "mission_id": mission["id"],
+                        "paraphrase_id": item["paraphrase"]["id"],
+                        "variant_id": item.get("variant_id"),
+                        "scale_condition": scale_condition or None,
+                        "repetition": repetition,
+                        "seed": seed,
+                        "expected_outcome": item["expected_outcome"],
+                        "mission": mission,
+                        "paraphrase": item["paraphrase"],
+                        "context": item["context"],
+                        "context_modality": "multimodal" if image_paths else "structured_text",
+                        "runtime_contract_sha256": manifest["runtime_contract_sha256"],
+                        "started_at": utc_now(),
                     }
-                    save_artifact(run_id, {
-                        "btgenbot2_prompt.json": {"task": task, "actions": actions},
-                        "metadata.json": metadata,
-                    })
+                    write_json(artifact_dir / "request.json", request_record)
+                    print(
+                        f"RUN {args.experiment} {method} {mission['id']} "
+                        f"{item['paraphrase']['id']} "
+                        f"{item.get('variant_id') or 'base'} [{model_key}] r{repetition}"
+                    )
 
-                    result = call_colab(args.colab_url, task, actions, args.dry_run)
-                    result["run_id"] = run_id
-                    result["method"] = "M2"
-                    with log_path.open("a") as log:
-                        log.write(json.dumps(result) + "\n")
+                    if method == "M3":
+                        model = model_conditions["models"][model_key]
+                        result = execute_m3(
+                            item,
+                            model,
+                            run_runtime,
+                            seed=seed,
+                            image_paths=image_paths,
+                            dry_run=args.dry_run,
+                            timeout_s=args.timeout_s,
+                            max_transport_retries=args.max_transport_retries,
+                            refinement_attempts=args.m3_refinement_attempts,
+                            scored=args.scored,
+                        )
+                    elif method == "M1":
+                        system, user = build_m1_prompt(
+                            mission,
+                            item["paraphrase"],
+                            item["context"],
+                            run_runtime,
+                            adverse=args.experiment == "E4",
+                        )
+                        api_call = call_openrouter(
+                            model_conditions["models"][model_key],
+                            system,
+                            user,
+                            image_paths=image_paths,
+                            seed=seed,
+                            dry_run=args.dry_run,
+                            timeout_s=args.timeout_s,
+                            max_transport_retries=args.max_transport_retries,
+                        )
+                        if args.dry_run:
+                            evaluation = {
+                                "status": "dry_run",
+                                "correct_outcome": None,
+                                "first_attempt_valid": None,
+                            }
+                        elif api_call.get("error"):
+                            evaluation = {"status": "transport_error"}
+                        elif args.scored and api_call.get("provider_verified") is not True:
+                            evaluation = {
+                                "status": "protocol_error",
+                                "reason": "OpenRouter provider could not be verified",
+                            }
+                        else:
+                            evaluation = direct_result(
+                                method,
+                                api_call["content"],
+                                mission,
+                                item["expected_outcome"],
+                                run_runtime,
+                                factory_helper,
+                                item["context"],
+                                decision_envelope=args.experiment == "E4",
+                            )
+                            evaluation["status"] = (
+                                "complete"
+                                if evaluation.get("correct_outcome")
+                                else "validation_failed"
+                            )
+                        result = {"api_call": api_call, **evaluation}
+                    else:
+                        if not args.colab_url and not args.dry_run:
+                            result = {
+                                "status": "blocked",
+                                "reason": "M2 requires --colab-url",
+                            }
+                        else:
+                            task, actions = build_m2_prompt(
+                                mission,
+                                item["paraphrase"],
+                                item["context"],
+                                run_runtime,
+                                adverse=args.experiment == "E4",
+                            )
+                            api_call = call_colab(
+                                args.colab_url or "https://colab.invalid",
+                                task,
+                                actions,
+                                seed=seed,
+                                dry_run=args.dry_run,
+                                timeout_s=args.timeout_s,
+                                max_transport_retries=args.max_transport_retries,
+                            )
+                            if args.dry_run:
+                                evaluation = {
+                                    "status": "dry_run",
+                                    "correct_outcome": None,
+                                    "first_attempt_valid": None,
+                                }
+                            elif api_call.get("error"):
+                                evaluation = {"status": "transport_error"}
+                            elif args.scored and not api_call.get(
+                                "raw_output_preserved"
+                            ):
+                                evaluation = {
+                                    "status": "protocol_error",
+                                    "reason": "Colab response did not preserve raw_text",
+                                }
+                            elif args.scored and (
+                                revision_errors := btgenbot_revision_errors(
+                                    api_call.get("generation_metadata", {}),
+                                    model_conditions,
+                                )
+                            ):
+                                evaluation = {
+                                    "status": "protocol_error",
+                                    "reason": "; ".join(revision_errors),
+                                }
+                            else:
+                                evaluation = direct_result(
+                                    method,
+                                    api_call["content"],
+                                    mission,
+                                    item["expected_outcome"],
+                                    run_runtime,
+                                    factory_helper,
+                                    item["context"],
+                                    decision_envelope=args.experiment == "E4",
+                                )
+                                evaluation["status"] = (
+                                    "complete"
+                                    if evaluation.get("correct_outcome")
+                                    else "validation_failed"
+                                )
+                            result = {"api_call": api_call, **evaluation}
 
-                    status = "ERROR" if result.get("error") else ("DRY-RUN" if result.get("dry_run") else "OK")
-                    extra = f" ({result.get('latency_s', '?')}s)" if status == "OK" else f": {result.get('error', '')}"
-                    print(f"{status}{extra}")
-                    if result.get("error"):
-                        errors += 1
+                    result.update(
+                        {
+                            "condition_id": identifier,
+                            "finished_at": utc_now(),
+                            "scored": args.scored,
+                            "scale_condition": scale_condition or None,
+                        }
+                    )
+                    cost = get_cost(result)
+                    result["cost_usd"] = cost
+                    cumulative_cost += cost
+                    write_json(result_path, result)
+                    with args.log.open("a", encoding="utf-8") as log:
+                        log.write(
+                            json.dumps(
+                                {
+                                    "condition_id": identifier,
+                                    "experiment": args.experiment,
+                                    "method": method,
+                                    "model_key": model_key,
+                                    "mission_id": mission["id"],
+                                    "paraphrase_id": item["paraphrase"]["id"],
+                                    "variant_id": item.get("variant_id"),
+                                    "action_node_count": scale_condition.get(
+                                        "action_node_count"
+                                    ),
+                                    "distractor_count": scale_condition.get(
+                                        "distractor_count"
+                                    ),
+                                    "repetition": repetition,
+                                    "status": result.get("status"),
+                                    "correct_outcome": result.get("correct_outcome"),
+                                    "first_attempt_valid": result.get(
+                                        "first_attempt_valid"
+                                    ),
+                                    "automated_task_success": result.get(
+                                        "automated_task_success"
+                                    ),
+                                    "cost_usd": cost,
+                                    "result_path": str(result_path.resolve()),
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                    if result.get("status") == "blocked":
+                        skipped += 1
+                    elif result.get("status") in ("transport_error", "protocol_error"):
+                        failed += 1
+                    else:
+                        completed += 1
 
-                    save_artifact(run_id, {"result.json": result})
+    manifest.update(
+        {
+            "finished_at": utc_now(),
+            "conditions_started": total,
+            "conditions_completed": completed,
+            "conditions_failed": failed,
+            "conditions_skipped_or_blocked": skipped,
+            "cumulative_cost_usd": round(cumulative_cost, 8),
+        }
+    )
+    write_json(manifest_path, manifest)
+    print(
+        f"Finished: {completed} completed, {failed} failed, {skipped} skipped/blocked; "
+        f"cost recorded ${cumulative_cost:.6f}"
+    )
+    print(f"Manifest: {manifest_path}")
+    return 1 if failed else 0
 
-    # Summary
-    print(f"\n{'='*60}")
-    print(f"Total runs: {total} | Skipped (blocked): {skipped} | Errors: {errors}")
-    print(f"Log: {log_path}")
-
-    if args.dry_run:
-        print("\nDry run complete. Prompts saved to raw_outputs/.")
-        print("Run with OPENROUTER_API_KEY set to execute against LLMs.")
-
-    return 0 if errors == 0 else 1
 
 if __name__ == "__main__":
     raise SystemExit(main())

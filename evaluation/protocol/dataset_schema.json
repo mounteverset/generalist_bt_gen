@@ -9,7 +9,7 @@
     "freeze_status": {"enum": ["draft", "frozen"]},
     "source_snapshot": {
       "type": "object",
-      "required": ["repository_commit", "tree_metadata_sha256", "system_description_sha256"]
+      "required": ["repository_commit", "tree_metadata_sha256", "system_description_sha256", "bt_node_manifest_sha256"]
     },
     "missions": {
       "type": "array",
