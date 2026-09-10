@@ -1,13 +1,16 @@
 #include <behaviortree_ros2/plugins.hpp>
 
 #include "robot_actions/log_temperature.hpp"
+#include "robot_actions/mavros_mode.hpp"
 #include "robot_actions/move_to.hpp"
 #include "robot_actions/distance_traveled.hpp"
 #include "robot_actions/get_current_pose.hpp"
 #include "robot_actions/move_to_gps.hpp"
+#include "robot_actions/move_to_global_setpoint.hpp"
 #include "robot_actions/parse_gps_waypoints.hpp"
 #include "robot_actions/parse_waypoints.hpp"
 #include "robot_actions/restart_node.hpp"
+#include "robot_actions/set_depth.hpp"
 #include "robot_actions/take_picture.hpp"
 
 BT_REGISTER_ROS_NODES(factory, params)
@@ -30,15 +33,25 @@ BT_REGISTER_ROS_NODES(factory, params)
   const auto move_gps_params = make_params(
     "nav2_follow_gps_waypoints_action_name", "/follow_gps_waypoints");
   const auto log_service_params = make_params("log_temperature_service_name", "/log_temperature");
+  const auto mode_service_params = make_params("mavros_set_mode_service_name", "/mavros/set_mode");
+  const auto arm_service_params = make_params(
+    "mavros_arming_service_name", "/mavros/cmd/arming");
+  const auto set_depth_params = make_params("stepper_set_depth_action_name", "/stepper/set_depth");
   const auto picture_params = make_params("take_photo_image_topic", "/camera/image_raw");
 
   factory.registerNodeType<robot_actions::MoveTo>("MoveTo", move_params);
   factory.registerNodeType<robot_actions::MoveToGPS>("MoveToGPS", move_gps_params);
+  factory.registerNodeType<robot_actions::MoveToGlobalSetpoint>("MoveToGlobalSetpoint", params);
   factory.registerNodeType<robot_actions::TakePicture>("TakePicture", picture_params);
   factory.registerNodeType<robot_actions::TakePicture>("TakePhoto", picture_params);
   factory.registerNodeType<robot_actions::DistanceTraveled>("DistanceTraveled", params);
   factory.registerNodeType<robot_actions::GetCurrentPose>("GetCurrentPose", params);
   factory.registerNodeType<robot_actions::LogTemperature>("LogTemperature", log_service_params);
+  factory.registerNodeType<robot_actions::SetMavrosMode>("SetMavrosMode", mode_service_params);
+  factory.registerNodeType<robot_actions::SetMavrosArm>("SetMavrosArm", arm_service_params);
+  factory.registerNodeType<robot_actions::WaitForMavrosMode>("WaitForMavrosMode", params);
+  factory.registerNodeType<robot_actions::WaitForMavrosGpsFix>("WaitForMavrosGpsFix", params);
+  factory.registerNodeType<robot_actions::SetDepth>("SetDepth", set_depth_params);
   factory.registerNodeType<robot_actions::RestartNode>("RestartNode", params);
   factory.registerNodeType<robot_actions::ParseWaypoints>("ParseWaypoints");
   factory.registerNodeType<robot_actions::ParseGpsWaypoints>("ParseGpsWaypoints");

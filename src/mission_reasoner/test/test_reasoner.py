@@ -14,6 +14,15 @@ def _reasoner() -> MissionReasoner:
         return MissionReasoner(yaml.safe_load(handle))
 
 
+def _blueboat_reasoner() -> MissionReasoner:
+    with open(
+        ROOT / 'config' / 'system_description_blueboat.yaml',
+        'r',
+        encoding='utf-8',
+    ) as handle:
+        return MissionReasoner(yaml.safe_load(handle))
+
+
 def _trees():
     with open(ROOT / 'config' / 'tree_metadata.yaml', 'r', encoding='utf-8') as handle:
         return yaml.safe_load(handle)['trees']
@@ -111,6 +120,29 @@ def test_selects_gps_temperature_tree_for_explicit_geographic_waypoints():
     assert result.status_code == ACCEPT
     assert result.candidate_trees == ['gps_temperature_logging.xml']
     assert 'navigation.gps_waypoints' in result.matched_capabilities
+
+
+def test_blueboat_profile_selects_guided_temperature_tree():
+    reasoner = _blueboat_reasoner()
+    result = reasoner.validate(
+        'Take the BlueBoat through these GPS waypoints and log water temperature.',
+        _trees(),
+        context_json=json.dumps(
+            {'gps_waypoints': '48.2848,11.6077,0.0; 48.2851,11.6074,1.57'}
+        ),
+    )
+
+    assert 'id' not in reasoner.platform
+    assert reasoner.platform['max_range_m'] == 1000
+    assert reasoner.platform['max_speed_ms'] == 1.0
+    assert reasoner.platform['max_probe_depth_cm'] == 200
+    assert reasoner.system_description['autopilot']['mode_transition'] == ['HOLD', 'GUIDED']
+    assert reasoner.system_description['autopilot']['required_armed'] is True
+    assert reasoner.system_description['autopilot']['connection']['fcu_url'] == (
+        'udp://@192.168.2.2:14600'
+    )
+    assert result.status_code == ACCEPT
+    assert result.candidate_trees == ['blueboat_temperature_logging.xml']
 
 
 def test_selects_gps_temperature_tree_for_named_lake_route():

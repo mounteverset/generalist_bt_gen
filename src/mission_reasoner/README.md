@@ -42,3 +42,7 @@ Relevant parameters:
 | `mission_requirements_service` | `/llm_interface/extract_mission_requirements` | LLM extraction service name. |
 | `llm_service_wait_timeout_sec` | `2.0` | Startup/service-discovery wait before falling back. |
 | `llm_extraction_timeout_sec` | `45.0` | Maximum time to wait for the extraction response. Large remote models can exceed 10 seconds on cold calls. |
+
+Use the separately installed `system_description_blueboat.yaml` through the
+`system_description_file` parameter for BlueBoat missions. It keeps the default
+Husky capability profile unchanged.

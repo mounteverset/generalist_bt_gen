@@ -13,7 +13,7 @@ setup(
         ('share/' + package_name, ['package.xml', 'README.md']),
         (
             'share/' + package_name + '/config',
-            glob('config/*.yaml') + ['../../config/system_description.yaml'],
+            glob('config/*.yaml') + glob('../../config/system_description*.yaml'),
         ),
     ],
     install_requires=['setuptools'],

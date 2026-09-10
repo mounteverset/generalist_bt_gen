@@ -17,6 +17,7 @@ def generate_launch_description():
     llm_params = Path(get_package_share_directory('llm_interface')) / 'config' / 'llm_interface_params.yaml'
     context_params = Path(get_package_share_directory('context_gatherer')) / 'config' / 'context_gatherer_params.yaml'
     reasoner_params = Path(get_package_share_directory('mission_reasoner')) / 'config' / 'mission_reasoner_params.yaml'
+    system_description = Path(get_package_share_directory('mission_reasoner')) / 'config' / 'system_description.yaml'
 
     params_file_arg = DeclareLaunchArgument(
         'bt_executor_params',
@@ -47,6 +48,16 @@ def generate_launch_description():
         'mission_reasoner_params',
         default_value=str(reasoner_params),
         description='Path to the mission_reasoner parameter file.'
+    )
+    system_description_arg = DeclareLaunchArgument(
+        'system_description_file',
+        default_value=str(system_description),
+        description='Path to the active robot capability description.'
+    )
+    gps_fix_topic_arg = DeclareLaunchArgument(
+        'gps_fix_topic',
+        default_value='/gps/fix',
+        description='GPS fix topic used by context gathering.'
     )
     use_cli_arg = DeclareLaunchArgument(
         'use_cli_ui',
@@ -84,7 +95,10 @@ def generate_launch_description():
         executable='context_gatherer_node',
         name='context_gatherer',
         output='screen',
-        parameters=[LaunchConfiguration('context_gatherer_params')],
+        parameters=[
+            LaunchConfiguration('context_gatherer_params'),
+            {'gps_fix_topic': LaunchConfiguration('gps_fix_topic')},
+        ],
         remappings=[
             ('/camera/image_raw', '/a200_0000/sensors/camera_0/color/image'),
             ('/camera/depth/image_raw', '/a200_0000/sensors/camera_0/depth/image'),
@@ -114,7 +128,10 @@ def generate_launch_description():
         executable='mission_reasoner_node',
         name='mission_reasoner',
         output='screen',
-        parameters=[LaunchConfiguration('mission_reasoner_params')]
+        parameters=[
+            LaunchConfiguration('mission_reasoner_params'),
+            {'system_description_file': LaunchConfiguration('system_description_file')},
+        ]
     )
 
     plan_reviewer_node = Node(
@@ -179,6 +196,8 @@ def generate_launch_description():
         llm_params_arg,
         context_params_arg,
         reasoner_params_arg,
+        system_description_arg,
+        gps_fix_topic_arg,
         use_cli_arg,
         demo_mode_arg,
         bt_executor_node,

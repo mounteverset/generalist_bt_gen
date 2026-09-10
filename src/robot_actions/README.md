@@ -13,7 +13,13 @@ ROS - related nodes will be making use of the boilerplate classes in behaviortre
 | ParseGpsWaypoints | `SyncActionNode` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | Validates and queues semicolon-separated geographic waypoints |
 | TakePicture / TakePhoto | `SyncActionNode` | `image_topic`, `output_directory`, `filename_prefix`, `timeout_ms`, `filepath` (output) | Saves the latest RGB image from a configurable topic to disk |
 | GetCurrentPose | `SyncActionNode` | `pose_topic`, `pose_timeout_ms`, `odom_topic`, `odom_timeout_ms`, `current_x`/`current_y`/`current_yaw`/`current_pose`, fixed-yaw `sweep_pose_*` outputs | Reads one map pose sample, or odometry as fallback, and exposes the current pose plus fixed-yaw sweep poses |
-| LogTemperature | `RosServiceNode<std_srvs::srv::Trigger>` | `logfile_path` (input) | Requests a temperature capture/logging service |
+| LogTemperature | `RosServiceNode<std_srvs::srv::Trigger>` | `logfile_path` (input) | Requests a temperature sample and appends a successful response to the configured file |
+| SetMavrosMode | `RosServiceNode<mavros_msgs::srv::SetMode>` | `custom_mode` (input) | Requests an ArduPilot mode through `/mavros/set_mode` |
+| SetMavrosArm | `RosServiceNode<mavros_msgs::srv::CommandBool>` | `arm` (input) | Arms or disarms through `/mavros/cmd/arming` |
+| WaitForMavrosMode | `StatefulActionNode` | `desired_mode`, `require_armed`, `timeout_sec`, `state_topic` | Confirms the requested mode and optional armed state on `/mavros/state` |
+| WaitForMavrosGpsFix | `StatefulActionNode` | `timeout_sec`, `fix_topic` | Waits for a valid, non-zero raw MAVROS GPS fix |
+| MoveToGlobalSetpoint | `DecoratorNode` | `gps_pose`, `acceptance_radius_m`, `publish_rate_hz`, `setpoint_topic`, `position_topic` | Streams a MAVROS global setpoint until its child finishes, beginning the child after arrival |
+| SetDepth | `RosActionNode<stepper_interfaces::action::SetDepth>` | `target_depth_cm`, `max_depth_cm` (inputs) | Lowers or raises the BlueBoat temperature probe within the configured depth limit |
 | RestartNode | `RosServiceNode<std_srvs::srv::SetBool>` | `node_name` (input) | Asks supervisor service to restart the specified node |
 | DistanceTraveled | `StatefulActionNode` | `interval_m`, `odom_topic`, `odom_timeout_ms`, `distance_accumulated_m` (output) | Returns `SUCCESS` whenever the configured odometry distance interval has been traveled, otherwise `RUNNING` |
 

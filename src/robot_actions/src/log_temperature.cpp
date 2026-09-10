@@ -2,6 +2,8 @@
 
 #include "robot_actions/common.hpp"
 
+#include <fstream>
+
 namespace robot_actions
 {
 
@@ -33,7 +35,19 @@ BT::NodeStatus LogTemperature::onResponseReceived(const Response::SharedPtr & re
       get_logger(), "LogTemperature → response: success=%d message=%s",
       response->success, response->message.c_str());
   }
-  return response->success ? BT::NodeStatus::SUCCESS : BT::NodeStatus::FAILURE;
+  if (!response->success) {
+    return BT::NodeStatus::FAILURE;
+  }
+
+  std::ofstream logfile(current_log_path_, std::ios::app);
+  logfile << response->message << '\n';
+  if (!logfile) {
+    RCLCPP_ERROR(
+      get_logger(), "LogTemperature → failed to append measurement to %s",
+      current_log_path_.c_str());
+    return BT::NodeStatus::FAILURE;
+  }
+  return BT::NodeStatus::SUCCESS;
 }
 
 BT::NodeStatus LogTemperature::onFailure(BT::ServiceNodeErrorCode error)

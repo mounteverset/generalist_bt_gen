@@ -218,10 +218,26 @@ def test_gps_tree_contracts_use_geographic_waypoint_key():
     )
     trees = {tree['id']: tree for tree in metadata['trees']}
 
-    for tree_id in ('gps_waypoint_navigation.xml', 'gps_temperature_logging.xml'):
+    for tree_id in (
+        'gps_waypoint_navigation.xml',
+        'gps_temperature_logging.xml',
+        'blueboat_temperature_logging.xml',
+    ):
         contract = trees[tree_id]['blackboard_contract']
         assert 'gps_waypoints' in contract
         assert 'waypoints' not in contract
+
+    blueboat = trees['blueboat_temperature_logging.xml']
+    assert blueboat['context_requirements'] == ['GPS_FIX']
+    assert blueboat['selection_constraints']['max_range_m'] == 1000
+    assert 'control.guided_mode' in blueboat['required_capabilities']
+    assert 'control.arming' in blueboat['required_capabilities']
+    assert 'actuation.probe_depth' in blueboat['required_capabilities']
+    assert blueboat['blackboard_contract']['measurement_depth_cm']['default'] == 20
+    assert blueboat['blackboard_contract']['raise_depth_cm']['default'] == 0
+    assert blueboat['blackboard_contract']['acceptance_radius_m']['default'] == 3.0
+    assert blueboat['blackboard_contract']['gps_fix_timeout_sec']['default'] == 10.0
+    assert blueboat['blackboard_contract']['station_hold_ms']['default'] == 10000
 
 
 def test_fallback_selection_prefers_gps_tree_for_named_lake_route():

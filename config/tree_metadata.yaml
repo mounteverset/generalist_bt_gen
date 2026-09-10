@@ -116,6 +116,76 @@ trees:
         required: false
         default: "/tmp/gps_temperature_log.txt"
 
+  - id: "blueboat_temperature_logging.xml"
+    description: "Navigate a BlueBoat through WGS84 waypoints using MAVROS global setpoints, lower the temperature probe, log water temperature, and raise the probe at each station."
+    mission_intents:
+      - "navigate_waypoints"
+      - "navigate_gps_waypoints"
+      - "geographic_route"
+      - "log_temperature"
+    required_capabilities:
+      - "locomotion.water_surface"
+      - "control.guided_mode"
+      - "control.arming"
+      - "actuation.probe_depth"
+      - "localization.gps"
+      - "navigation.waypoints"
+      - "navigation.gps_waypoints"
+      - "sensing.temperature"
+      - "payload.parse_gps_waypoints"
+    unsupported_requirements:
+      - "locomotion.flight"
+      - "sensing.thermal_image"
+      - "manipulation.pick_place"
+      - "sampling.soil"
+    selection_constraints:
+      max_range_m: 1000
+      requires_target_area_or_route: true
+    context_requirements:
+      - GPS_FIX
+    blackboard_contract:
+      gps_waypoints:
+        type: "string"
+        required: true
+        schema:
+          type: "string"
+          description: "Semicolon-separated WGS84 route. Each waypoint is 'latitude,longitude,yaw' or 'latitude,longitude,altitude,yaw'."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2}(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2})*$'
+          examples:
+            - "48.2848,11.6077,0.0; 48.2851,11.6074,1.57"
+      logfile_path:
+        type: "string"
+        required: false
+        default: "/tmp/blueboat_water_temperature.txt"
+      measurement_depth_cm:
+        type: "int"
+        required: false
+        default: 20
+        schema:
+          type: "integer"
+          minimum: 0
+          maximum: 200
+      raise_depth_cm:
+        type: "int"
+        required: false
+        default: 0
+      acceptance_radius_m:
+        type: "double"
+        required: false
+        default: 3.0
+      guided_mode_timeout_sec:
+        type: "double"
+        required: false
+        default: 5.0
+      gps_fix_timeout_sec:
+        type: "double"
+        required: false
+        default: 10.0
+      station_hold_ms:
+        type: "int"
+        required: false
+        default: 10000
+
   - id: "navigate_and_photograph.xml"
     description: "Navigate to waypoints and take photos at regular intervals"
     mission_intents:

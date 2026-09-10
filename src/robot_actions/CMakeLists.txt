@@ -12,9 +12,11 @@ find_package(nav2_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(geographic_msgs REQUIRED)
+find_package(mavros_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(stepper_interfaces REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -25,9 +27,11 @@ set(dependencies
   nav_msgs
   geometry_msgs
   geographic_msgs
+  mavros_msgs
   rclcpp
   std_srvs
   sensor_msgs
+  stepper_interfaces
   cv_bridge
 )
 
@@ -39,6 +43,9 @@ add_library(${PROJECT_NAME} SHARED
   src/distance_traveled.cpp
   src/get_current_pose.cpp
   src/log_temperature.cpp
+  src/mavros_mode.cpp
+  src/move_to_global_setpoint.cpp
+  src/set_depth.cpp
   src/restart_node.cpp
   src/parse_waypoints.cpp
   src/parse_gps_waypoints.cpp

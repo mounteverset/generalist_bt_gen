@@ -43,6 +43,11 @@ DEFAULT_KNOWN_TREE_ENTRIES = (
         'gps_temperature_logging.xml::Follow geographic GPS waypoints '
         'and log temperature at each waypoint.'
     ),
+    (
+        'blueboat_temperature_logging.xml::Navigate a BlueBoat through WGS84 '
+        'waypoints using MAVROS global setpoints, lower the temperature probe, '
+        'log water temperature, and raise the probe at each station.'
+    ),
     'navigate_and_photograph.xml::Navigate through map-frame waypoints and take RGB photos.',
     (
         'find_and_drive_to_nearest_object.xml::Plan map-frame waypoints from '

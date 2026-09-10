@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<!--
+Tree Name: blueboat_temperature_logging.xml
+Description: Visit WGS84 waypoints through MAVROS, lower the temperature probe,
+             log a sample, and raise the probe before continuing.
+Usage Instructions:
+  - Payload must include "gps_waypoints" as semicolon-separated entries formatted
+    as latitude,longitude[,yaw] or latitude,longitude,altitude,yaw.
+  - Optional payload values tune measurement_depth_cm, raise_depth_cm,
+    acceptance_radius_m, and station_hold_ms.
+  - The tree verifies a raw GPS fix, switches HOLD -> GUIDED, arms the boat,
+    and confirms the resulting state before sending global position setpoints.
+  - Each setpoint is published at 5 Hz while navigating, sampling, and holding.
+  - The BlueBoat MAVROS bridge, /stepper/set_depth action, and /read_temp
+    service must be active. The configured probe limit defaults to 200 cm.
+-->
+<root BTCPP_format="4" main_tree_to_execute="blueboat_temperature_logging.xml">
+  <BehaviorTree ID="blueboat_temperature_logging.xml">
+    <Sequence name="BlueBoatTemperatureLoggingMission">
+      <ParseGpsWaypoints
+        raw_waypoints="{gps_waypoints}"
+        waypoint_queue="{blueboat_waypoint_queue}"
+        waypoint_count="{blueboat_waypoint_count}" />
+      <WaitForMavrosGpsFix
+        name="ConfirmGpsFix"
+        timeout_sec="{gps_fix_timeout_sec}"
+        fix_topic="/mavros/global_position/raw/fix" />
+      <SetMavrosMode
+        name="RequestHoldMode"
+        custom_mode="HOLD"
+        service_name="/mavros/set_mode" />
+      <WaitForMavrosMode
+        name="ConfirmHoldMode"
+        desired_mode="HOLD"
+        require_armed="false"
+        timeout_sec="{guided_mode_timeout_sec}"
+        state_topic="/mavros/state" />
+      <SetMavrosMode
+        name="RequestGuidedMode"
+        custom_mode="GUIDED"
+        service_name="/mavros/set_mode" />
+      <WaitForMavrosMode
+        name="ConfirmGuidedMode"
+        desired_mode="GUIDED"
+        require_armed="false"
+        timeout_sec="{guided_mode_timeout_sec}"
+        state_topic="/mavros/state" />
+      <SetMavrosArm
+        name="ArmBlueBoat"
+        arm="true"
+        service_name="/mavros/cmd/arming" />
+      <WaitForMavrosMode
+        name="ConfirmGuidedAndArmed"
+        desired_mode="GUIDED"
+        require_armed="true"
+        timeout_sec="{guided_mode_timeout_sec}"
+        state_topic="/mavros/state" />
+      <LoopString
+        queue="{blueboat_waypoint_queue}"
+        value="{active_blueboat_waypoint}"
+        if_empty="SUCCESS">
+        <MoveToGlobalSetpoint
+          name="DriveToAndHoldBlueBoatWaypoint"
+          gps_pose="{active_blueboat_waypoint}"
+          acceptance_radius_m="{acceptance_radius_m}"
+          publish_rate_hz="5.0"
+          setpoint_topic="/mavros/setpoint_position/global"
+          position_topic="/mavros/global_position/global">
+          <Sequence name="SampleAtBlueBoatWaypoint">
+            <SetDepth
+              name="LowerTemperatureProbe"
+              target_depth_cm="{measurement_depth_cm}"
+              max_depth_cm="200" />
+            <Fallback name="LogAndRaiseTemperatureProbe">
+              <Sequence name="LogThenRaiseTemperatureProbe">
+                <LogTemperature
+                  name="LogWaterTemperature"
+                  service_name="/read_temp"
+                  logfile_path="{logfile_path}" />
+                <SetDepth
+                  name="RaiseTemperatureProbe"
+                  target_depth_cm="{raise_depth_cm}"
+                  max_depth_cm="200" />
+              </Sequence>
+              <ForceFailure name="PreserveLoggingFailure">
+                <SetDepth
+                  name="RaiseTemperatureProbeAfterFailure"
+                  target_depth_cm="{raise_depth_cm}"
+                  max_depth_cm="200" />
+              </ForceFailure>
+            </Fallback>
+            <Sleep name="HoldAtMeasurementPoint" msec="{station_hold_ms}" />
+          </Sequence>
+        </MoveToGlobalSetpoint>
+      </LoopString>
+    </Sequence>
+  </BehaviorTree>
+</root>

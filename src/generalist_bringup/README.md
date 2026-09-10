@@ -2,6 +2,23 @@
 
 Holds project-wide configuration bundles and launch files. Use the `generalist_bringup.launch.py` entrypoint to start the default behavior tree executor with the shared parameter file located in `config/bt_executor_params.yaml`.
 
+For BlueBoat, start MAVROS with the hardware UDP endpoint:
+
+```bash
+ros2 run mavros mavros_node --ros-args \
+  -p fcu_url:=udp://@192.168.2.2:14600 \
+  -p system_id:=255 -p component_id:=190 \
+  -p tgt_system:=1 -p tgt_component:=1
+```
+
+Then select its installed capability profile:
+
+```bash
+ros2 launch generalist_bringup generalist_bringup.launch.py \
+  system_description_file:=$(ros2 pkg prefix mission_reasoner)/share/mission_reasoner/config/system_description_blueboat.yaml \
+  gps_fix_topic:=/mavros/global_position/raw/fix
+```
+
 `clearpath_a200_navigation_sim.launch.py` also starts the mock GPS publisher and,
 by default, `navsat_transform_node`. This exposes `/fromLL`, which Nav2's
 `FollowGPSWaypoints` action uses to convert `MoveToGPS` goals. Set

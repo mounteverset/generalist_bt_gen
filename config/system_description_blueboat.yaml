@@ -1,0 +1,140 @@
+# Machine-readable BlueBoat capability model used by mission_reasoner.
+
+platform:
+  name: "BlueBoat"
+  type: "water_surface_vessel"
+  locomotion:
+    - "water_surface"
+  max_range_m: 1000
+  max_speed_ms: 1.0
+  max_probe_depth_cm: 200
+  speed_control: "ArduPilot"
+
+autopilot:
+  type: "ArduPilot Rover"
+  connection:
+    transport: "udp"
+    fcu_url: "udp://@192.168.2.2:14600"
+    system_id: 255
+    component_id: 190
+    target_system: 1
+    target_component: 1
+  mode_transition:
+    - "HOLD"
+    - "GUIDED"
+  required_control_mode: "GUIDED"
+  required_armed: true
+  mode_service: "/mavros/set_mode"
+  arming_service: "/mavros/cmd/arming"
+  state_topic: "/mavros/state"
+
+sensors:
+  - id: "gps"
+    capability: "localization.gps"
+    type: "navigation"
+    modality: "GPS"
+    topic: "/mavros/global_position/raw/fix"
+    position_feedback_topic: "/mavros/global_position/global"
+  - id: "water_temperature_probe"
+    capability: "sensing.temperature"
+    type: "temperature"
+    modality: "water_temperature"
+    ros_interface: "/read_temp"
+    ros_type: "service"
+
+actions:
+  - id: "enter_guided_mode"
+    capability: "control.guided_mode"
+    type: "autopilot_control"
+    ros_interface: "/mavros/set_mode"
+    ros_type: "service"
+  - id: "arm_vehicle"
+    capability: "control.arming"
+    type: "autopilot_control"
+    ros_interface: "/mavros/cmd/arming"
+    ros_type: "service"
+  - id: "navigate_global_setpoints"
+    capability: "navigation.gps_waypoints"
+    type: "locomotion"
+    ros_interface: "/mavros/setpoint_position/global"
+    ros_type: "topic"
+    message_type: "geographic_msgs/msg/GeoPoseStamped"
+    publish_rate_hz: 5.0
+    qos_reliability: "reliable"
+    position_feedback_topic: "/mavros/global_position/global"
+    requires:
+      - "locomotion.water_surface"
+      - "control.guided_mode"
+      - "control.arming"
+      - "localization.gps"
+  - id: "navigate_waypoints"
+    capability: "navigation.waypoints"
+    type: "locomotion"
+    ros_interface: "/mavros/setpoint_position/global"
+    ros_type: "topic"
+  - id: "set_probe_depth"
+    capability: "actuation.probe_depth"
+    type: "payload"
+    ros_interface: "/stepper/set_depth"
+    ros_type: "action"
+    limits:
+      min_depth_cm: 0
+      max_depth_cm: 200
+      default_measurement_depth_cm: 20
+  - id: "read_temperature"
+    capability: "sensing.temperature"
+    type: "sensing"
+    ros_interface: "/read_temp"
+    ros_type: "service"
+  - id: "parse_gps_waypoints"
+    capability: "payload.parse_gps_waypoints"
+    type: "utility"
+
+capabilities:
+  supported:
+    - "locomotion.water_surface"
+    - "control.guided_mode"
+    - "control.arming"
+    - "actuation.probe_depth"
+    - "navigation.waypoints"
+    - "navigation.gps_waypoints"
+    - "localization.gps"
+    - "sensing.temperature"
+    - "payload.parse_gps_waypoints"
+  unsupported:
+    locomotion.ground: "The configured platform is a water-surface vessel."
+    locomotion.flight: "The BlueBoat cannot fly."
+    sensing.rgb_image: "No RGB camera is declared for this BlueBoat profile."
+    sensing.depth_image: "No depth camera is declared for this BlueBoat profile."
+    sensing.thermal_image: "No thermal camera is declared for this BlueBoat profile."
+    manipulation.pick_place: "No manipulator or gripper is declared."
+    sampling.soil: "The BlueBoat has no soil-sampling tool."
+    sampling.water: "The probe measures temperature but does not collect water samples."
+
+command_capability_rules:
+  - capability: "locomotion.water_surface"
+    keywords: ["blueboat", "boat", "sail", "shoreline", "across the lake"]
+  - capability: "control.guided_mode"
+    keywords: ["guided", "guided mode"]
+  - capability: "control.arming"
+    keywords: ["arm", "arming", "armed"]
+  - capability: "actuation.probe_depth"
+    keywords: ["winch", "probe depth", "lower the sensor", "raise the sensor"]
+  - capability: "navigation.waypoints"
+    keywords: ["drive", "navigate", "go to", "patrol", "survey", "waypoint", "waypoints", "route"]
+  - capability: "navigation.gps_waypoints"
+    keywords: ["gps waypoint", "gps waypoints", "latitude", "longitude", "lat/lon", "geographic route"]
+  - capability: "sensing.temperature"
+    keywords: ["temperature", "water temperature", "measure temperature", "log temperature"]
+  - capability: "locomotion.flight"
+    keywords: ["fly", "flight", "aerial", "drone"]
+  - capability: "sensing.rgb_image"
+    keywords: ["photo", "photos", "picture", "photograph", "image"]
+  - capability: "sensing.thermal_image"
+    keywords: ["thermal", "infrared", "ir image"]
+  - capability: "manipulation.pick_place"
+    keywords: ["pick up", "grip", "grab", "collect object"]
+  - capability: "sampling.soil"
+    keywords: ["dig", "soil sample", "sample soil"]
+  - capability: "sampling.water"
+    keywords: ["water sample", "sample water", "collect water"]
