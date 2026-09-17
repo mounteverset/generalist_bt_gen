@@ -22,7 +22,7 @@ Usage Instructions:
           name="DriveToObjectMatch"
           pose="{active_waypoint}"
           frame_id="{waypoint_frame_id}"
-          action_name="/a200_0000/navigate_to_pose" />
+          action_name="/navigate_to_pose" />
       </LoopString>
     </Sequence>
   </BehaviorTree>

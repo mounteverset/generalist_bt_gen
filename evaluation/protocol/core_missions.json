@@ -2,10 +2,10 @@
   "dataset_version": "0.2.0-draft",
   "freeze_status": "draft",
   "source_snapshot": {
-    "repository_commit": "163b7f005c27e83843d17683f641471161804be4",
-    "tree_metadata_sha256": "2e051e689f69a26d566e8489d69a77d6b8e7ce439691e459858c45008915baa5",
-    "system_description_sha256": "956f4bb8415e8e3a361cc73f203193557959bd8be8eaab6df5d9aca5aeab0950",
-    "bt_node_manifest_sha256": "4776f705d9ead6dc5271591e3539229efed278050144196d1b9757bc66921426"
+    "repository_commit": "2abd093a78d4f8468bef0cf16b3c971c52ad8341",
+    "tree_metadata_sha256": "2804dbfaa992cd73a8e5a5692c54deb8771f5e644a05f818f08f638a97046992",
+    "system_description_sha256": "395e58012cc12a450ef80ac55abe3938f9ccac04e54cec749e3a05e68bac92d4",
+    "bt_node_manifest_sha256": "2c0b695eb71208a8b468a53dad2604f9b22335e3fea83dbd115affa4b1e1d046"
   },
   "design": {
     "mission_count": 9,

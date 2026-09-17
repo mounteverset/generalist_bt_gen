@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 
 TREES_DIRECTORY = Path(__file__).resolve().parents[1] / 'trees'
 GPS_TREES = {
+    'blueboat_temperature_logging.xml',
     'explore_area.xml',
     'gps_temperature_logging.xml',
     'gps_waypoint_navigation.xml',

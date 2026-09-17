@@ -102,7 +102,6 @@ def generate_launch_description():
         remappings=[
             ('/camera/image_raw', '/a200_0000/sensors/camera_0/color/image'),
             ('/camera/depth/image_raw', '/a200_0000/sensors/camera_0/depth/image'),
-            ('/map', '/a200_0000/map'),
         ],
     )
 

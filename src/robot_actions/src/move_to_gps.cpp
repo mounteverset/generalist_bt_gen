@@ -55,7 +55,7 @@ bool MoveToGPS::setGoal(Goal & goal)
         get_logger(),
         "MoveToGPS -> invalid GPS waypoint %zu ('%s'); expected lat,lon[,yaw] or "
         "lat,lon,alt,yaw",
-        index,
+        index + 1,
         raw_waypoints[index].c_str());
       goal.gps_poses.clear();
       return false;

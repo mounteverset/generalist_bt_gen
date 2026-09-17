@@ -42,6 +42,14 @@
     "KeepRunningUntilFailure": {
       "ports": {}
     },
+    "ForceFailure": {
+      "ports": {}
+    },
+    "Sleep": {
+      "ports": {
+        "msec": {"direction": "input", "type": "unsigned", "required": true}
+      }
+    },
     "Precondition": {
       "ports": {
         "if": {"direction": "input", "type": "script", "required": true},
@@ -59,8 +67,26 @@
     },
     "MoveToGPS": {
       "ports": {
-        "gps_pose": {"direction": "input", "type": "string", "required": true},
+        "gps_pose": {"direction": "input", "type": "string", "required": false},
+        "gps_poses": {"direction": "input", "type": "string", "required": false},
         "action_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "MoveToGlobalSetpoint": {
+      "ports": {
+        "gps_pose": {"direction": "input", "type": "string", "required": true},
+        "acceptance_radius_m": {"direction": "input", "type": "double", "required": false},
+        "publish_rate_hz": {"direction": "input", "type": "double", "required": false},
+        "setpoint_topic": {"direction": "input", "type": "string", "required": false},
+        "position_topic": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "PublishWaypointMarkers": {
+      "ports": {
+        "waypoints": {"direction": "input", "type": "string", "required": false},
+        "gps_waypoints": {"direction": "input", "type": "string", "required": false},
+        "waypoint_frame_id": {"direction": "input", "type": "string", "required": false},
+        "gps_frame_id": {"direction": "input", "type": "string", "required": false}
       }
     },
     "TakePicture": {
@@ -114,6 +140,39 @@
       "ports": {
         "logfile_path": {"direction": "input", "type": "string", "required": false},
         "service_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "SetMavrosMode": {
+      "ports": {
+        "custom_mode": {"direction": "input", "type": "string", "required": false},
+        "service_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "SetMavrosArm": {
+      "ports": {
+        "arm": {"direction": "input", "type": "bool", "required": false},
+        "service_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "WaitForMavrosMode": {
+      "ports": {
+        "desired_mode": {"direction": "input", "type": "string", "required": false},
+        "require_armed": {"direction": "input", "type": "bool", "required": false},
+        "timeout_sec": {"direction": "input", "type": "double", "required": false},
+        "state_topic": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "WaitForMavrosGpsFix": {
+      "ports": {
+        "timeout_sec": {"direction": "input", "type": "double", "required": false},
+        "fix_topic": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "SetDepth": {
+      "ports": {
+        "target_depth_cm": {"direction": "input", "type": "int", "required": true},
+        "max_depth_cm": {"direction": "input", "type": "int", "required": false},
+        "action_name": {"direction": "input", "type": "string", "required": false}
       }
     },
     "RestartNode": {

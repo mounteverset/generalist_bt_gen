@@ -376,11 +376,12 @@ def validate() -> list[str]:
             "temperature_logging.xml",
             "gps_waypoint_navigation.xml",
             "gps_temperature_logging.xml",
+            "blueboat_temperature_logging.xml",
             "navigate_and_photograph.xml",
             "find_and_drive_to_nearest_object.xml",
             "explore_area.xml",
         },
-        "Runtime tree catalogue does not contain the six current Husky trees",
+        "Runtime tree catalogue does not contain the seven current tree templates",
     )
     registered_nodes = set(node_manifest["registered_nodes"])
     registration_source = (
@@ -388,7 +389,7 @@ def validate() -> list[str]:
     ).read_text(encoding="utf-8")
     compiled_node_names = set(
         re.findall(
-            r'factory\.registerNodeType<[^>]+>\("([^"]+)"',
+            r'factory\.registerNodeType<[^>]+>\s*\(\s*"([^"]+)"',
             registration_source,
         )
     )
@@ -397,9 +398,12 @@ def validate() -> list[str]:
         "BT node manifest differs from plugin_registration.cpp",
     )
     require(
-        {"MoveToGPS", "ParseGpsWaypoints", "TakePhoto"}.issubset(
-            registered_nodes
-        ),
+        {
+            "MoveToGPS",
+            "ParseGpsWaypoints",
+            "PublishWaypointMarkers",
+            "TakePhoto",
+        }.issubset(registered_nodes),
         "Registered-node manifest omits current aliases or GPS nodes",
     )
     require(
@@ -424,12 +428,13 @@ def validate() -> list[str]:
         "M1 distractor freeze status is invalid",
     )
     require(
-        m1_scale["base_action_node_count"] == len(registered_nodes) == 10,
-        "M1 scale protocol must match the 10 compiled custom action nodes",
+        m1_scale["base_action_node_count"]
+        == len(m1_scale["base_node_descriptions"]),
+        "M1 scale protocol must match the evaluation-visible custom action nodes",
     )
     require(
-        set(m1_scale["base_node_descriptions"]) == registered_nodes,
-        "M1 base-node descriptions must cover the frozen manifest exactly",
+        set(m1_scale["base_node_descriptions"]).issubset(registered_nodes),
+        "M1 base-node descriptions must reference registered nodes",
     )
     require(
         all(
@@ -450,7 +455,7 @@ def validate() -> list[str]:
     require(
         all(
             variant["distractor_count"]
-            == variant["action_node_count"] - len(registered_nodes)
+            == variant["action_node_count"] - m1_scale["base_action_node_count"]
             for variant in m1_scale["variants"]
         ),
         "M1 scale variant distractor counts are inconsistent",
