@@ -19,7 +19,7 @@ def test_gps_waypoint_navigation_tree_uses_geographic_action():
     move = behavior_tree.find('.//MoveToGPS')
     assert move is not None
     assert move.attrib['gps_pose'] == '{active_gps_waypoint}'
-    assert move.attrib['action_name'] == '/a200_0000/follow_gps_waypoints'
+    assert move.attrib['action_name'] == '/follow_gps_waypoints'
 
     assert behavior_tree.find('.//MoveTo') is None
     assert behavior_tree.find('.//LogTemperature') is None

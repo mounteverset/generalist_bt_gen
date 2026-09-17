@@ -26,11 +26,11 @@ MoveTo::MoveTo(const std::string & name, const BT::NodeConfig & config, const BT
     default_goal_frame_id_ = node->get_parameter("nav2_goal_frame_id").as_string();
   } else {
     default_goal_frame_id_ = node->declare_parameter<std::string>(
-      "nav2_goal_frame_id", "map");
+      "nav2_goal_frame_id", "target/map");
   }
 
   if (default_goal_frame_id_.empty()) {
-    default_goal_frame_id_ = "map";
+    default_goal_frame_id_ = "target/map";
   }
   while (!default_goal_frame_id_.empty() && default_goal_frame_id_.front() == '/') {
     default_goal_frame_id_.erase(default_goal_frame_id_.begin());
@@ -111,7 +111,7 @@ bool MoveTo::setGoal(Goal & goal)
     frame_id.erase(frame_id.begin());
   }
   if (frame_id.empty()) {
-    frame_id = "map";
+    frame_id = "target/map";
   }
 
   if (enable_debug_logging_) {

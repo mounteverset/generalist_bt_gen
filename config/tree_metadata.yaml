@@ -223,11 +223,11 @@ trees:
       camera_topic:
         type: "string"
         required: false
-        default: "/a200_0000/sensors/camera_0/color/image"
+        default: "/okvis/rgb2/image_raw"
       odom_topic:
         type: "string"
         required: false
-        default: "/odom"
+        default: "/target/odometry/fused"
       photo_output_directory:
         type: "string"
         required: false
@@ -266,6 +266,7 @@ trees:
       max_range_m: 5000
     context_requirements:
       - ROBOT_POSE
+      - ANNOTATED_SLAM_MAP_IMAGE
       - FIND_ANYTHING
     blackboard_contract:
       waypoints:
@@ -283,16 +284,20 @@ trees:
         default: "map"
 
   - id: "explore_area.xml"
-    description: "Explore an operator-defined ground area by executing LLM-generated map-frame frontier or coverage waypoints."
+    description: "Explore an operator-defined ground area by submitting LLM-generated GPS waypoints from OpenStreetMap and satellite imagery as one Nav2 FollowGPSWaypoints route."
     mission_intents:
       - "explore_area"
       - "survey_area"
+      - "navigate_gps_waypoints"
+      - "geographic_route"
     required_capabilities:
+      - "localization.gps"
+      - "localization.odometry"
       - "locomotion.ground"
       - "navigation.waypoints"
-      - "localization.odometry"
+      - "navigation.gps_waypoints"
       - "mapping.slam"
-      - "payload.parse_waypoints"
+      - "payload.parse_gps_waypoints"
     unsupported_requirements:
       - "locomotion.flight"
       - "sensing.thermal_image"
@@ -306,51 +311,37 @@ trees:
       - ROBOT_POSE
       - ANNOTATED_SLAM_MAP_IMAGE
       - GPS_FIX
-      - SATELLITE_MAP
       - OSM_CONTEXT
+      - SATELLITE_MAP
       - BATTERY_STATE
     blackboard_contract:
-      waypoints:
+      gps_waypoints:
         type: "string"
         required: true
         schema:
           type: "string"
-          description: "Executable semicolon-separated map-frame route. Each waypoint is 'x,y,yaw' in meters/meters/radians."
-          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
+          description: "Complete semicolon-separated route submitted in one Nav2 FollowGPSWaypoints goal. Each waypoint is 'latitude,longitude', 'latitude,longitude,yaw', or 'latitude,longitude,altitude,yaw'."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2}(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2})*$'
           examples:
-            - "1.0,2.0,0.0; 4.0,2.0,1.57; 4.0,5.0,3.14"
-      area_polygon:
-        type: "string"
-        required: true
-        schema:
-          type: "string"
-          description: "Operator-defined exploration polygon in the map frame. Each vertex is 'x,y'. At least three vertices are required."
-          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?){2,}$'
-          examples:
-            - "0.0,0.0; 8.0,0.0; 8.0,6.0; 0.0,6.0"
-      frontiers:
-        type: "string"
-        required: true
-        schema:
-          type: "string"
-          description: "Selected frontier or coverage points in the map frame. Each point is 'x,y,yaw'."
-          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
-          examples:
-            - "2.0,1.0,0.0; 6.0,3.0,1.57"
+            - "48.2848,11.6077,0.0; 48.2851,11.6074,1.57"
       area_polygon_geo:
         type: "string"
         required: false
         schema:
           type: "string"
-          description: "Optional satellite/geographic polygon vertices formatted as 'lat,lon'."
+          description: "Optional operator-defined exploration polygon in WGS84 as 'latitude,longitude' vertices."
           pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?){2,}$'
+          examples:
+            - "48.2840,11.6070; 48.2840,11.6080; 48.2850,11.6080; 48.2850,11.6070"
       frontiers_geo:
         type: "string"
         required: false
         schema:
           type: "string"
-          description: "Optional satellite/geographic frontier points formatted as 'lat,lon'."
+          description: "Optional geographic exploration or coverage points as 'latitude,longitude'."
           pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
+          examples:
+            - "48.2842,11.6072; 48.2848,11.6077"
       exploration_strategy:
         type: "string"
         required: false

@@ -93,7 +93,7 @@ def generate_launch_description():
 
     mock_gps_frame_id_arg = DeclareLaunchArgument(
         'mock_gps_frame_id',
-        default_value='base_link',
+        default_value='target/gps_link',
         description='Frame id for the mock GPS NavSatFix messages'
     )
 
@@ -105,7 +105,7 @@ def generate_launch_description():
 
     gps_navigation_odom_topic_arg = DeclareLaunchArgument(
         'gps_navigation_odom_topic',
-        default_value='/a200_0000/platform/odom/filtered',
+        default_value='/target/odometry/fused',
         description='World-referenced odometry input used for GPS coordinate conversion'
     )
 
@@ -268,7 +268,7 @@ def generate_launch_description():
         remappings=[
             ('gps/fix', mock_gps_fix_topic),
             ('odometry/filtered', gps_navigation_odom_topic),
-            ('odometry/gps', '/a200_0000/platform/odom/gps'),
+            ('odometry/gps', '/target/odometry/gps'),
             ('gps/filtered', '/gps/filtered'),
         ],
     )

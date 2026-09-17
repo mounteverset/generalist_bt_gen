@@ -41,11 +41,12 @@ def mission(mission_id: str):
     return next(item for item in CORE["missions"] if item["id"] == mission_id)
 
 
-def test_runtime_contract_contains_current_six_husky_trees():
+def test_runtime_contract_contains_current_tree_catalogue():
     assert {tree["id"] for tree in RUNTIME["tree_catalogue"]} == {
         "temperature_logging.xml",
         "gps_waypoint_navigation.xml",
         "gps_temperature_logging.xml",
+        "blueboat_temperature_logging.xml",
         "navigate_and_photograph.xml",
         "find_and_drive_to_nearest_object.xml",
         "explore_area.xml",
@@ -65,7 +66,12 @@ def test_all_catalogue_templates_pass_static_interface_validation():
 
 def test_action_manifest_matches_registered_aliases_and_omits_fictional_nodes():
     nodes = RUNTIME["bt_node_manifest"]["registered_nodes"]
-    assert {"MoveToGPS", "ParseGpsWaypoints", "TakePhoto"} <= set(nodes)
+    assert {
+        "MoveToGPS",
+        "ParseGpsWaypoints",
+        "PublishWaypointMarkers",
+        "TakePhoto",
+    } <= set(nodes)
     assert "FindAnything" not in nodes
     assert "FindObjectLocation" not in nodes
     assert "CheckBattery" not in nodes
@@ -86,7 +92,8 @@ def test_m1_and_m2_receive_the_same_concrete_context():
 
 def test_m1_scale_variants_materialize_exact_frozen_sizes():
     expected = {"M1-N12": 12, "M1-N24": 24, "M1-N50": 50, "M1-N100": 100}
-    base_order = list(RUNTIME["bt_node_manifest"]["registered_nodes"])
+    base_order = list(CHOICE_SPACE["m1_action_library"]["base_node_descriptions"])
+    base_count = CHOICE_SPACE["m1_action_library"]["base_action_node_count"]
     paired_base_orders = []
     for variant_id, expected_size in expected.items():
         scaled, condition = materialize_m1_action_library(
@@ -98,7 +105,7 @@ def test_m1_scale_variants_materialize_exact_frozen_sizes():
         )
         assert len(scaled["bt_node_manifest"]["registered_nodes"]) == expected_size
         assert condition["action_node_count"] == expected_size
-        assert condition["distractor_count"] == expected_size - 10
+        assert condition["distractor_count"] == expected_size - base_count
         assert len(condition["action_node_order"]) == expected_size
         assert len(condition["action_library_sha256"]) == 64
         rendered = render_action_catalogue(scaled)
@@ -107,7 +114,6 @@ def test_m1_scale_variants_materialize_exact_frozen_sizes():
         paired_base_orders.append(
             [name for name in condition["action_node_order"] if name in base_order]
         )
-    assert list(RUNTIME["bt_node_manifest"]["registered_nodes"]) == base_order
     assert all(order == paired_base_orders[0] for order in paired_base_orders)
 
 
@@ -135,8 +141,12 @@ def test_m1_scale_distractors_are_balanced_and_usage_is_separate_from_invention(
     scaled, condition = materialize_m1_action_library(
         RUNTIME, CHOICE_SPACE, M1_DISTRACTORS, "M1-N24", "S1-P1"
     )
-    assert condition["semantic_near_distractor_count"] == 7
-    assert condition["adjacent_capability_count"] == 7
+    category_counts = (
+        condition["semantic_near_distractor_count"],
+        condition["adjacent_capability_count"],
+    )
+    assert sum(category_counts) == condition["distractor_count"]
+    assert max(category_counts) - min(category_counts) <= 1
     usage = analyze_xml_node_usage(
         '<root BTCPP_format="4" main_tree_to_execute="T"><BehaviorTree ID="T">'
         '<Sequence><MoveToLocation location_name="inspection_point"/>'
@@ -215,7 +225,7 @@ def test_shared_payload_validator_checks_current_contract():
         tree["blackboard_contract"],
         {},
     )
-    assert "missing required key 'area_polygon'" in errors
+    assert "missing required key 'gps_waypoints'" in errors
 
 
 def test_m3_payload_parser_rejects_nonproduction_status_wrapper():

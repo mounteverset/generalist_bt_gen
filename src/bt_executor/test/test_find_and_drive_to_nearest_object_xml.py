@@ -35,4 +35,4 @@ def test_find_and_drive_tree_executes_planner_generated_object_waypoints():
     assert move_to is not None
     assert move_to.attrib['pose'] == '{active_waypoint}'
     assert move_to.attrib['frame_id'] == '{waypoint_frame_id}'
-    assert move_to.attrib['action_name'] == '/a200_0000/navigate_to_pose'
+    assert move_to.attrib['action_name'] == '/navigate_to_pose'

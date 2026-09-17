@@ -26,7 +26,7 @@ private:
 
   rclcpp::Node::SharedPtr node_;
   bool enable_debug_logging_{false};
-  std::string default_image_topic_{"/camera/image_raw"};
+  std::string default_image_topic_{"/okvis/rgb2/image_raw"};
 };
 
 }  // namespace robot_actions

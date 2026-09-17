@@ -2,10 +2,10 @@ context_gatherer:
   ros__parameters:
     action_name: "/context_gatherer/gather"
     output_directory: "/tmp/context_gatherer"
-    odom_topic: "/a200_0000/platform/odom/filtered"
-    pose_cov_topic: "/a200_0000/pose"
+    odom_topic: "/target/odometry/fused"
+    pose_cov_topic: "/pose"
     gps_fix_topic: "/gps/fix"
-    slam_map_topic: "/a200_0000/map"
+    slam_map_topic: "/map"
     annotated_map_service_name: "/annotated_map_saver/save_map"
     annotated_map_service_timeout_sec: 10.0
     satellite_map_annotator_service_name: "/satellite_map_annotator/annotate"
@@ -16,9 +16,9 @@ context_gatherer:
     bt_executor_action_name: "/bt_executor/execute_tree"
     rgb360_sweep_tree_id: "360_rgb_sweep.xml"
     rgb360_sweep_timeout_sec: 45.0
-    rgb360_sweep_camera_topic: "/a200_0000/sensors/camera_0/color/image"
-    rgb360_sweep_pose_topic: "/a200_0000/pose"
-    rgb360_sweep_odom_topic: "/a200_0000/platform/odom/filtered"
+    rgb360_sweep_camera_topic: "/okvis/rgb2/image_raw"
+    rgb360_sweep_pose_topic: "/pose"
+    rgb360_sweep_odom_topic: "/target/odometry/fused"
     rgb360_sweep_image_timeout_ms: 1000
     rgb360_sweep_pose_timeout_ms: 1000
     rgb360_sweep_odom_timeout_ms: 1000
@@ -52,8 +52,8 @@ context_gatherer:
 annotated_map_saver:
   ros__parameters:
     output_directory: "/tmp/context_gatherer"
-    pose_cov_topic: "/a200_0000/pose"
-    slam_map_topic: "/a200_0000/map"
+    pose_cov_topic: "/pose"
+    slam_map_topic: "/map"
     annotated_map_service_name: "/annotated_map_saver/save_map"
     annotated_map_grid_spacing_m: 0.0
     enable_debug_logging: true

@@ -31,20 +31,18 @@ def _trees():
 def test_explore_area_metadata_advertises_payload_and_context_contract():
     tree = next(item for item in _trees() if item['id'] == 'explore_area.xml')
 
-    assert 'payload.parse_waypoints' in tree['required_capabilities']
+    assert 'navigation.gps_waypoints' in tree['required_capabilities']
+    assert 'payload.parse_gps_waypoints' in tree['required_capabilities']
     assert tree['selection_constraints']['requires_target_area'] is True
     assert set(tree['context_requirements']) >= {
         'ROBOT_POSE',
-        'ANNOTATED_SLAM_MAP_IMAGE',
         'GPS_FIX',
-        'SATELLITE_MAP',
         'OSM_CONTEXT',
+        'SATELLITE_MAP',
         'BATTERY_STATE',
     }
     contract = tree['blackboard_contract']
-    assert contract['waypoints']['required'] is True
-    assert contract['area_polygon']['required'] is True
-    assert contract['frontiers']['required'] is True
+    assert contract['gps_waypoints']['required'] is True
     assert contract['area_polygon_geo']['required'] is False
     assert contract['frontiers_geo']['required'] is False
 
@@ -79,7 +77,11 @@ def test_find_and_drive_metadata_routes_find_anything_through_planning_context()
         if item['id'] == 'find_and_drive_to_nearest_object.xml'
     )
 
-    assert tree['context_requirements'] == ['ROBOT_POSE', 'FIND_ANYTHING']
+    assert tree['context_requirements'] == [
+        'ROBOT_POSE',
+        'ANNOTATED_SLAM_MAP_IMAGE',
+        'FIND_ANYTHING',
+    ]
     assert 'payload.parse_waypoints' in tree['required_capabilities']
     assert 'waypoints' in tree['blackboard_contract']
     assert 'object' not in tree['blackboard_contract']

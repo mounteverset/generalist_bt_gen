@@ -353,6 +353,31 @@ def test_robot_pose_uses_configured_sim_odometry_topic():
         ).read_text()
     )['context_gatherer']['ros__parameters']
 
-    assert 'declare_parameter<std::string>("odom_topic", "/odom")' in source
+    assert 'declare_parameter<std::string>("odom_topic", "/target/odometry/fused")' in source
     assert 'create_subscription<nav_msgs::msg::Odometry>(\n      odom_topic_' in source
-    assert params['odom_topic'] == '/a200_0000/platform/odom/filtered'
+    assert params['odom_topic'] == '/target/odometry/fused'
+
+
+def test_gps_subscription_uses_sensor_data_qos():
+    source = CONTEXT_GATHERER_NODE.read_text()
+
+    assert (
+        'create_subscription<sensor_msgs::msg::NavSatFix>(\n'
+        '        gps_fix_topic_, rclcpp::SensorDataQoS()'
+    ) in source
+
+
+def test_rgb_context_uses_d455_color_camera_topic():
+    source = CONTEXT_GATHERER_NODE.read_text()
+    params = yaml.safe_load(
+        (
+            REPO_ROOT
+            / 'src'
+            / 'context_gatherer'
+            / 'config'
+            / 'context_gatherer_params.yaml'
+        ).read_text()
+    )['context_gatherer']['ros__parameters']
+
+    assert '"/okvis/rgb2/image_raw", 10' in source
+    assert params['rgb360_sweep_camera_topic'] == '/okvis/rgb2/image_raw'

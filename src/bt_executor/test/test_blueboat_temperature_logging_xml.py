@@ -13,6 +13,7 @@ def test_blueboat_temperature_tree_visits_waypoints_and_cycles_probe():
     mission = root.find('.//BehaviorTree/Sequence')
     assert mission is not None
     assert [child.tag for child in mission] == [
+        'PublishWaypointMarkers',
         'ParseGpsWaypoints',
         'WaitForMavrosGpsFix',
         'SetMavrosMode',

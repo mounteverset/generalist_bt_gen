@@ -17,6 +17,8 @@ Usage Instructions:
 <root BTCPP_format="4" main_tree_to_execute="blueboat_temperature_logging.xml">
   <BehaviorTree ID="blueboat_temperature_logging.xml">
     <Sequence name="BlueBoatTemperatureLoggingMission">
+      <PublishWaypointMarkers
+        gps_waypoints="{gps_waypoints}" />
       <ParseGpsWaypoints
         raw_waypoints="{gps_waypoints}"
         waypoint_queue="{blueboat_waypoint_queue}"

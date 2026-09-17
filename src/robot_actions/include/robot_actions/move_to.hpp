@@ -26,8 +26,8 @@ public:
 
 private:
   bool enable_debug_logging_{false};
-  std::string default_goal_frame_id_{"map"};
-  std::string last_goal_frame_id_{"map"};
+  std::string default_goal_frame_id_{"target/map"};
+  std::string last_goal_frame_id_{"target/map"};
   double last_goal_x_{0.0};
   double last_goal_y_{0.0};
   double last_goal_theta_{0.0};

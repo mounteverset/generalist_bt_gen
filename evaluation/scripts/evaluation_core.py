@@ -65,16 +65,24 @@ def materialize_m1_action_library(
         raise KeyError(f"Unknown M1 action-library variant {variant_id}")
 
     materialized = copy.deepcopy(dict(runtime))
-    base_nodes = materialized["bt_node_manifest"]["registered_nodes"]
+    registered_nodes = materialized["bt_node_manifest"]["registered_nodes"]
     base_count = int(config["base_action_node_count"])
+    base_descriptions = config["base_node_descriptions"]
+    missing_base_nodes = set(base_descriptions) - set(registered_nodes)
+    if missing_base_nodes:
+        raise ValueError(
+            "M1 base-node descriptions reference nodes missing from the runtime manifest: "
+            + ", ".join(sorted(missing_base_nodes))
+        )
+    base_nodes = {
+        name: registered_nodes[name]
+        for name in base_descriptions
+    }
     if len(base_nodes) != base_count:
         raise ValueError(
             f"M1 scale protocol expects {base_count} base action nodes, "
-            f"but the runtime manifest contains {len(base_nodes)}"
+            f"but base_node_descriptions contains {len(base_nodes)}"
         )
-    base_descriptions = config["base_node_descriptions"]
-    if set(base_descriptions) != set(base_nodes):
-        raise ValueError("M1 base-node descriptions do not match the runtime manifest")
     for name, description in base_descriptions.items():
         base_nodes[name]["description"] = description
 

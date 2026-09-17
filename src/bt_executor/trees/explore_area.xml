@@ -1,27 +1,27 @@
 <?xml version="1.0"?>
 <!--
 Tree Name: explore_area.xml
-Description: Execute a static exploration route generated from an operator-defined
-             area. The LLM/context pipeline chooses frontier or coverage waypoints
-             before execution; this tree only validates that at least one waypoint
-             exists and drives the ordered route with Nav2.
+Description: Execute a static geographic exploration route generated from an
+             operator-defined area. The context/LLM pipeline uses OpenStreetMap,
+             satellite imagery, ROBOT_POSE, and GPS_FIX to choose the route;
+             this tree sends the complete ordered route to Nav2's
+             FollowGPSWaypoints action.
 Usage Instructions:
-  - Payload must include "waypoints" as semicolon-separated x,y,yaw entries in
-    the map frame.
-  - Payload should also include "area_polygon" and "frontiers" for review and
-    UI visualization; those fields are not consumed by this tree.
+  - Payload must include "gps_waypoints" as semicolon-separated entries
+    formatted as latitude,longitude[,yaw] or latitude,longitude,altitude,yaw.
+  - Payload may also include "area_polygon_geo" and "frontiers_geo" for
+    satellite-map review and UI visualization; those fields are not consumed by
+    this tree.
 -->
 <root BTCPP_format="4" main_tree_to_execute="explore_area.xml">
   <BehaviorTree ID="explore_area.xml">
     <Sequence name="ExploreAreaMission">
-      <ParseWaypoints raw_waypoints="{waypoints}" waypoint_queue="{waypoint_queue}" waypoint_count="{waypoint_count}" />
-      <Precondition if="waypoint_count > 0" else="FAILURE">
-        <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="FAILURE">
-          <Sequence name="VisitExplorationWaypoint">
-            <MoveTo name="DriveToExplorationWaypoint" pose="{active_waypoint}" action_name="/a200_0000/navigate_to_pose"/>
-          </Sequence>
-        </LoopString>
-      </Precondition>
+      <PublishWaypointMarkers
+        gps_waypoints="{gps_waypoints}" />
+      <MoveToGPS
+        name="FollowExplorationGpsRoute"
+        gps_poses="{gps_waypoints}"
+        action_name="/follow_gps_waypoints" />
     </Sequence>
   </BehaviorTree>
 </root>

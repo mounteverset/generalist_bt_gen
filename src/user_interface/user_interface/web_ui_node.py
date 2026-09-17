@@ -510,7 +510,11 @@ class WebInterfaceNode(Node):
                 'status': self.status_snapshot,
                 'active_subtree': self.active_subtree,
             }
-            return templates.TemplateResponse('index.html', context)
+            return templates.TemplateResponse(
+                request=request,
+                name='index.html',
+                context=context,
+            )
 
         @app.get('/state')
         async def state():

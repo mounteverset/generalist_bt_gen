@@ -123,12 +123,12 @@ def generate_launch_description():
 
 - **"gz: command not found"**: Ensure `/usr/bin` is in PATH and Gazebo is installed
 - **Husky not spawning**: Check `clearpath_gz` package is installed: `ros2 pkg list | grep clearpath`
-- **Robot not moving**: Verify `/cmd_vel` topic exists and is being published
+- **Robot not moving**: Verify `/cmd_vel_nav` topic exists and is being published
 
 ## Integration with generalist_bt_gen
 
 The Husky A200 provides:
-- Differential drive base (navigate via `/cmd_vel`)
+- Differential drive base (navigate via `/cmd_vel_nav`)
 - GPS sensor (for outdoor localization)
 - LiDAR (for obstacle avoidance)
 - Camera (for visual context gathering)

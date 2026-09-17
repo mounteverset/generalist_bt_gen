@@ -39,7 +39,7 @@ The selectable tree IDs in `config/tree_metadata.yaml` must match both
 | `gps_waypoint_navigation.xml` | `gps_waypoints` | geographic latitude/longitude |
 | `gps_temperature_logging.xml` | `gps_waypoints` | geographic latitude/longitude |
 | `navigate_and_photograph.xml` | `waypoints` | map-frame `x,y,yaw` |
-| `explore_area.xml` | `waypoints`, `area_polygon`, `frontiers` | map frame |
+| `explore_area.xml` | `gps_waypoints`, optional `area_polygon_geo`, `frontiers_geo` | geographic latitude/longitude |
 
 `360_rgb_sweep.xml` is an internal context-capture tree, so it has source XML
 but is intentionally not in the selectable metadata/catalogue.

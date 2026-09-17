@@ -27,7 +27,7 @@ DistanceTraveled::DistanceTraveled(
     default_odom_topic_ = node_->get_parameter("distance_traveled_odom_topic").as_string();
   } else {
     default_odom_topic_ = node_->declare_parameter<std::string>(
-      "distance_traveled_odom_topic", "/odom");
+      "distance_traveled_odom_topic", "/target/odometry/fused");
   }
 }
 

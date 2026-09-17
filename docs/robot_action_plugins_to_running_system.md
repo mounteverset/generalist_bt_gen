@@ -117,7 +117,7 @@ metadata. For example:
                       waypoint_count="{waypoint_count}" />
       <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="SUCCESS">
         <Sequence name="VisitWaypoint">
-          <MoveTo pose="{active_waypoint}" action_name="/a200_0000/navigate_to_pose"/>
+          <MoveTo pose="{active_waypoint}" action_name="/navigate_to_pose"/>
           <LogTemperature logfile_path="{logfile_path}" />
         </Sequence>
       </LoopString>
@@ -135,7 +135,7 @@ Current XML bundle:
 | `gps_temperature_logging.xml` | Selectable geographic route + temperature |
 | `navigate_and_photograph.xml` | Selectable map-frame navigation + photos |
 | `find_and_drive_to_nearest_object.xml` | Selectable navigation through waypoints planned from FindAnything context |
-| `explore_area.xml` | Selectable map-frame exploration route |
+| `explore_area.xml` | Selectable OSM/satellite-guided GPS exploration route |
 | `360_rgb_sweep.xml` | Internal context-capture routine |
 
 Current registered node IDs:
@@ -221,8 +221,8 @@ actions:
   - id: "photograph"
     capability: "sensing.rgb_image"
     type: "sensing"
-    ros_interface: "/camera/capture"
-    ros_type: "service"
+    ros_interface: "/okvis/rgb2/image_raw"
+    ros_type: "topic"
 
 capabilities:
   supported:
@@ -275,12 +275,12 @@ For the current trees:
 
 | BT node | Required server |
 | --- | --- |
-| `MoveTo` | `/a200_0000/navigate_to_pose` or the configured `nav2_action_name` |
-| `MoveToGPS` | `/a200_0000/follow_gps_waypoints` or the configured `nav2_follow_gps_waypoints_action_name` |
+| `MoveTo` | `/navigate_to_pose` or the configured `nav2_action_name` |
+| `MoveToGPS` | `/follow_gps_waypoints` or the configured `nav2_follow_gps_waypoints_action_name` |
 | `LogTemperature` | `/log_temperature` |
-| `TakePicture` / `TakePhoto` | `/a200_0000/sensors/camera_0/color/image` or configured `take_photo_image_topic` |
-| `GetCurrentPose` | `/odom` or configured `get_current_pose_odom_topic` |
-| `DistanceTraveled` | `/odom` or configured `distance_traveled_odom_topic` |
+| `TakePicture` / `TakePhoto` | `/okvis/rgb2/image_raw` or configured `take_photo_image_topic` |
+| `GetCurrentPose` | `/target/odometry/fused` or configured `get_current_pose_odom_topic` |
+| `DistanceTraveled` | `/target/odometry/fused` or configured `distance_traveled_odom_topic` |
 
 Useful checks:
 

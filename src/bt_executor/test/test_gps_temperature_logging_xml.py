@@ -25,6 +25,6 @@ def test_gps_temperature_tree_uses_typed_gps_navigation_flow():
     assert move_nodes[0].attrib['gps_pose'] == '{active_gps_waypoint}'
     assert (
         move_nodes[0].attrib['action_name']
-        == '/a200_0000/follow_gps_waypoints'
+        == '/follow_gps_waypoints'
     )
     assert temperature_nodes[0].attrib['logfile_path'] == '{logfile_path}'

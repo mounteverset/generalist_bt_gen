@@ -57,10 +57,10 @@ ros2 launch clearpath_gz empty_launch.py robot_config_yaml:=husky_a200_sample.ya
 
 Once the simulation is running, the behavior tree executor can control the simulated Husky via:
 
-- `/cmd_vel` - Velocity commands
-- `/odom` - Odometry feedback
+- `/cmd_vel_nav` - Velocity commands
+- `/target/odometry/fused` - Odometry feedback
 - `/scan` - LiDAR data
-- `/camera` - Camera images (if configured)
+- `/okvis/rgb2/image_raw` - Camera images (if configured)
 
 Test with teleop:
 ```bash

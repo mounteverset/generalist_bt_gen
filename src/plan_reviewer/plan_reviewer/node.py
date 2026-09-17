@@ -35,14 +35,16 @@ except ModuleNotFoundError:
 REVIEW_PROMPT_TEMPLATE = """You are a plan safety reviewer for a Clearpath Husky A200 ground robot.
 
 Review the generated waypoint plan using the rendered map image and JSON context.
-OSM and satellite geometry are reasoning context. Current MoveTo behavior trees execute x,y,yaw map-frame waypoints unless a GPS behavior tree is explicitly selected.
+OSM and satellite geometry are reasoning context. Current MoveTo behavior trees execute x,y,yaw map-frame waypoints; geographic trees, including explore_area.xml, execute GPS waypoints through FollowGPSWaypoints.
+FindAnything results are shown as magenta crosshair rings labeled with the object query; planned waypoints remain blue numbered circles.
 
 Review criteria:
 - Mission fulfillment: requested count/coverage, refinement request honored, obvious omissions.
+- Object-target fidelity: for find_and_drive_to_nearest_object.xml, each planned destination must correspond to a labeled FindAnything object marker; honor singular, nearest, plural, and all-matches wording.
 - Robot constraints: Husky must not drive through water, barriers, steps, unsafe streets, unknown SLAM space, or non-path terrain where avoidable.
 - Coordinate sanity: waypoint mode matches map mode, waypoints are visible/in-bounds, no impossible jumps, no lat/lon accidentally treated as x,y.
-- Exploration coverage: for explore_area.xml, waypoints should stay inside area_polygon and frontiers should cover the requested area.
-- Context use: compare the route against OSM_CONTEXT.linear_features, SATELLITE_MAP, ANNOTATED_SLAM_MAP_IMAGE, robot pose, and mission reasoner capability constraints.
+- Exploration coverage: for explore_area.xml, GPS waypoints should stay inside the geographic area overlay when one is supplied, and frontiers should cover the requested area.
+- Context use: compare the route against OSM_CONTEXT.linear_features, SATELLITE_MAP, ROBOT_POSE, GPS_FIX, and mission reasoner capability constraints.
 
 Return strict JSON only, with this shape:
 {{
@@ -166,9 +168,11 @@ class PlanReviewerNode(Node):
             'waypoints': render_info.get('waypoints') or [],
             'area_polygon': render_info.get('area_polygon') or [],
             'frontiers': render_info.get('frontiers') or [],
+            'object_locations': render_info.get('object_locations') or [],
             'waypoint_pixels': render_info.get('waypoint_pixels') or [],
             'area_polygon_pixels': render_info.get('area_polygon_pixels') or [],
             'frontier_pixels': render_info.get('frontier_pixels') or [],
+            'object_location_pixels': render_info.get('object_location_pixels') or [],
             'waypoint_area_checks': render_info.get('waypoint_area_checks') or [],
             'render_warnings': render_info.get('render_warnings') or [],
             'context_snapshot': context if isinstance(context, dict) else {},
@@ -178,6 +182,7 @@ class PlanReviewerNode(Node):
                 'ANNOTATED_SLAM_MAP_IMAGE': (
                     context.get('ANNOTATED_SLAM_MAP_IMAGE') if isinstance(context, dict) else None
                 ),
+                'FIND_ANYTHING': context.get('FIND_ANYTHING') if isinstance(context, dict) else None,
                 'ROBOT_POSE': context.get('ROBOT_POSE') if isinstance(context, dict) else None,
                 'GPS_FIX': context.get('GPS_FIX') if isinstance(context, dict) else None,
                 'MISSION_REQUEST': context.get('MISSION_REQUEST') if isinstance(context, dict) else None,

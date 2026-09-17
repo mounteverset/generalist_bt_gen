@@ -47,17 +47,22 @@ def render_plan_review_image(
     waypoints = list(normalized.get('waypoints') or [])
     area_polygon = list(normalized.get('area_polygon') or [])
     frontiers = list(normalized.get('frontiers') or [])
+    object_locations = extract_find_anything_locations(
+        normalized.get('context_snapshot') or context_snapshot_json
+    )
     render_info: Dict[str, Any] = {
         'normalized_plan': normalized,
         'waypoints': waypoints,
         'area_polygon': area_polygon,
         'frontiers': frontiers,
+        'object_locations': object_locations,
         'map_available': False,
         'image_uri': '',
         'image_path': '',
         'waypoint_pixels': [],
         'area_polygon_pixels': [],
         'frontier_pixels': [],
+        'object_location_pixels': [],
         'waypoint_area_checks': [],
         'render_warnings': [],
     }
@@ -91,9 +96,14 @@ def render_plan_review_image(
         waypoint_pixel(point, map_preview, width, height)
         for point in frontiers
     ]
+    object_location_pixels = [
+        object_location_pixel(location, map_preview, width, height)
+        for location in object_locations
+    ]
     render_info['waypoint_pixels'] = waypoint_pixels
     render_info['area_polygon_pixels'] = area_polygon_pixels
     render_info['frontier_pixels'] = frontier_pixels
+    render_info['object_location_pixels'] = object_location_pixels
 
     polygon_line_points = [
         (item['pixel_x'], item['pixel_y'])
@@ -160,6 +170,51 @@ def render_plan_review_image(
         ]
         draw.polygon(points, fill=(45, 212, 191, 245), outline=(17, 24, 39, 250))
 
+    object_radius = max(11, min(width, height) // 34)
+    for item in object_location_pixels:
+        x = item.get('pixel_x')
+        y = item.get('pixel_y')
+        if x is None or y is None:
+            continue
+        color = (
+            (217, 70, 239, 255)
+            if item.get('in_bounds') and item.get('frame_matches') is not False
+            else (245, 158, 11, 255)
+        )
+        draw.ellipse(
+            (x - object_radius, y - object_radius, x + object_radius, y + object_radius),
+            outline=color,
+            width=max(3, width // 220),
+        )
+        draw.line((x - object_radius, y, x + object_radius, y), fill=color, width=2)
+        draw.line((x, y - object_radius, x, y + object_radius), fill=color, width=2)
+        label = str(item.get('marker_label') or f"Object {item.get('index', '')}")
+        bbox = draw.textbbox((0, 0), label, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        if x + object_radius + text_width + 7 <= width:
+            label_x = x + object_radius + 3
+            label_y = y - object_radius
+        elif x - object_radius - text_width - 7 >= 0:
+            label_x = x - object_radius - text_width - 3
+            label_y = y - object_radius
+        else:
+            # Very small previews may not fit the query beside the marker. Put
+            # the label below it so the crosshair remains visible.
+            label_x = max(2, min(x - text_width / 2, width - text_width - 4))
+            label_y = y + object_radius + 3
+        label_y = max(2, min(label_y, height - text_height - 4))
+        draw.rectangle(
+            (
+                label_x - 2,
+                label_y - 2,
+                label_x + text_width + 2,
+                label_y + text_height + 2,
+            ),
+            fill=(17, 24, 39, 220),
+        )
+        draw.text((label_x, label_y), label, fill=color, font=font)
+
     robot_pixel = robot_pose_pixel(normalized, map_preview, width, height)
     if robot_pixel:
         x, y = robot_pixel
@@ -199,6 +254,92 @@ def resolve_artifact_path(uri: str) -> Optional[Path]:
     return None
 
 
+def extract_find_anything_locations(context_value: Any) -> List[Dict[str, Any]]:
+    context = load_json_value(context_value)
+    if not isinstance(context, dict):
+        return []
+    find_anything = context.get('FIND_ANYTHING')
+    if not isinstance(find_anything, dict):
+        return []
+
+    query_groups: List[Tuple[int, str, Any]] = []
+    queries = find_anything.get('queries')
+    if isinstance(queries, list):
+        for query_index, query_result in enumerate(queries, start=1):
+            if not isinstance(query_result, dict):
+                continue
+            query = str(query_result.get('query') or '').strip()
+            query_groups.append((query_index, query, query_result.get('locations')))
+
+    # A single-query response is also flattened at FIND_ANYTHING.locations.
+    # Use it only when no structured query group supplied usable locations so
+    # the same service results are not drawn twice.
+    locations = _locations_from_find_anything_groups(query_groups)
+    if not locations:
+        query = str(find_anything.get('query') or '').strip()
+        locations = _locations_from_find_anything_groups(
+            [(1, query, find_anything.get('locations'))]
+        )
+
+    for index, location in enumerate(locations, start=1):
+        location['index'] = index
+        query_label = location.get('query') or 'object'
+        location['marker_label'] = f"Object {index}: {query_label}"
+    return locations
+
+
+def _locations_from_find_anything_groups(
+    query_groups: Iterable[Tuple[int, str, Any]],
+) -> List[Dict[str, Any]]:
+    parsed_locations: List[Dict[str, Any]] = []
+    for query_index, query, raw_locations in query_groups:
+        if not isinstance(raw_locations, list):
+            continue
+        for location_index, raw_location in enumerate(raw_locations, start=1):
+            parsed = _find_anything_location_from_value(raw_location)
+            if parsed is None:
+                continue
+            parsed.update(
+                {
+                    'query': query,
+                    'query_index': query_index,
+                    'location_index': location_index,
+                }
+            )
+            parsed_locations.append(parsed)
+    return parsed_locations
+
+
+def _find_anything_location_from_value(value: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(value, dict):
+        return None
+    point = value.get('point')
+    if not isinstance(point, dict):
+        point = value.get('position')
+    if not isinstance(point, dict):
+        pose = value.get('pose')
+        if isinstance(pose, dict) and isinstance(pose.get('position'), dict):
+            point = pose['position']
+        elif isinstance(pose, dict):
+            point = pose
+    if not isinstance(point, dict):
+        point = value
+
+    x = coerce_float(point.get('x'))
+    y = coerce_float(point.get('y'))
+    if x is None or y is None:
+        return None
+    parsed: Dict[str, Any] = {
+        'x': x,
+        'y': y,
+        'z': coerce_float(point.get('z')) or 0.0,
+        'frame_id': str(value.get('frame_id') or '').strip(),
+    }
+    if isinstance(value.get('timestamp'), dict):
+        parsed['timestamp'] = value['timestamp']
+    return parsed
+
+
 def waypoint_pixel(
     waypoint: Dict[str, Any],
     map_preview: Dict[str, Any],
@@ -234,6 +375,35 @@ def waypoint_pixel(
     result['in_bounds'] = 0 <= px < width and 0 <= py < height
     if not result['in_bounds']:
         result['reason'] = 'Projected waypoint is outside the map image bounds.'
+    return result
+
+
+def object_location_pixel(
+    location: Dict[str, Any],
+    map_preview: Dict[str, Any],
+    width: int,
+    height: int,
+) -> Dict[str, Any]:
+    result = waypoint_pixel(location, map_preview, width, height)
+    result['location'] = location
+    result['query'] = location.get('query')
+    result['marker_label'] = location.get('marker_label')
+    map_frame = str(
+        map_preview.get('frame_id')
+        or (map_preview.get('map_metadata') or {}).get('frame_id')
+        or ''
+    ).strip()
+    location_frame = str(location.get('frame_id') or '').strip()
+    result['map_frame_id'] = map_frame
+    result['frame_matches'] = not map_frame or not location_frame or map_frame == location_frame
+    if result['pixel_x'] is None:
+        result['reason'] = 'Object location could not be projected onto the selected map.'
+    elif result['frame_matches'] is False:
+        result['reason'] = (
+            f"Object location frame {location_frame!r} does not match map frame {map_frame!r}."
+        )
+    elif not result['in_bounds']:
+        result['reason'] = 'Projected object location is outside the map image bounds.'
     return result
 
 
@@ -313,7 +483,8 @@ def draw_metadata_banner(
             f"mode={map_preview.get('coordinate_mode', 'unknown')} "
             f"waypoints={len(normalized.get('waypoints') or [])} "
             f"polygon={len(normalized.get('area_polygon') or [])} "
-            f"frontiers={len(normalized.get('frontiers') or [])}"
+            f"frontiers={len(normalized.get('frontiers') or [])} "
+            f"object_matches={len(extract_find_anything_locations(normalized.get('context_snapshot')))}"
         ),
     ]
     if isinstance(metadata.get('bounds'), dict):

@@ -13,6 +13,8 @@ find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(geographic_msgs REQUIRED)
 find_package(mavros_msgs REQUIRED)
+find_package(robot_localization REQUIRED)
+find_package(visualization_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -28,6 +30,8 @@ set(dependencies
   geometry_msgs
   geographic_msgs
   mavros_msgs
+  robot_localization
+  visualization_msgs
   rclcpp
   std_srvs
   sensor_msgs
@@ -49,6 +53,7 @@ add_library(${PROJECT_NAME} SHARED
   src/restart_node.cpp
   src/parse_waypoints.cpp
   src/parse_gps_waypoints.cpp
+  src/publish_waypoint_markers.cpp
   src/plugin_registration.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC

@@ -50,7 +50,7 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | `blueboat_temperature_logging.xml` | geographic `gps_waypoints` | MAVROS route + probe depth + water temperature |
 | `navigate_and_photograph.xml` | map-frame `waypoints` | navigation + photos |
 | `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | object-context planning + navigation |
-| `explore_area.xml` | map-frame exploration fields | area exploration |
+| `explore_area.xml` | geographic `gps_waypoints` plus optional area overlays | OSM/satellite-guided area exploration |
 
 The BlueBoat tree verifies raw GPS, switches ArduRover from `HOLD` to `GUIDED`,
 arms it, and confirms the state before streaming global setpoints at 5 Hz.

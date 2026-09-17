@@ -8,7 +8,8 @@ ROS - related nodes will be making use of the boilerplate classes in behaviortre
 | Action Class Name | Type | Ports | Description | 
 | --- | --- | --- | --- |
 | MoveTo | `RosActionNode<nav2_msgs::action::NavigateToPose>` | `pose` (`"x,y,theta"`) | Sends NavigateToPose goals to Nav2 |
-| MoveToGPS | `RosActionNode<nav2_msgs::action::FollowGPSWaypoints>` | `gps_pose` (`"lat,lon[,yaw]"` or `"lat,lon,alt,yaw"`) | Sends one geographic goal to Nav2's GPS waypoint action |
+| MoveToGPS | `RosActionNode<nav2_msgs::action::FollowGPSWaypoints>` | `gps_pose` (one point) or `gps_poses` (semicolon-separated route) | Sends one or more geographic goals to Nav2's GPS waypoint action |
+| PublishWaypointMarkers | `StatefulActionNode` | `waypoints`, `gps_waypoints`, `waypoint_frame_id`, `gps_frame_id` | Publishes numbered RViz arrows and a route line; GPS points are converted asynchronously through `/fromLL` |
 | ParseWaypoints | `SyncActionNode` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | Validates and queues semicolon-separated map-frame `x,y,yaw` waypoints |
 | ParseGpsWaypoints | `SyncActionNode` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | Validates and queues semicolon-separated geographic waypoints |
 | TakePicture / TakePhoto | `SyncActionNode` | `image_topic`, `output_directory`, `filename_prefix`, `timeout_ms`, `filepath` (output) | Saves the latest RGB image from a configurable topic to disk |
@@ -27,3 +28,11 @@ ROS - related nodes will be making use of the boilerplate classes in behaviortre
 meters through Nav2 `NavigateToPose`; `MoveToGPS` preserves latitude/longitude
 and uses Nav2 `FollowGPSWaypoints`. The GPS action requires a functioning
 geographic conversion service such as `/fromLL`.
+
+`PublishWaypointMarkers` publishes a transient-local `MarkerArray` on
+`/mission_coordinator/waypoint_markers` by default. Cartesian payloads use
+`target/map`; GPS payloads are converted by `/fromLL` and use `target/odom`.
+Add that topic as a MarkerArray display in RViz and use `target/map` as the
+fixed frame when SLAM is active. The action is best-effort: visualization
+conversion warnings do not fail the mission, and a tree without waypoints
+clears markers left by the previous mission.

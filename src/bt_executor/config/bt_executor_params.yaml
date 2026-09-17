@@ -10,14 +10,19 @@ bt_action_server:
     # bt_executor custom parameters
     plugin_directories:
       - "robot_actions/lib"
-    nav2_action_name: "/a200_0000/navigate_to_pose"
-    nav2_follow_gps_waypoints_action_name: "/a200_0000/follow_gps_waypoints"
-    nav2_goal_frame_id: "map"
+    nav2_action_name: "/navigate_to_pose"
+    nav2_follow_gps_waypoints_action_name: "/follow_gps_waypoints"
+    nav2_goal_frame_id: "target/map"
+    waypoint_marker_topic: "/mission_coordinator/waypoint_markers"
+    waypoint_marker_map_frame: "target/map"
+    waypoint_marker_gps_frame: "target/odom"
+    waypoint_marker_from_ll_service: "/fromLL"
+    waypoint_marker_conversion_timeout_ms: 2000
     log_temperature_service_name: "/log_temperature"
-    take_photo_image_topic: "/a200_0000/sensors/camera_0/color/image"
-    get_current_pose_pose_topic: "/a200_0000/pose"
-    distance_traveled_odom_topic: "/a200_0000/platform/odom/filtered"
-    get_current_pose_odom_topic: "/a200_0000/platform/odom/filtered"
+    take_photo_image_topic: "/okvis/rgb2/image_raw"
+    get_current_pose_pose_topic: "/pose"
+    distance_traveled_odom_topic: "/target/odometry/fused"
+    get_current_pose_odom_topic: "/target/odometry/fused"
     status_topic: "/mission_coordinator/status_text"
     active_node_topic: "/mission_coordinator/active_subtree"
     enable_debug_logging: false
