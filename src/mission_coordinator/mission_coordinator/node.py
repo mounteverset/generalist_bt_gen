@@ -54,8 +54,8 @@ DEFAULT_KNOWN_TREE_ENTRIES = (
         'FindAnything context and drive to the selected object location.'
     ),
     (
-        'explore_area.xml::Explore an operator-defined ground area with '
-        'LLM-generated map-frame frontier waypoints.'
+        'explore_area.xml::Explore an operator-defined ground area using '
+        'OSM/satellite context and LLM-generated GPS waypoints.'
     ),
 )
 

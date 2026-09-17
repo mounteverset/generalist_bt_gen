@@ -16,6 +16,8 @@
   <depend>geometry_msgs</depend>
   <depend>geographic_msgs</depend>
   <depend>mavros_msgs</depend>
+  <depend>robot_localization</depend>
+  <depend>visualization_msgs</depend>
   <depend>rclcpp</depend>
   <depend>std_srvs</depend>
   <depend>sensor_msgs</depend>

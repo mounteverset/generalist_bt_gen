@@ -34,7 +34,7 @@ private:
   rclcpp::Node::SharedPtr node_;
   bool enable_debug_logging_{false};
   std::string default_pose_topic_;
-  std::string default_odom_topic_{"/odom"};
+  std::string default_odom_topic_{"/target/odometry/fused"};
 };
 
 }  // namespace robot_actions

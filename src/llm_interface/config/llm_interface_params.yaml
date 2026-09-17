@@ -8,11 +8,11 @@ llm_interface:
     mission_requirements_provider: 'openrouter'
     payload_provider: 'openrouter'  
     payload_normalizer_provider: 'openrouter'  
-    model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
-    selection_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'
-    mission_requirements_model_name: 'google/gemini-3.5-flash'
-    payload_model_name: 'openai/gpt-5.5'  
-    payload_normalizer_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free' 
+    model_name: 'google/gemini-3.7-flash'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
+    selection_model_name: 'google/gemini-3.7-flash'
+    mission_requirements_model_name: 'google/gemini-3.7-flash'
+    payload_model_name: 'openai/gpt-5.6-sol'
+    payload_normalizer_model_name: 'google/gemini-3.7-flash'
     openrouter_app_url: ''  # optional OpenRouter attribution URL
     openrouter_app_title: 'generalist_bt_gen'  # optional OpenRouter attribution title
     selection_llm_enabled: true
@@ -189,13 +189,13 @@ llm_interface:
 
           OUTPUT (JSON only):
         "explore_area.xml": |
-          You are planning a static exploration route for a Clearpath Husky A200 ground robot.
+          You are planning a static geographic exploration route for a Clearpath Husky A200 ground robot.
           Generate the blackboard payload for explore_area.xml.
 
           SUBTREE_ID: {subtree_id}
           USER_COMMAND: {user_command}
 
-          CONTEXT (sensor/map data):
+          CONTEXT (sensor/geographic data):
           {context_json}
 
           CONTRACT (required blackboard keys with types/defaults):
@@ -204,20 +204,22 @@ llm_interface:
           ATTACHMENT_URIS: {attachment_uris}
 
           Required output:
-          - "waypoints": executable map-frame route as "x,y,yaw; x,y,yaw".
-          - "area_polygon": operator-defined exploration polygon in the map frame as "x,y; x,y; x,y".
-          - "frontiers": selected frontier or coverage points in the map frame as "x,y,yaw; x,y,yaw".
-          - Optional "area_polygon_geo" and "frontiers_geo" are only for satellite/geographic preview as "lat,lon; lat,lon".
+          - "gps_waypoints": executable WGS84 route as "latitude,longitude,altitude,yaw; ...".
+          - Optional "area_polygon_geo" is the operator-defined exploration polygon as "latitude,longitude; ..." for satellite-map review.
+          - Optional "frontiers_geo" is a set of geographic coverage markers as "latitude,longitude; ..." for satellite-map review.
           - Optional "exploration_strategy" should briefly name the ordering strategy.
 
           Planning rules:
           1. The operator must define the area in USER_COMMAND or REQUEST_HINTS; do not invent a mission area.
-          2. Use ANNOTATED_SLAM_MAP_IMAGE metadata and ROBOT_POSE to keep map-frame points inside traversable or useful unknown-boundary space.
-          3. Use OSM_CONTEXT area bounds/rings to identify the requested geographic target. For a roundtrip, prefer a connected sequence of OSM_CONTEXT.linear_features around that target, favoring suitable surface/access tags and avoiding steps, barriers, and water.
-          4. Use SATELLITE_MAP, GPS_FIX, and OSM_CONTEXT only as reasoning context unless the context also establishes the geographic-to-map-frame transform. GPS_FIX plus ROBOT_POSE anchors translation but does not by itself establish map-axis orientation.
-          5. Never put lat/lon coordinates in "waypoints", "area_polygon", or "frontiers".
-          6. If only geographic context is available and no map-frame conversion anchor is available, return an invalid empty JSON object rather than fake map-frame waypoints.
-          7. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
+          2. Use GPS_FIX to anchor the route near the robot and ROBOT_POSE to reason about the current navigation state.
+          3. Use OSM_CONTEXT.linear_features and area features as the route geometry. Build a connected coverage route around the requested area; do not draw straight chords between unrelated points.
+          4. Use SATELLITE_MAP to validate the geographic area, access, and route shape. Do not invent a path from satellite pixels when OSM_CONTEXT does not provide route geometry.
+          5. Prefer suitable compacted, gravel, fine-gravel, pebblestone, paved, path, track, footway, or cycleway features.
+          6. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry. Respect the battery admission constraints in the mission and context.
+          7. Orient each yaw toward the following GPS waypoint. Use altitude 0.0 when no reliable altitude is available, and return near the starting GPS fix when the mission is a roundtrip.
+          8. Keep enough points to represent path bends, remove near-duplicates, and never put map-frame x/y values in "gps_waypoints".
+          9. If OSM_CONTEXT does not provide a connected route satisfying the area request, return an empty JSON object instead of fabricating a route.
+          10. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):
       payload_normalizer: |

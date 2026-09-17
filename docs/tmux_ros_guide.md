@@ -98,7 +98,7 @@ watch -n 1 'ros2 node list'
 ```bash
 # In logs window
 ros2 topic echo /scan
-ros2 topic pub /cmd_vel geometry_msgs/TwistStamped '{twist: {linear: {x: 0.5}}}'
+ros2 topic pub /cmd_vel_nav geometry_msgs/Twist '{twist: {linear: {x: 0.5}}}'
 ```
 
 ### Scroll Through Logs

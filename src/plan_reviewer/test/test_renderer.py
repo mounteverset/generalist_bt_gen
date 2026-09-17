@@ -110,7 +110,7 @@ def test_render_explore_area_overlays_and_flags_outside_waypoint(tmp_path):
             'uri': image_path.as_uri(),
             'width': 100,
             'height': 100,
-            'frame_id': 'map',
+            'frame_id': 'target/map',
             'map_metadata': {
                 'width': 100,
                 'height': 100,
@@ -141,3 +141,55 @@ def test_render_explore_area_overlays_and_flags_outside_waypoint(tmp_path):
     assert len(result['frontier_pixels']) == 2
     assert result['waypoint_area_checks'][0]['in_area'] is True
     assert result['waypoint_area_checks'][1]['in_area'] is False
+
+
+def test_render_find_anything_locations_as_query_labeled_markers(tmp_path):
+    image_path = tmp_path / 'slam_map.png'
+    Image.new('RGB', (100, 100), 'white').save(image_path)
+    context = {
+        'ANNOTATED_SLAM_MAP_IMAGE': {
+            'uri': image_path.as_uri(),
+            'width': 100,
+            'height': 100,
+            'frame_id': 'target/map',
+            'map_metadata': {
+                'width': 100,
+                'height': 100,
+                'frame_id': 'target/map',
+                'resolution_m_per_px': 1.0,
+                'origin': {'x': 0.0, 'y': 0.0, 'yaw_rad': 0.0},
+            },
+        },
+        'FIND_ANYTHING': {
+            'queries': [
+                {
+                    'query': 'red toolbox',
+                    'locations': [
+                        {
+                            'frame_id': 'target/map',
+                            'point': {'x': 25.0, 'y': 40.0, 'z': 0.5},
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    result = render_plan_review_image(
+        session_id='session-find',
+        subtree_id='find_and_drive_to_nearest_object.xml',
+        user_command='find the red toolbox and drive there',
+        payload_json=json.dumps({'waypoints': '25.0,40.0,0.0'}),
+        context_snapshot_json=json.dumps(context),
+        attachment_uris=[image_path.as_uri()],
+        output_directory=tmp_path,
+    )
+
+    assert result['map_available'] is True
+    assert result['object_locations'][0]['query'] == 'red toolbox'
+    assert result['object_locations'][0]['marker_label'] == 'Object 1: red toolbox'
+    assert result['object_location_pixels'][0]['pixel_x'] == 25.0
+    assert result['object_location_pixels'][0]['pixel_y'] == 60.0
+    assert result['object_location_pixels'][0]['frame_matches'] is True
+    with Image.open(result['image_path']) as rendered:
+        assert rendered.getpixel((25, 60)) == (217, 70, 239)

@@ -3,6 +3,7 @@
 #include <behaviortree_ros2/bt_action_node.hpp>
 #include <nav2_msgs/action/follow_gps_waypoints.hpp>
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -30,6 +31,7 @@ public:
 
 private:
   bool enable_debug_logging_{false};
+  std::size_t last_waypoint_count_{0};
   double last_latitude_{0.0};
   double last_longitude_{0.0};
 };

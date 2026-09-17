@@ -10,6 +10,8 @@ Usage Instructions:
 <root BTCPP_format="4" main_tree_to_execute="gps_waypoint_navigation.xml">
   <BehaviorTree ID="gps_waypoint_navigation.xml">
     <Sequence name="GpsWaypointNavigationMission">
+      <PublishWaypointMarkers
+        gps_waypoints="{gps_waypoints}" />
       <ParseGpsWaypoints
         raw_waypoints="{gps_waypoints}"
         waypoint_queue="{gps_waypoint_queue}"
@@ -18,7 +20,7 @@ Usage Instructions:
         <MoveToGPS
           name="DriveToGpsWaypoint"
           gps_pose="{active_gps_waypoint}"
-          action_name="/a200_0000/follow_gps_waypoints" />
+          action_name="/follow_gps_waypoints" />
       </LoopString>
     </Sequence>
   </BehaviorTree>

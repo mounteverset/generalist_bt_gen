@@ -14,7 +14,7 @@ public:
   : Node("mock_gps_fix_publisher_node")
   {
     topic_name_ = declare_parameter<std::string>("topic_name", "/gps/fix");
-    frame_id_ = declare_parameter<std::string>("frame_id", "gps_link");
+    frame_id_ = declare_parameter<std::string>("frame_id", "target/gps_link");
     latitude_deg_ = declare_parameter<double>("latitude_deg", 48.20286111111111);
     longitude_deg_ = declare_parameter<double>("longitude_deg", 11.64486111111111);
     altitude_m_ = declare_parameter<double>("altitude_m", 0.0);

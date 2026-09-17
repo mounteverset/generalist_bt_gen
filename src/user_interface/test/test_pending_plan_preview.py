@@ -48,7 +48,7 @@ def test_normalize_pending_plan_builds_map_preview():
                     'uri': 'file:///tmp/context_gatherer/annotated_slam_map.png',
                     'width': 400,
                     'height': 300,
-                    'frame_id': 'map',
+                    'frame_id': 'target/map',
                     'resolution': 0.05,
                     'map_metadata': {
                         'width': 400,
@@ -75,10 +75,10 @@ def test_normalize_pending_plan_builds_map_preview():
     assert normalized['waypoints'][1]['index'] == 2
     assert normalized['payload_object']['waypoints'].startswith('1.0,2.0')
     assert normalized['map_preview']['image_url'].startswith('/artifacts?uri=')
-    assert normalized['map_preview']['frame_id'] == 'map'
+    assert normalized['map_preview']['frame_id'] == 'target/map'
     assert normalized['map_preview']['map_metadata']['origin']['x'] == -10.0
     assert len(normalized['map_previews']) == 1
-    assert normalized['map_previews'][0]['frame_id'] == 'map'
+    assert normalized['map_previews'][0]['frame_id'] == 'target/map'
 
 
 def test_extract_waypoints_from_lat_lon_dicts():

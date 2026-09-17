@@ -10,6 +10,9 @@ Usage Instructions:
 <root BTCPP_format="4" main_tree_to_execute="find_and_drive_to_nearest_object.xml">
   <BehaviorTree ID="find_and_drive_to_nearest_object.xml">
     <Sequence name="FindAndDriveToNearestObjectMission">
+      <PublishWaypointMarkers
+        waypoints="{waypoints}"
+        waypoint_frame_id="{waypoint_frame_id}" />
       <ParseWaypoints
         raw_waypoints="{waypoints}"
         waypoint_queue="{waypoint_queue}"

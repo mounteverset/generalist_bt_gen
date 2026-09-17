@@ -57,7 +57,7 @@ public:
   {
     action_name_ = this->declare_parameter<std::string>("action_name", "/context_gatherer/gather");
     output_directory_ = this->declare_parameter<std::string>("output_directory", "/tmp/context_gatherer");
-    odom_topic_ = this->declare_parameter<std::string>("odom_topic", "/odom");
+    odom_topic_ = this->declare_parameter<std::string>("odom_topic", "/target/odometry/fused");
     pose_cov_topic_ = this->declare_parameter<std::string>("pose_cov_topic", "");
     gps_fix_topic_ = this->declare_parameter<std::string>("gps_fix_topic", "/gps/fix");
     slam_map_topic_ = this->declare_parameter<std::string>("slam_map_topic", "/map");
@@ -82,11 +82,11 @@ public:
     rgb360_sweep_timeout_sec_ = this->declare_parameter<double>(
       "rgb360_sweep_timeout_sec", 45.0);
     rgb360_sweep_camera_topic_ = this->declare_parameter<std::string>(
-      "rgb360_sweep_camera_topic", "/a200_0000/sensors/camera_0/color/image");
+      "rgb360_sweep_camera_topic", "/okvis/rgb2/image_raw");
     rgb360_sweep_pose_topic_ = this->declare_parameter<std::string>(
-      "rgb360_sweep_pose_topic", "/a200_0000/pose");
+      "rgb360_sweep_pose_topic", "/pose");
     rgb360_sweep_odom_topic_ = this->declare_parameter<std::string>(
-      "rgb360_sweep_odom_topic", "/odom");
+      "rgb360_sweep_odom_topic", "/target/odometry/fused");
     rgb360_sweep_image_timeout_ms_ = this->declare_parameter<int>(
       "rgb360_sweep_image_timeout_ms", 1000);
     rgb360_sweep_pose_timeout_ms_ = this->declare_parameter<int>(
@@ -173,7 +173,7 @@ public:
     }
     if (!gps_fix_topic_.empty()) {
       gps_fix_sub_ = create_subscription<sensor_msgs::msg::NavSatFix>(
-        gps_fix_topic_, 10,
+        gps_fix_topic_, rclcpp::SensorDataQoS(),
         [this](sensor_msgs::msg::NavSatFix::SharedPtr msg) {
           std::lock_guard<std::mutex> lock(data_mutex_);
           latest_gps_fix_ = msg;
@@ -181,14 +181,14 @@ public:
     }
 
     rgb_sub_ = create_subscription<sensor_msgs::msg::Image>(
-      "/camera/image_raw", 10,
+      "/okvis/rgb2/image_raw", 10,
       [this](sensor_msgs::msg::Image::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
         latest_rgb_ = msg;
       });
 
     depth_sub_ = create_subscription<sensor_msgs::msg::Image>(
-      "/camera/depth/image_raw", 10,
+      "/okvis/depth0/image_raw", 10,
       [this](sensor_msgs::msg::Image::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
         latest_depth_ = msg;

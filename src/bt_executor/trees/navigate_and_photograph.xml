@@ -12,11 +12,14 @@ Usage Instructions:
 <root BTCPP_format="4" main_tree_to_execute="navigate_and_photograph.xml">
   <BehaviorTree ID="navigate_and_photograph.xml">
     <Sequence name="NavigateAndPhotographMission">
+      <PublishWaypointMarkers
+        waypoints="{waypoints}"
+        waypoint_frame_id="{waypoint_frame_id}" />
       <ParseWaypoints raw_waypoints="{waypoints}" waypoint_queue="{waypoint_queue}" waypoint_count="{waypoint_count}" />
       <Parallel name="NavigateWhilePhotographing" success_count="1" failure_count="1">
         <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="SUCCESS">
           <Sequence name="VisitWaypoint">
-            <MoveTo name="DriveToWaypoint" pose="{active_waypoint}" action_name="/a200_0000/navigate_to_pose"/>
+            <MoveTo name="DriveToWaypoint" pose="{active_waypoint}" action_name="/navigate_to_pose"/>
           </Sequence>
         </LoopString>
         <KeepRunningUntilFailure>

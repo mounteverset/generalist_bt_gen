@@ -38,7 +38,7 @@ GetCurrentPose::GetCurrentPose(
     default_odom_topic_ = node_->get_parameter("distance_traveled_odom_topic").as_string();
   } else {
     default_odom_topic_ = node_->declare_parameter<std::string>(
-      "get_current_pose_odom_topic", "/odom");
+      "get_current_pose_odom_topic", "/target/odometry/fused");
   }
 }
 
@@ -114,7 +114,7 @@ BT::NodeStatus GetCurrentPose::tick()
     x = pose_msg.pose.pose.position.x;
     y = pose_msg.pose.pose.position.y;
     yaw = yaw_from_pose(pose_msg);
-    frame_id = pose_msg.header.frame_id.empty() ? "map" : pose_msg.header.frame_id;
+    frame_id = pose_msg.header.frame_id.empty() ? "target/map" : pose_msg.header.frame_id;
   } else {
     nav_msgs::msg::Odometry odom_msg;
     const bool received = rclcpp::wait_for_message<nav_msgs::msg::Odometry>(
@@ -130,13 +130,13 @@ BT::NodeStatus GetCurrentPose::tick()
     x = odom_msg.pose.pose.position.x;
     y = odom_msg.pose.pose.position.y;
     yaw = yaw_from_odom(odom_msg);
-    frame_id = odom_msg.header.frame_id.empty() ? "map" : odom_msg.header.frame_id;
+    frame_id = odom_msg.header.frame_id.empty() ? "target/map" : odom_msg.header.frame_id;
   }
 
-  if (frame_id != "map") {
+  if (frame_id != "target/map") {
     RCLCPP_WARN(
       get_logger(),
-      "GetCurrentPose -> current pose frame is '%s'. MoveTo defaults to map-frame goals.",
+      "GetCurrentPose -> current pose frame is '%s'. MoveTo defaults to target/map-frame goals.",
       frame_id.c_str());
   }
 

@@ -29,7 +29,7 @@ The current mission-selectable catalogue is:
 | `gps_temperature_logging.xml` | Geographic `gps_waypoints` | Follow a GPS route and log temperature |
 | `navigate_and_photograph.xml` | Map-frame `waypoints` | Navigate and photograph by distance |
 | `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | Plan from object-location context and navigate |
-| `explore_area.xml` | Map-frame route/area fields | Execute a generated exploration route |
+| `explore_area.xml` | Geographic `gps_waypoints` plus optional area overlays | Explore an area using OSM/satellite context and Nav2 GPS waypoint following |
 
 `360_rgb_sweep.xml` is bundled as an internal active-context routine, not a
 mission-selection candidate. Geographic routes deliberately use a separate

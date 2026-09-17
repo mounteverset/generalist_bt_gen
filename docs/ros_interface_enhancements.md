@@ -11,6 +11,8 @@ contract instead of forcing latitude/longitude into map-frame waypoints:
 
 - `gps_waypoint_navigation.xml` executes a plain geographic route.
 - `gps_temperature_logging.xml` executes the same route and logs temperature.
+- `explore_area.xml` executes the same route for OSM/satellite-guided area
+  exploration.
 - `ParseGpsWaypoints` validates `gps_waypoints`.
 - `MoveToGPS` calls Nav2 `FollowGPSWaypoints`; `/fromLL` must be available from
   a valid global localization pipeline.
@@ -113,9 +115,9 @@ Transformed `context_gatherer` from a stub into a real sensor aggregation node w
 #### `src/context_gatherer/src/context_gatherer_node.cpp`
 
 **Sensor Subscribers**:
-- `/odom` → `latest_odom_` (nav_msgs/Odometry)
-- `/camera/image_raw` → `latest_rgb_` (sensor_msgs/Image)
-- `/camera/depth/image_raw` → `latest_depth_` (sensor_msgs/Image)
+- `/target/odometry/fused` → `latest_odom_` (nav_msgs/Odometry)
+- `/okvis/rgb2/image_raw` → `latest_rgb_` (sensor_msgs/Image)
+- `/okvis/depth0/image_raw` → `latest_depth_` (sensor_msgs/Image)
 - `/battery_state` → `latest_battery_` (sensor_msgs/BatteryState)
 
 **Requirement Handlers** (Strategy Pattern):
@@ -193,7 +195,7 @@ ros2 run context_gatherer context_gatherer_node
 
 3. **Publish mock sensor data**:
 ```bash
-ros2 topic pub /odom nav_msgs/msg/Odometry "{...}"
+ros2 topic pub /target/odometry/fused nav_msgs/msg/Odometry "{...}"
 ```
 
 4. **Call GatherContext**:

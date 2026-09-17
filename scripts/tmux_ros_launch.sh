@@ -56,7 +56,7 @@ tmux -S "$SOCKET" new-window -t "$SESSION:3" -n "teleop"
 tmux -S "$SOCKET" send-keys -t "$SESSION:3" "source /opt/ros/jazzy/setup.bash" Enter
 tmux -S "$SOCKET" send-keys -t "$SESSION:3" "echo '=== Teleop Commands ==='" Enter
 tmux -S "$SOCKET" send-keys -t "$SESSION:3" "echo 'ros2 run teleop_twist_keyboard teleop_twist_keyboard'" Enter
-tmux -S "$SOCKET" send-keys -t "$SESSION:3" "# Or test with: ros2 topic pub /cmd_vel geometry_msgs/TwistStamped ..." Enter
+tmux -S "$SOCKET" send-keys -t "$SESSION:3" "# Or test with: ros2 topic pub /cmd_vel_nav geometry_msgs/Twist ..." Enter
 
 # Window 5: Logs / Debug
 tmux -S "$SOCKET" new-window -t "$SESSION:4" -n "logs"

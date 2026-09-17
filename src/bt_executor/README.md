@@ -42,7 +42,10 @@ Key parameters:
 | `plugin_directories` | Additional directories scanned for ROS BT plugins. Accepts absolute paths or `package/subfolder` entries resolved relative to the package prefix. | `["robot_actions/lib"]` |
 | `nav2_action_name` | Default action server name used by the `MoveTo` BT node (can still be overridden per-node via the `action_name` input port). | `"/navigate_to_pose"` |
 | `nav2_follow_gps_waypoints_action_name` | Default action server name used by the `MoveToGPS` BT node. | `"/follow_gps_waypoints"` |
-| `log_temperature_service_name` / `take_photo_image_topic` / `get_current_pose_pose_topic` / `distance_traveled_odom_topic` / `get_current_pose_odom_topic` | Default service/topic names used by the respective `robot_actions` sensing nodes. `TakePicture`/`TakePhoto`, `DistanceTraveled`, and `GetCurrentPose` can override image/pose/odometry topics with input ports. | `"/log_temperature"`, `"/a200_0000/sensors/camera_0/color/image"`, `"/a200_0000/pose"`, `"/a200_0000/platform/odom/filtered"`, `"/a200_0000/platform/odom/filtered"` |
+| `waypoint_marker_topic` | Transient-local MarkerArray published by `PublishWaypointMarkers`. | `"/mission_coordinator/waypoint_markers"` |
+| `waypoint_marker_map_frame` / `waypoint_marker_gps_frame` | Default frames for Cartesian payload points and `/fromLL` results. | `"target/map"`, `"target/odom"` |
+| `waypoint_marker_from_ll_service` / `waypoint_marker_conversion_timeout_ms` | GPS conversion service and best-effort visualization timeout. | `"/fromLL"`, `2000` ms |
+| `log_temperature_service_name` / `take_photo_image_topic` / `get_current_pose_pose_topic` / `distance_traveled_odom_topic` / `get_current_pose_odom_topic` | Default service/topic names used by the respective `robot_actions` sensing nodes. `TakePicture`/`TakePhoto`, `DistanceTraveled`, and `GetCurrentPose` can override image/pose/odometry topics with input ports. | `"/log_temperature"`, `"/okvis/rgb2/image_raw"`, `"/pose"`, `"/target/odometry/fused"`, `"/target/odometry/fused"` |
 | `behavior_trees` | List of `package/subfolder` entries that contain BT XML files to pre-register. | `["bt_executor/trees"]` |
 | `status_topic` / `active_node_topic` | Topics publishing textual status + active subtree for UI/mission coordinator. | `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree` |
 | `enable_debug_logging` | Enables verbose BT execution logs (per-tick blackboard dump + robot action debug traces). Keep `false` for normal operation. | `false` |
@@ -68,8 +71,13 @@ This loads `config/bt_executor_params.yaml`, which points the server at the tree
 | `gps_temperature_logging.xml` | geographic `gps_waypoints` | Selectable GPS route + temperature |
 | `navigate_and_photograph.xml` | map-frame `waypoints` | Selectable route + RGB capture |
 | `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | Selectable object-context route + navigation |
-| `explore_area.xml` | map-frame exploration fields | Selectable exploration route |
+| `explore_area.xml` | geographic `gps_waypoints` plus optional area overlays | Selectable OSM/satellite-guided GPS exploration route |
 | `360_rgb_sweep.xml` | pose/camera options | Internal context routine |
+
+Every bundled tree starts with `PublishWaypointMarkers`. Route trees visualize
+their payload as numbered arrows and a line, while trees without waypoint input
+clear markers from the preceding mission. In RViz, add the configured topic as
+a MarkerArray display; use `target/map` as the fixed frame when SLAM is active.
 
 ## Temperature Logging Tree (`trees/temperature_logging.xml`)
 
@@ -88,11 +96,15 @@ Mission payloads may provide waypoints either as arrays (e.g. `[1.0, 2.0, 0.0]`)
 `trees/gps_waypoint_navigation.xml` handles a plain geographic route.
 `trees/gps_temperature_logging.xml` uses the same GPS route mechanism and adds
 a temperature sample after each point.
+`trees/explore_area.xml` sends its complete area route in one
+`FollowGPSWaypoints` goal so Nav2 can continue past an unreachable point when
+its `stop_on_failure` parameter is false.
 
-Both trees keep geographic coordinates separate from map-frame coordinates.
-`ParseGpsWaypoints` validates the `gps_waypoints` payload, then `MoveToGPS`
-sends each point to Nav2's `FollowGPSWaypoints` action. Accepted point formats
-are `"lat,lon"`, `"lat,lon,yaw"`, and `"lat,lon,altitude,yaw"`.
+These geographic trees keep geographic coordinates separate from map-frame coordinates.
+`ParseGpsWaypoints` validates queued GPS trees, while `MoveToGPS` accepts either
+one `gps_pose` or a complete semicolon-separated `gps_poses` route. Accepted
+point formats are `"lat,lon"`, `"lat,lon,yaw"`, and
+`"lat,lon,altitude,yaw"`.
 Latitude/longitude is intentionally invalid in the generic `waypoints` field,
 which is reserved for map-frame meters.
 

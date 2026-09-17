@@ -25,7 +25,7 @@ TakePicture::TakePicture(const std::string & name, const BT::NodeConfig & config
       default_image_topic_ = node_->get_parameter("take_photo_image_topic").as_string();
     } else {
       default_image_topic_ = node_->declare_parameter<std::string>(
-        "take_photo_image_topic", "/camera/image_raw");
+        "take_photo_image_topic", "/okvis/rgb2/image_raw");
     }
   }
 }

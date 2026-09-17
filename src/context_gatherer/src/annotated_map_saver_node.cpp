@@ -41,7 +41,7 @@ public:
     std::filesystem::create_directories(output_directory_);
 
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
-      "/odom", 10,
+      "/target/odometry/fused", 10,
       [this](nav_msgs::msg::Odometry::SharedPtr msg) {
         std::lock_guard<std::mutex> lock(data_mutex_);
         latest_odom_ = msg;

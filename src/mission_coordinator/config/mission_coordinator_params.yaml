@@ -48,4 +48,4 @@
         - "blueboat_temperature_logging.xml::Navigate a BlueBoat through WGS84 waypoints using MAVROS global setpoints, lower the temperature probe, log water temperature, and raise the probe at each station."
         - "navigate_and_photograph.xml::Navigate through map-frame waypoints and take RGB photos."
         - "find_and_drive_to_nearest_object.xml::Plan map-frame waypoints from FindAnything context and drive to the selected object location."
-        - "explore_area.xml::Explore an operator-defined ground area with LLM-generated map-frame frontier waypoints."
+        - "explore_area.xml::Explore an operator-defined ground area using OSM/satellite context and LLM-generated GPS waypoints."

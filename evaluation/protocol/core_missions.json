@@ -329,8 +329,8 @@
         "canonical_payload": {
           "waypoints": "0.0,0.0,0.0; 20.0,0.0,0.0; 40.0,10.0,0.46",
           "photo_interval_m": 10.0,
-          "camera_topic": "/a200_0000/sensors/camera_0/color/image",
-          "odom_topic": "/odom",
+          "camera_topic": "/okvis/rgb2/image_raw",
+          "odom_topic": "/target/odometry/fused",
           "photo_output_directory": "/tmp/evaluation/M1_photos",
           "photo_filename_prefix": "M1_route",
           "image_timeout_ms": 1000,

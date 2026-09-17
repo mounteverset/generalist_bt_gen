@@ -42,7 +42,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   bool enable_debug_logging_{false};
 
-  std::string default_odom_topic_{"/odom"};
+  std::string default_odom_topic_{"/target/odometry/fused"};
   std::string odom_topic_;
   double interval_m_{5.0};
   int odom_timeout_ms_{50};
