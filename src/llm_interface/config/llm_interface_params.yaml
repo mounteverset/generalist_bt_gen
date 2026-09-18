@@ -8,11 +8,11 @@ llm_interface:
     mission_requirements_provider: 'openrouter'
     payload_provider: 'openrouter'  
     payload_normalizer_provider: 'openrouter'  
-    model_name: 'google/gemini-3.7-flash'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
-    selection_model_name: 'google/gemini-3.7-flash'
-    mission_requirements_model_name: 'google/gemini-3.7-flash'
-    payload_model_name: 'openai/gpt-5.6-sol'
-    payload_normalizer_model_name: 'google/gemini-3.7-flash'
+    model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
+    selection_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'
+    mission_requirements_model_name: 'google/gemini-3.8-flash'
+    payload_model_name: 'openai/gpt-5.5'
+    payload_normalizer_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'
     openrouter_app_url: ''  # optional OpenRouter attribution URL
     openrouter_app_title: 'generalist_bt_gen'  # optional OpenRouter attribution title
     selection_llm_enabled: true
@@ -253,6 +253,6 @@ plan_reviewer:
   ros__parameters:
     llm_enabled: true
     provider: 'openrouter'  # options: gemini | openai | openrouter
-    model_name: 'google/gemini-3.5-flash'  # must be vision-capable for map review
+    model_name: 'google/gemini-3.8-flash'  # must be vision-capable for map review
     temperature: 0.0
     max_image_bytes: 5000000
