@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from evaluation_core import EVALUATION, PROTOCOL, load_json, write_json
-from run_evaluation import btgenbot_revision_errors, direct_result
+from run_evaluation import btgenbot_revision_errors, direct_result, protocol_hashes
 
 
 def main() -> int:
@@ -22,6 +23,12 @@ def main() -> int:
 
     runtime = load_json(PROTOCOL / "runtime_contract.json")
     model_conditions = load_json(PROTOCOL / "model_conditions.json")
+    scoring = load_json(PROTOCOL / "scoring_rubric.json")
+    if args.scored and (
+        args.factory_helper is None or not args.factory_helper.is_file()
+        or not os.access(args.factory_helper, os.X_OK)
+    ):
+        parser.error("--scored requires an executable --factory-helper")
     outputs = {}
     with args.batch_output.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -39,10 +46,16 @@ def main() -> int:
         if "raw_text" not in output:
             raise ValueError(f"{condition}: batch output does not preserve raw_text")
         metadata = output.get("metadata", {})
-        if args.scored and (
-            revision_errors := btgenbot_revision_errors(metadata, model_conditions)
-        ):
-            raise ValueError(f"{condition}: {'; '.join(revision_errors)}")
+        if args.scored:
+            errors = btgenbot_revision_errors(metadata, model_conditions)
+            if request.get("scored_protocol") is not True:
+                errors.append("source request was not created under scored preflight")
+            if request.get("protocol_hashes") != protocol_hashes():
+                errors.append("source request protocol hashes are stale")
+            if request.get("run_settings") != scoring["scored_run_settings"]:
+                errors.append("source request run settings differ from the scoring protocol")
+            if errors:
+                raise ValueError(f"{condition}: {'; '.join(errors)}")
         result_path = request_path.with_name("result.json")
         if result_path.exists():
             write_json(request_path.with_name("dry_run_result.json"), load_json(result_path))

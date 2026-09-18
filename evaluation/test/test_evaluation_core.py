@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 
@@ -50,6 +51,7 @@ def test_runtime_contract_contains_current_tree_catalogue():
         "navigate_and_photograph.xml",
         "find_and_drive_to_nearest_object.xml",
         "explore_area.xml",
+        "blueboat_temperature_logging.xml",
     }
 
 
@@ -62,6 +64,28 @@ def test_all_catalogue_templates_pass_static_interface_validation():
             tree.get("blackboard_contract", {}).keys(),
         )
         assert result["interface_valid_static"], (tree["id"], result["errors"])
+
+
+def test_gps_routes_use_the_declared_context_and_reject_unsafe_inputs():
+    from evaluation_coordinates import gps_route_to_map
+
+    for mission_id in ("S2", "M2", "C2"):
+        selected = mission(mission_id)
+        payload = selected["expected"]["canonical_payload"]
+        context = CONTEXTS["fixtures"][mission_id]
+        assert "waypoints" not in payload
+        assert review_payload(payload, context, selected)["approved"]
+    context = CONTEXTS["fixtures"]["M2"]
+    origin = context["map_origin_wgs84"]
+    raw = f'{origin["latitude"]},{origin["longitude"]}'
+    assert gps_route_to_map(raw, context) == [(0.0, 0.0, 0.0)]
+    for raw in ("", "nan,11", "91,11", "48,181", "48,11,0,0,0", "49,12,0"):
+        assert not review_payload({"gps_waypoints": raw}, context)["approved"]
+    assert not review_payload({"gps_waypoints": "48,11,0"}, {})["approved"]
+
+    assert mission("C2")["expected"]["tree_id"] == "gps_temperature_logging.xml"
+    assert mission("C3")["expected"]["tree_id"] == "find_and_drive_to_nearest_object.xml"
+    assert len(CONTEXTS["fixtures"]["C3"]["find_anything"]["locations"]) == 5
 
 
 def test_action_manifest_matches_registered_aliases_and_omits_fictional_nodes():
@@ -88,6 +112,27 @@ def test_m1_and_m2_receive_the_same_concrete_context():
     assert '"x": 10.0' in m1_user and '"x": 10.0' in m2_task
     assert m2_actions.startswith("[MoveTo(")
     assert m2_actions.endswith("]")
+
+
+def test_m1_scale_uses_fixed_subset_when_runtime_expands():
+    runtime = copy.deepcopy(RUNTIME)
+    runtime["bt_node_manifest"]["registered_nodes"]["SetDepth"] = {"ports": {}}
+    for variant in CHOICE_SPACE["m1_action_library"]["variants"]:
+        scaled, condition = materialize_m1_action_library(
+            runtime, CHOICE_SPACE, M1_DISTRACTORS, variant["id"], "S1-P1"
+        )
+        assert condition["action_node_count"] == variant["action_node_count"]
+        assert "SetDepth" not in scaled["bt_node_manifest"]["registered_nodes"]
+    assert "SetDepth" in runtime["bt_node_manifest"]["registered_nodes"]
+    del runtime["bt_node_manifest"]["registered_nodes"]["MoveTo"]
+    try:
+        materialize_m1_action_library(
+            runtime, CHOICE_SPACE, M1_DISTRACTORS, "M1-N12", "S1-P1"
+        )
+    except ValueError as error:
+        assert "missing" in str(error)
+    else:
+        raise AssertionError("Missing benchmark nodes must be rejected")
 
 
 def test_m1_scale_variants_materialize_exact_frozen_sizes():

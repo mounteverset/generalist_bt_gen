@@ -1,8 +1,8 @@
 {
-  "fixture_version": "0.1.0-draft",
+  "fixture_version": "0.2.0-draft",
   "serialization_rule": "Serialize this object deterministically for model input. Do not edit evidence differently for different methods.",
   "coordinate_convention": {
-    "planning_frame": "target/map",
+    "planning_frame": "map",
     "linear_unit": "m",
     "angle_unit": "rad",
     "geographic_order": "latitude,longitude"
@@ -12,9 +12,9 @@
       "platform_id": "a200_0000",
       "platform_type": "ground_rover",
       "available_context": ["ROBOT_POSE", "NAMED_POINTS"],
-      "robot_pose": {"frame": "target/map", "x": 0.0, "y": 0.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
+      "robot_pose": {"frame": "map", "x": 0.0, "y": 0.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
       "named_points": {
-        "P1": {"frame": "target/map", "x": 10.0, "y": 5.0, "yaw": 0.0, "surface": "traversable_ground"}
+        "P1": {"frame": "map", "x": 10.0, "y": 5.0, "yaw": 0.0, "surface": "traversable_ground"}
       },
       "sensor_state": {"temperature_available": true},
       "evidence_quality": "complete"
@@ -24,9 +24,9 @@
       "platform_type": "water_surface_vessel",
       "available_context": ["GPS_FIX", "NAMED_POINTS"],
       "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
-      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
+      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0, "projection": "local_equirectangular_east_north"},
       "named_points": {
-        "W1": {"frame": "target/map", "x": 5.0, "y": 5.0, "yaw": 0.0, "surface": "water"}
+        "W1": {"frame": "map", "x": 5.0, "y": 5.0, "yaw": 0.0, "surface": "water"}
       },
       "sensor_state": {"water_temperature_available": true},
       "evidence_quality": "complete",
@@ -37,9 +37,9 @@
       "platform_type": "ground_rover",
       "available_context": ["NAMED_POINTS"],
       "named_points": {
-        "G1": {"frame": "target/map", "x": 5.0, "y": 0.0, "yaw": 0.0, "surface": "traversable_ground"},
-        "G2": {"frame": "target/map", "x": 10.0, "y": 0.0, "yaw": 0.0, "surface": "traversable_ground"},
-        "G3": {"frame": "target/map", "x": 10.0, "y": 5.0, "yaw": 1.57, "surface": "traversable_ground"}
+        "G1": {"frame": "map", "x": 5.0, "y": 0.0, "yaw": 0.0, "surface": "traversable_ground"},
+        "G2": {"frame": "map", "x": 10.0, "y": 0.0, "yaw": 0.0, "surface": "traversable_ground"},
+        "G3": {"frame": "map", "x": 10.0, "y": 5.0, "yaw": 1.57, "surface": "traversable_ground"}
       },
       "route_order": ["G1", "G2", "G3"],
       "sensor_state": {"temperature_available": true},
@@ -49,10 +49,10 @@
       "platform_id": "a200_0000",
       "platform_type": "ground_rover",
       "available_context": ["ROUTE_DEFINITION", "RGB_IMAGE", "ROBOT_POSE"],
-      "robot_pose": {"frame": "target/map", "x": 0.0, "y": 0.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
+      "robot_pose": {"frame": "map", "x": 0.0, "y": 0.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
       "routes": {
         "R1": {
-          "frame": "target/map",
+          "frame": "map",
           "surface": "traversable_ground",
           "ordered_waypoints": [
             {"x": 0.0, "y": 0.0, "yaw": 0.0},
@@ -61,8 +61,8 @@
           ]
         }
       },
-      "rgb_camera": {"status": "available", "topic": "/okvis/rgb2/image_raw"},
-      "odometry": {"status": "available", "topic": "/target/odometry/fused"},
+      "rgb_camera": {"status": "available", "topic": "/a200_0000/sensors/camera_0/color/image"},
+      "odometry": {"status": "available", "topic": "/odom"},
       "requested_photo_interval_m": 10.0,
       "evidence_quality": "complete"
     },
@@ -71,16 +71,16 @@
       "platform_type": "water_surface_vessel",
       "available_context": ["GPS_FIX", "NAMED_POINTS", "WATER_GEOFENCE"],
       "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
-      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
+      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0, "projection": "local_equirectangular_east_north"},
       "named_points": {
-        "B1": {"frame": "target/map", "x": 10.0, "y": 5.0, "yaw": 0.0, "surface": "water"},
-        "B2": {"frame": "target/map", "x": 30.0, "y": 5.0, "yaw": 0.0, "surface": "water"},
-        "B3": {"frame": "target/map", "x": 50.0, "y": 10.0, "yaw": 0.24, "surface": "water"},
-        "B4": {"frame": "target/map", "x": 70.0, "y": 10.0, "yaw": 0.0, "surface": "water"}
+        "B1": {"frame": "map", "x": 10.0, "y": 5.0, "yaw": 0.0, "surface": "water"},
+        "B2": {"frame": "map", "x": 30.0, "y": 5.0, "yaw": 0.0, "surface": "water"},
+        "B3": {"frame": "map", "x": 50.0, "y": 10.0, "yaw": 0.24, "surface": "water"},
+        "B4": {"frame": "map", "x": 70.0, "y": 10.0, "yaw": 0.0, "surface": "water"}
       },
       "route_order": ["B1", "B2", "B3", "B4"],
       "water_geofence": {
-        "frame": "target/map",
+        "frame": "map",
         "polygon": [[0.0, 0.0], [80.0, 0.0], [80.0, 25.0], [0.0, 25.0]]
       },
       "sensor_state": {"water_temperature_available": true},
@@ -91,7 +91,7 @@
       "platform_id": "a200_0000",
       "platform_type": "ground_rover",
       "available_context": ["ROBOT_POSE", "GPS_FIX", "ANNOTATED_SLAM_MAP_IMAGE", "OSM_CONTEXT", "SATELLITE_MAP"],
-      "robot_pose": {"frame": "target/map", "x": 5.0, "y": 5.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
+      "robot_pose": {"frame": "map", "x": 5.0, "y": 5.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
       "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
       "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
       "annotated_slam_map": {
@@ -99,7 +99,7 @@
         "path": "artifacts/M3/annotated_slam_map.png",
         "sha256": null,
         "status": "placeholder",
-        "frame": "target/map",
+        "frame": "map",
         "resolution_m_per_pixel": 0.10
       },
       "osm_context": {"status": "available", "named_area": "north_monitoring_zone", "surface": "grass"},
@@ -111,7 +111,7 @@
       },
       "target_areas": {
         "north_monitoring_zone": {
-          "frame": "target/map",
+          "frame": "map",
           "polygon": [[20.0, 10.0], [40.0, 10.0], [40.0, 30.0], [20.0, 30.0]],
           "surface": "traversable_ground"
         }
@@ -124,20 +124,20 @@
       "platform_id": "a200_0000",
       "platform_type": "ground_rover",
       "available_context": ["ROBOT_POSE", "ANNOTATED_SLAM_MAP_IMAGE", "OSM_CONTEXT", "BATTERY_STATE"],
-      "robot_pose": {"frame": "target/map", "x": 2.0, "y": 2.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
+      "robot_pose": {"frame": "map", "x": 2.0, "y": 2.0, "yaw": 0.0, "timestamp": "2026-07-17T08:00:00Z"},
       "battery_state": {"percentage": 68.0, "status": "valid", "timestamp": "2026-07-17T08:00:00Z"},
       "annotated_slam_map": {
         "artifact_id": "C1_annotated_slam_map",
         "path": "artifacts/C1/annotated_slam_map.png",
         "sha256": null,
         "status": "placeholder",
-        "frame": "target/map",
+        "frame": "map",
         "resolution_m_per_pixel": 0.10
       },
       "osm_context": {"status": "available", "named_area": "marked_field", "surface": "grass"},
       "target_areas": {
         "marked_field": {
-          "frame": "target/map",
+          "frame": "map",
           "polygon": [[0.0, 0.0], [30.0, 0.0], [30.0, 20.0], [0.0, 20.0]],
           "required_boundary_margin_m": 2.0
         }
@@ -145,7 +145,7 @@
       "blocked_regions": [
         {
           "id": "blocked_patch",
-          "frame": "target/map",
+          "frame": "map",
           "polygon": [[12.0, 8.0], [18.0, 8.0], [18.0, 12.0], [12.0, 12.0]],
           "reason": "non-traversable wet ground"
         }
@@ -154,65 +154,980 @@
       "evidence_quality": "complete_except_image_file_pending"
     },
     "C2": {
-      "platform_id": "blueboat_eval",
-      "platform_type": "water_surface_vessel",
-      "available_context": ["GPS_FIX", "SHORELINE_GEOMETRY", "WATER_GEOFENCE", "EXCLUSION_ZONES", "BATTERY_STATE"],
-      "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
-      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
-      "battery_state": {"percentage": 82.0, "status": "valid", "timestamp": "2026-07-17T08:00:00Z"},
-      "shoreline_geometry": {
-        "frame": "target/map",
-        "polyline": [[0.0, 0.0], [25.0, 0.0], [50.0, 0.0], [75.0, 0.0], [110.0, 0.0]],
-        "source": "verified_local_chart"
-      },
-      "water_geofence": {
-        "frame": "target/map",
-        "polygon": [[0.0, 5.0], [120.0, 5.0], [120.0, 30.0], [0.0, 30.0]]
-      },
-      "exclusion_zones": [
-        {
-          "id": "reed_protection_zone",
-          "frame": "target/map",
-          "polygon": [[40.0, 10.0], [60.0, 10.0], [60.0, 14.0], [40.0, 14.0]]
-        }
+      "platform_id": "a200_0000",
+      "platform_type": "ground_rover",
+      "available_context": [
+        "ROBOT_POSE",
+        "GPS_FIX",
+        "OSM_CONTEXT"
       ],
-      "shore_offset_m": {"minimum": 10.0, "maximum": 20.0},
-      "target_sampling_interval_m": 20.0,
-      "maximum_duration_min": 45.0,
-      "planning_speed_m_s": 0.7,
-      "sensor_state": {"water_temperature_available": true},
-      "evidence_quality": "complete",
-      "implementation_note": "Fixture is ready, but the target platform contract is not implemented."
+      "robot_pose": {
+        "frame": "map",
+        "x": 260.103,
+        "y": -251.938,
+        "yaw": 0.0,
+        "timestamp": "2026-09-14T08:00:00Z"
+      },
+      "gps_fix": {
+        "status": "valid",
+        "latitude": 48.281904,
+        "longitude": 11.6054023,
+        "timestamp": "2026-09-14T08:00:00Z"
+      },
+      "map_origin_wgs84": {
+        "latitude": 48.2841672,
+        "longitude": 11.601891,
+        "map_x": 0.0,
+        "map_y": 0.0,
+        "projection": "local_equirectangular_east_north"
+      },
+      "osm_context": {
+        "provider": "openstreetmap",
+        "source_endpoint": "https://api.openstreetmap.org/api/0.6/map",
+        "attribution": "© OpenStreetMap contributors, ODbL 1.0",
+        "snapshot_date": "2026-09-14",
+        "named_target": {
+          "name": "Hollerner See",
+          "osm_type": "relation",
+          "osm_id": 10867274,
+          "center": {
+            "lat": 48.2841672,
+            "lon": 11.601891
+          }
+        },
+        "linear_features": [
+          {
+            "id": "hollerner_see_connected_loop",
+            "label": "Hollerner See perimeter path",
+            "kind": "path",
+            "description": "Frozen connected path, track, and service-way loop around Hollerner See.",
+            "tags": {
+              "surfaces": [
+                "asphalt",
+                "compacted",
+                "fine_gravel",
+                "gravel",
+                "pebblestone"
+              ]
+            },
+            "source_way_ids": [
+              1310792981,
+              1422562014,
+              162011257,
+              1421567516,
+              1420749485,
+              783285365,
+              230048611,
+              1551463187,
+              1547849920,
+              1548291225,
+              10058659,
+              9964847,
+              118351654,
+              1030179927,
+              123942328,
+              1310792721,
+              168915012,
+              1309956543,
+              168842408,
+              168842411,
+              168852998,
+              485792660
+            ],
+            "coordinates": [
+              {
+                "lat": 48.281904,
+                "lon": 11.6054023
+              },
+              {
+                "lat": 48.2819072,
+                "lon": 11.6054289
+              },
+              {
+                "lat": 48.281934,
+                "lon": 11.6056517
+              },
+              {
+                "lat": 48.2819424,
+                "lon": 11.6057688
+              },
+              {
+                "lat": 48.2818611,
+                "lon": 11.6058474
+              },
+              {
+                "lat": 48.2818218,
+                "lon": 11.6058865
+              },
+              {
+                "lat": 48.281918,
+                "lon": 11.6061224
+              },
+              {
+                "lat": 48.2818895,
+                "lon": 11.6062418
+              },
+              {
+                "lat": 48.2815106,
+                "lon": 11.6071954
+              },
+              {
+                "lat": 48.2821711,
+                "lon": 11.6077525
+              },
+              {
+                "lat": 48.2822509,
+                "lon": 11.6075767
+              },
+              {
+                "lat": 48.282352,
+                "lon": 11.6074337
+              },
+              {
+                "lat": 48.2825939,
+                "lon": 11.6071924
+              },
+              {
+                "lat": 48.2828559,
+                "lon": 11.6074471
+              },
+              {
+                "lat": 48.2829817,
+                "lon": 11.6075262
+              },
+              {
+                "lat": 48.2831122,
+                "lon": 11.6075819
+              },
+              {
+                "lat": 48.2832817,
+                "lon": 11.6076034
+              },
+              {
+                "lat": 48.2835203,
+                "lon": 11.6076074
+              },
+              {
+                "lat": 48.2836006,
+                "lon": 11.6076168
+              },
+              {
+                "lat": 48.283707,
+                "lon": 11.6076723
+              },
+              {
+                "lat": 48.283801,
+                "lon": 11.6077434
+              },
+              {
+                "lat": 48.2838646,
+                "lon": 11.6077827
+              },
+              {
+                "lat": 48.2838852,
+                "lon": 11.6077018
+              },
+              {
+                "lat": 48.2839152,
+                "lon": 11.6075156
+              },
+              {
+                "lat": 48.2839438,
+                "lon": 11.6072205
+              },
+              {
+                "lat": 48.2839408,
+                "lon": 11.607079
+              },
+              {
+                "lat": 48.2841074,
+                "lon": 11.6071656
+              },
+              {
+                "lat": 48.2842048,
+                "lon": 11.6072117
+              },
+              {
+                "lat": 48.2842942,
+                "lon": 11.6072211
+              },
+              {
+                "lat": 48.2845077,
+                "lon": 11.6072234
+              },
+              {
+                "lat": 48.2846015,
+                "lon": 11.6072379
+              },
+              {
+                "lat": 48.2847204,
+                "lon": 11.6072819
+              },
+              {
+                "lat": 48.2848035,
+                "lon": 11.6073887
+              },
+              {
+                "lat": 48.2848395,
+                "lon": 11.6074447
+              },
+              {
+                "lat": 48.2849936,
+                "lon": 11.6073591
+              },
+              {
+                "lat": 48.285116,
+                "lon": 11.607289
+              },
+              {
+                "lat": 48.2851848,
+                "lon": 11.6072373
+              },
+              {
+                "lat": 48.2852207,
+                "lon": 11.6073394
+              },
+              {
+                "lat": 48.2852332,
+                "lon": 11.6075428
+              },
+              {
+                "lat": 48.2852563,
+                "lon": 11.6076834
+              },
+              {
+                "lat": 48.2853484,
+                "lon": 11.6079125
+              },
+              {
+                "lat": 48.2855025,
+                "lon": 11.6084558
+              },
+              {
+                "lat": 48.2856002,
+                "lon": 11.6086786
+              },
+              {
+                "lat": 48.2856279,
+                "lon": 11.6087417
+              },
+              {
+                "lat": 48.2857166,
+                "lon": 11.6089439
+              },
+              {
+                "lat": 48.2858229,
+                "lon": 11.6091038
+              },
+              {
+                "lat": 48.2860522,
+                "lon": 11.6093033
+              },
+              {
+                "lat": 48.2863342,
+                "lon": 11.6094375
+              },
+              {
+                "lat": 48.2866447,
+                "lon": 11.6094965
+              },
+              {
+                "lat": 48.286778,
+                "lon": 11.6094974
+              },
+              {
+                "lat": 48.2869039,
+                "lon": 11.6094633
+              },
+              {
+                "lat": 48.2869339,
+                "lon": 11.6094551
+              },
+              {
+                "lat": 48.2871068,
+                "lon": 11.6093486
+              },
+              {
+                "lat": 48.2872796,
+                "lon": 11.6092237
+              },
+              {
+                "lat": 48.2874385,
+                "lon": 11.6090666
+              },
+              {
+                "lat": 48.2876042,
+                "lon": 11.6088392
+              },
+              {
+                "lat": 48.2877477,
+                "lon": 11.6085952
+              },
+              {
+                "lat": 48.2878905,
+                "lon": 11.6082412
+              },
+              {
+                "lat": 48.2879775,
+                "lon": 11.6078248
+              },
+              {
+                "lat": 48.2882312,
+                "lon": 11.6066648
+              },
+              {
+                "lat": 48.2883011,
+                "lon": 11.6063455
+              },
+              {
+                "lat": 48.2883324,
+                "lon": 11.6062302
+              },
+              {
+                "lat": 48.2883795,
+                "lon": 11.6060874
+              },
+              {
+                "lat": 48.2885059,
+                "lon": 11.6058606
+              },
+              {
+                "lat": 48.2886557,
+                "lon": 11.6056281
+              },
+              {
+                "lat": 48.2887391,
+                "lon": 11.6054532
+              },
+              {
+                "lat": 48.2887922,
+                "lon": 11.6053216
+              },
+              {
+                "lat": 48.2888269,
+                "lon": 11.6051943
+              },
+              {
+                "lat": 48.2889138,
+                "lon": 11.6047588
+              },
+              {
+                "lat": 48.2889408,
+                "lon": 11.6045627
+              },
+              {
+                "lat": 48.2889494,
+                "lon": 11.6044313
+              },
+              {
+                "lat": 48.2889367,
+                "lon": 11.6040873
+              },
+              {
+                "lat": 48.2889095,
+                "lon": 11.6037573
+              },
+              {
+                "lat": 48.2888205,
+                "lon": 11.6033322
+              },
+              {
+                "lat": 48.288715,
+                "lon": 11.6028607
+              },
+              {
+                "lat": 48.288533,
+                "lon": 11.6025227
+              },
+              {
+                "lat": 48.288108,
+                "lon": 11.6014229
+              },
+              {
+                "lat": 48.2880753,
+                "lon": 11.6014588
+              },
+              {
+                "lat": 48.2878388,
+                "lon": 11.6016797
+              },
+              {
+                "lat": 48.2872253,
+                "lon": 11.6023142
+              },
+              {
+                "lat": 48.286889,
+                "lon": 11.6015692
+              },
+              {
+                "lat": 48.2868834,
+                "lon": 11.6015566
+              },
+              {
+                "lat": 48.2867958,
+                "lon": 11.6013626
+              },
+              {
+                "lat": 48.2867296,
+                "lon": 11.601216
+              },
+              {
+                "lat": 48.2865382,
+                "lon": 11.6006933
+              },
+              {
+                "lat": 48.2864155,
+                "lon": 11.600407
+              },
+              {
+                "lat": 48.2863958,
+                "lon": 11.6003666
+              },
+              {
+                "lat": 48.2863338,
+                "lon": 11.6002539
+              },
+              {
+                "lat": 48.2862061,
+                "lon": 11.6000336
+              },
+              {
+                "lat": 48.2858506,
+                "lon": 11.5995107
+              },
+              {
+                "lat": 48.2855878,
+                "lon": 11.5991194
+              },
+              {
+                "lat": 48.2852166,
+                "lon": 11.5985813
+              },
+              {
+                "lat": 48.2850529,
+                "lon": 11.5983421
+              },
+              {
+                "lat": 48.284544,
+                "lon": 11.5975973
+              },
+              {
+                "lat": 48.2839269,
+                "lon": 11.5967485
+              },
+              {
+                "lat": 48.2838023,
+                "lon": 11.5965771
+              },
+              {
+                "lat": 48.283488,
+                "lon": 11.5961648
+              },
+              {
+                "lat": 48.2834032,
+                "lon": 11.5960606
+              },
+              {
+                "lat": 48.2833753,
+                "lon": 11.5960171
+              },
+              {
+                "lat": 48.2832476,
+                "lon": 11.5958496
+              },
+              {
+                "lat": 48.2831443,
+                "lon": 11.5957478
+              },
+              {
+                "lat": 48.2824961,
+                "lon": 11.5952415
+              },
+              {
+                "lat": 48.2822763,
+                "lon": 11.5950698
+              },
+              {
+                "lat": 48.2821378,
+                "lon": 11.5949616
+              },
+              {
+                "lat": 48.2820202,
+                "lon": 11.5948361
+              },
+              {
+                "lat": 48.2818599,
+                "lon": 11.5947084
+              },
+              {
+                "lat": 48.281669,
+                "lon": 11.5946338
+              },
+              {
+                "lat": 48.281505,
+                "lon": 11.5946036
+              },
+              {
+                "lat": 48.2812959,
+                "lon": 11.5945411
+              },
+              {
+                "lat": 48.2811292,
+                "lon": 11.5944764
+              },
+              {
+                "lat": 48.2810595,
+                "lon": 11.5944331
+              },
+              {
+                "lat": 48.2809466,
+                "lon": 11.594363
+              },
+              {
+                "lat": 48.2805387,
+                "lon": 11.5941019
+              },
+              {
+                "lat": 48.2804254,
+                "lon": 11.5940523
+              },
+              {
+                "lat": 48.2803835,
+                "lon": 11.5940335
+              },
+              {
+                "lat": 48.2803031,
+                "lon": 11.5940027
+              },
+              {
+                "lat": 48.2802014,
+                "lon": 11.5939946
+              },
+              {
+                "lat": 48.280055,
+                "lon": 11.5940174
+              },
+              {
+                "lat": 48.2798881,
+                "lon": 11.5940684
+              },
+              {
+                "lat": 48.2797944,
+                "lon": 11.5940604
+              },
+              {
+                "lat": 48.2797542,
+                "lon": 11.5940376
+              },
+              {
+                "lat": 48.2797133,
+                "lon": 11.5939908
+              },
+              {
+                "lat": 48.2796891,
+                "lon": 11.5939276
+              },
+              {
+                "lat": 48.2796902,
+                "lon": 11.5938582
+              },
+              {
+                "lat": 48.279652,
+                "lon": 11.5938809
+              },
+              {
+                "lat": 48.2795311,
+                "lon": 11.5939529
+              },
+              {
+                "lat": 48.279535,
+                "lon": 11.5940479
+              },
+              {
+                "lat": 48.2795407,
+                "lon": 11.5941867
+              },
+              {
+                "lat": 48.2795556,
+                "lon": 11.5943723
+              },
+              {
+                "lat": 48.2795561,
+                "lon": 11.5944566
+              },
+              {
+                "lat": 48.2795558,
+                "lon": 11.5945919
+              },
+              {
+                "lat": 48.2794607,
+                "lon": 11.5949798
+              },
+              {
+                "lat": 48.2794526,
+                "lon": 11.5950565
+              },
+              {
+                "lat": 48.2794502,
+                "lon": 11.595145
+              },
+              {
+                "lat": 48.2794546,
+                "lon": 11.5952131
+              },
+              {
+                "lat": 48.279463,
+                "lon": 11.5952773
+              },
+              {
+                "lat": 48.2794742,
+                "lon": 11.5953331
+              },
+              {
+                "lat": 48.2795118,
+                "lon": 11.5954624
+              },
+              {
+                "lat": 48.2795947,
+                "lon": 11.5956907
+              },
+              {
+                "lat": 48.2796196,
+                "lon": 11.595766
+              },
+              {
+                "lat": 48.2797457,
+                "lon": 11.5961782
+              },
+              {
+                "lat": 48.2797679,
+                "lon": 11.5962934
+              },
+              {
+                "lat": 48.279782,
+                "lon": 11.5963864
+              },
+              {
+                "lat": 48.2797907,
+                "lon": 11.5965632
+              },
+              {
+                "lat": 48.2798035,
+                "lon": 11.5968821
+              },
+              {
+                "lat": 48.2798016,
+                "lon": 11.5970135
+              },
+              {
+                "lat": 48.2798098,
+                "lon": 11.5971158
+              },
+              {
+                "lat": 48.2798448,
+                "lon": 11.5972512
+              },
+              {
+                "lat": 48.2798834,
+                "lon": 11.5973521
+              },
+              {
+                "lat": 48.2799455,
+                "lon": 11.5975037
+              },
+              {
+                "lat": 48.2800587,
+                "lon": 11.5977344
+              },
+              {
+                "lat": 48.2804601,
+                "lon": 11.5984073
+              },
+              {
+                "lat": 48.2806046,
+                "lon": 11.5986574
+              },
+              {
+                "lat": 48.2807611,
+                "lon": 11.5989232
+              },
+              {
+                "lat": 48.2810687,
+                "lon": 11.5993443
+              },
+              {
+                "lat": 48.2812117,
+                "lon": 11.5995488
+              },
+              {
+                "lat": 48.2812456,
+                "lon": 11.5996313
+              },
+              {
+                "lat": 48.2812475,
+                "lon": 11.5996466
+              },
+              {
+                "lat": 48.2812543,
+                "lon": 11.5997005
+              },
+              {
+                "lat": 48.2812625,
+                "lon": 11.5997654
+              },
+              {
+                "lat": 48.2812649,
+                "lon": 11.5999078
+              },
+              {
+                "lat": 48.2812472,
+                "lon": 11.6000691
+              },
+              {
+                "lat": 48.2812145,
+                "lon": 11.6002957
+              },
+              {
+                "lat": 48.281214,
+                "lon": 11.6004333
+              },
+              {
+                "lat": 48.2812294,
+                "lon": 11.6004813
+              },
+              {
+                "lat": 48.2812566,
+                "lon": 11.6006158
+              },
+              {
+                "lat": 48.2814537,
+                "lon": 11.6015917
+              },
+              {
+                "lat": 48.281622,
+                "lon": 11.6025591
+              },
+              {
+                "lat": 48.2817934,
+                "lon": 11.6034605
+              },
+              {
+                "lat": 48.2818216,
+                "lon": 11.6036808
+              },
+              {
+                "lat": 48.2818391,
+                "lon": 11.6038869
+              },
+              {
+                "lat": 48.281846,
+                "lon": 11.6040147
+              },
+              {
+                "lat": 48.28185,
+                "lon": 11.6047523
+              },
+              {
+                "lat": 48.2818605,
+                "lon": 11.6050305
+              },
+              {
+                "lat": 48.2818919,
+                "lon": 11.6052999
+              },
+              {
+                "lat": 48.2819008,
+                "lon": 11.6053757
+              },
+              {
+                "lat": 48.281904,
+                "lon": 11.6054023
+              }
+            ],
+            "recommended_use": "candidate_route_verify"
+          }
+        ],
+        "area_features": [
+          {
+            "id": 10867274,
+            "name": "Hollerner See",
+            "kind": "water",
+            "bounds": {
+              "min_lat": 48.2796683,
+              "max_lat": 48.2886447,
+              "min_lon": 11.5941991,
+              "max_lon": 11.6084286
+            },
+            "recommended_use": "avoid"
+          }
+        ],
+        "note": "OSM coordinates are geographic route geometry for reasoning, not map-frame MoveTo waypoints."
+      },
+      "target_sampling_interval_m": 10.0,
+      "route_requirement": "complete_roundtrip",
+      "sensor_state": {
+        "temperature_available": true
+      },
+      "evidence_quality": "complete"
     },
     "C3": {
-      "platform_id": "blueboat_eval",
-      "platform_type": "water_surface_vessel",
-      "available_context": ["GPS_FIX", "OSM_CONTEXT", "LOCAL_WATER_CHART", "BATTERY_STATE"],
-      "unavailable_context": ["SATELLITE_MAP"],
-      "gps_fix": {"status": "valid", "latitude": 48.150000, "longitude": 11.570000, "timestamp": "2026-07-17T08:00:00Z"},
-      "map_origin_wgs84": {"latitude": 48.150000, "longitude": 11.570000, "map_x": 0.0, "map_y": 0.0},
-      "battery_state": {"percentage": 74.0, "status": "valid", "timestamp": "2026-07-17T08:00:00Z"},
-      "satellite_map": {"status": "unavailable", "reason": "tile service timeout", "content": null},
-      "osm_context": {
+      "platform_id": "a200_0000",
+      "platform_type": "ground_rover",
+      "available_context": [
+        "ROBOT_POSE",
+        "FIND_ANYTHING"
+      ],
+      "robot_pose": {
+        "frame": "map",
+        "x": 0.0,
+        "y": 0.0,
+        "yaw": 0.0,
+        "timestamp": "2026-09-14T08:00:00Z"
+      },
+      "find_anything": {
+        "service_name": "/language_processor/find_object_locations",
+        "max_results": 5,
+        "query_count": 1,
+        "query": "tree",
+        "result_count": 5,
+        "locations": [
+          {
+            "frame_id": "map",
+            "timestamp": {
+              "sec": 1789372800,
+              "nanosec": 0
+            },
+            "point": {
+              "x": 8.0,
+              "y": 4.0,
+              "z": 0.0
+            }
+          },
+          {
+            "frame_id": "map",
+            "timestamp": {
+              "sec": 1789372800,
+              "nanosec": 0
+            },
+            "point": {
+              "x": 16.0,
+              "y": 7.0,
+              "z": 0.0
+            }
+          },
+          {
+            "frame_id": "map",
+            "timestamp": {
+              "sec": 1789372800,
+              "nanosec": 0
+            },
+            "point": {
+              "x": 22.0,
+              "y": 14.0,
+              "z": 0.0
+            }
+          },
+          {
+            "frame_id": "map",
+            "timestamp": {
+              "sec": 1789372800,
+              "nanosec": 0
+            },
+            "point": {
+              "x": 13.0,
+              "y": 20.0,
+              "z": 0.0
+            }
+          },
+          {
+            "frame_id": "map",
+            "timestamp": {
+              "sec": 1789372800,
+              "nanosec": 0
+            },
+            "point": {
+              "x": 5.0,
+              "y": 16.0,
+              "z": 0.0
+            }
+          }
+        ],
+        "queries": [
+          {
+            "query": "tree",
+            "max_results": 5,
+            "success": true,
+            "result_count": 5,
+            "locations": [
+              {
+                "frame_id": "map",
+                "timestamp": {
+                  "sec": 1789372800,
+                  "nanosec": 0
+                },
+                "point": {
+                  "x": 8.0,
+                  "y": 4.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "frame_id": "map",
+                "timestamp": {
+                  "sec": 1789372800,
+                  "nanosec": 0
+                },
+                "point": {
+                  "x": 16.0,
+                  "y": 7.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "frame_id": "map",
+                "timestamp": {
+                  "sec": 1789372800,
+                  "nanosec": 0
+                },
+                "point": {
+                  "x": 22.0,
+                  "y": 14.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "frame_id": "map",
+                "timestamp": {
+                  "sec": 1789372800,
+                  "nanosec": 0
+                },
+                "point": {
+                  "x": 13.0,
+                  "y": 20.0,
+                  "z": 0.0
+                }
+              },
+              {
+                "frame_id": "map",
+                "timestamp": {
+                  "sec": 1789372800,
+                  "nanosec": 0
+                },
+                "point": {
+                  "x": 5.0,
+                  "y": 16.0,
+                  "z": 0.0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "mapped_area": {
         "status": "available",
-        "sector": "east_shore",
-        "shoreline_polyline": [[90.0, 0.0], [120.0, 0.0], [150.0, 0.0], [180.0, 0.0], [190.0, 0.0]]
+        "frame": "map"
       },
-      "local_water_chart": {
-        "status": "available",
-        "verification": "operator-approved",
-        "shoreline_polyline": [[90.0, 0.0], [120.0, 0.0], [150.0, 0.0], [180.0, 0.0], [190.0, 0.0]]
-      },
-      "water_geofence": {
-        "frame": "target/map",
-        "polygon": [[90.0, 5.0], [190.0, 5.0], [190.0, 25.0], [90.0, 25.0]]
-      },
-      "target_sampling_interval_m": 25.0,
-      "preferred_shore_offset_m": 12.0,
-      "sensor_state": {"water_temperature_available": true},
-      "evidence_quality": "degraded_but_sufficient",
-      "agreement_rule": "OSM and local chart must agree within the route-planning tolerance before acceptance.",
-      "implementation_note": "Fixture is ready, but the target platform contract is not implemented."
+      "evidence_quality": "complete"
     }
   }
 }

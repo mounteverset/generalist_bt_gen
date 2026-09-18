@@ -14,6 +14,10 @@
     "_autoremap"
   ],
   "control_nodes": {
+    "ForceFailure": {"ports": {}},
+    "Sleep": {
+      "ports": {"msec": {"direction": "input", "type": "unsigned", "required": true}}
+    },
     "Sequence": {
       "ports": {}
     },
@@ -193,6 +197,49 @@
         "raw_waypoints": {"direction": "input", "type": "string", "required": true},
         "waypoint_queue": {"direction": "output", "type": "SharedQueue<string>", "required": true},
         "waypoint_count": {"direction": "output", "type": "int", "required": true}
+      }
+    },
+    "MoveToGlobalSetpoint": {
+      "description": "Decorator with exactly one child: navigate to a WGS84 target, then tick the child while continuing to publish the hold setpoint.",
+      "ports": {
+        "gps_pose": {"direction": "input", "type": "string", "required": true},
+        "acceptance_radius_m": {"direction": "input", "type": "double", "required": false},
+        "publish_rate_hz": {"direction": "input", "type": "double", "required": false},
+        "setpoint_topic": {"direction": "input", "type": "string", "required": false},
+        "position_topic": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "SetMavrosMode": {
+      "ports": {
+        "custom_mode": {"direction": "input", "type": "string", "required": false},
+        "service_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "SetMavrosArm": {
+      "ports": {
+        "arm": {"direction": "input", "type": "bool", "required": false},
+        "service_name": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "WaitForMavrosMode": {
+      "ports": {
+        "desired_mode": {"direction": "input", "type": "string", "required": false},
+        "require_armed": {"direction": "input", "type": "bool", "required": false},
+        "timeout_sec": {"direction": "input", "type": "double", "required": false},
+        "state_topic": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "WaitForMavrosGpsFix": {
+      "ports": {
+        "timeout_sec": {"direction": "input", "type": "double", "required": false},
+        "fix_topic": {"direction": "input", "type": "string", "required": false}
+      }
+    },
+    "SetDepth": {
+      "ports": {
+        "target_depth_cm": {"direction": "input", "type": "int", "required": true},
+        "max_depth_cm": {"direction": "input", "type": "int", "required": false},
+        "action_name": {"direction": "input", "type": "string", "required": false}
       }
     }
   }

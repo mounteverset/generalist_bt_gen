@@ -5,7 +5,6 @@ This file is mirrored into btgenbot2_server.ipynb by make_colab_notebook.py.
 
 from __future__ import annotations
 
-import gc
 import importlib.metadata
 import json
 import os
@@ -20,7 +19,6 @@ import torch
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from huggingface_hub import model_info
-from peft import PeftModel
 from pydantic import BaseModel, Field
 from transformers import AutoModelForCausalLM, AutoTokenizer, set_seed
 
@@ -54,30 +52,22 @@ REVISION_FREEZE_STATUS = (
 )
 
 tokenizer = AutoTokenizer.from_pretrained(
-    BASE_MODEL,
-    revision=RESOLVED_BASE_REVISION,
+    ADAPTER_MODEL,
+    revision=RESOLVED_ADAPTER_REVISION,
     token=HF_TOKEN,
 )
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-base_model = AutoModelForCausalLM.from_pretrained(
-    BASE_MODEL,
-    revision=RESOLVED_BASE_REVISION,
-    torch_dtype=torch.float16,
+# Despite its repository name, the published artifact is a complete checkpoint.
+model = AutoModelForCausalLM.from_pretrained(
+    ADAPTER_MODEL,
+    revision=RESOLVED_ADAPTER_REVISION,
+    torch_dtype="auto",
     device_map="auto",
     token=HF_TOKEN,
 )
-model = PeftModel.from_pretrained(
-    base_model,
-    ADAPTER_MODEL,
-    revision=RESOLVED_ADAPTER_REVISION,
-    token=HF_TOKEN,
-)
-model = model.merge_and_unload()
 model.eval()
-del base_model
-gc.collect()
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
 
@@ -87,7 +77,6 @@ GENERATION_LOCK = threading.Lock()
 def package_versions() -> dict[str, str]:
     names = [
         "transformers",
-        "peft",
         "accelerate",
         "torch",
         "fastapi",
@@ -104,6 +93,7 @@ def package_versions() -> dict[str, str]:
 
 
 ENVIRONMENT = {
+    "checkpoint_format": "full_model",
     "base_model": BASE_MODEL,
     "base_revision": RESOLVED_BASE_REVISION,
     "adapter_model": ADAPTER_MODEL,

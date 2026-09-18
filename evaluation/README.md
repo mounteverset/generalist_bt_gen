@@ -6,21 +6,44 @@ raw first model output.
 
 ## Scope and current status
 
-- The dataset is still a draft.
+- The dataset is still a draft pending final freeze and scored runs.
 - It contains nine missions with three paraphrases each.
-- Five Husky missions are implemented in the current catalogue.
-- Four BlueBoat missions specify the intended multi-platform evaluation but are
-  blocked until the BlueBoat capability model, nodes, trees, and execution
-  evidence exist.
+- Seven Husky missions are implemented in the current catalogue.
+- Two BlueBoat missions specify the multi-platform evaluation. The capability
+  profile, six BlueBoat node interfaces, and tree are in the runtime snapshot;
+  both cases are available for offline scored runs. Physical ROS/Gazebo evidence
+  remains a separate E5 result.
 - The designed E1 matrix contains 189 outputs: 27 prompts times six
   general-model method conditions plus BTGenBot-2.
-- The currently executable Husky subset contains 105 outputs: 15 prompts times
-  seven conditions. BlueBoat cases must not enter supported-mission success
-  rates while blocked.
+- All 189 planned E1 outputs are supported offline: 27 prompts times seven
+  conditions. Physical execution evidence is reported separately.
 - No user study is planned.
 
 The runner refuses a scored run while the dataset, providers, or BTGenBot-2
 revisions are not frozen. Preliminary and dry runs remain available.
+
+## Mission instruction specificity
+
+Dataset version `0.4.0-draft` assigns P1, P2, and P3 to low, medium, and high
+instruction specificity, recorded in each paraphrase's `specificity` field.
+P1 states the goal and refers to supplied settings; P2 names the main steps
+and settings; P3 expands the steps and restates relevant context facts.
+All three share the same context, mission constraints, reference behavior,
+acceptable outcomes, and complexity score. Meaning preservation applies to
+the instruction together with that context, not to the sentence alone.
+Details absent from the shared context stay explicit at every level.
+Longer instructions must not introduce extra goals, constraints, coordinates,
+or preferred solutions. Equivalence requires semantic review; the validator
+checks the three level labels and their order, not natural-language meaning.
+
+This design tests sensitivity to instruction detail and explicit restatement
+of available context. Compare levels within each mission; the 27 instructions
+are still nine tasks. Wording and explicitness vary together, so differences
+cannot be attributed to instruction length alone.
+
+Earlier draft outputs retain their original wording. Condition IDs include the
+mission, context, safety, model, runtime, and scoring protocol hashes, so an
+input change creates a new ID. Do not pool older outputs with revised inputs.
 
 ## Methods
 
@@ -44,11 +67,13 @@ they had drifted from the implementation.
 ## Experiments
 
 - `E1`: supported mission and model/method comparison.
-- `E2`: M3 context ablation with complete, text-only, missing-source,
-  contradictory, and irrelevant-distractor variants.
+- `E2`: M3 context ablation with complete, text-only, missing-source, stale,
+  contradictory, and irrelevant-distractor variants. GPT-5.6-Sol is the fixed
+  reference model. The two missions and six conditions produce 36 outputs.
 - `E3`: method-specific choice-space scaling. M1 defines libraries of 12,
   24, 50, and 100 custom-node identifiers. M3 separately varies the tree
-  catalogue; its expanded synthetic-tree condition remains blocked.
+  catalogue between the expected tree plus one incompatible tree and all seven
+  current trees. M1 produces 252 outputs; M3 produces 54.
 - `E4`: adverse requests and safety/failure quality. Clarification and refusal
   are correct outcomes for predefined cases.
 - `E5`: ROS/Gazebo or physical execution evidence. This is not produced by the
@@ -70,11 +95,14 @@ they had drifted from the implementation.
 - `protocol/m1_action_distractors.json`: 90 evaluation-only node signatures,
   paired between semantically similar and adjacent robot-mission capabilities.
 - `protocol/safety_cases.json`: E4 expected plans, clarifications, and refusals.
+- `protocol/scoring_rubric.json`: pass rules, denominators, review coverage,
+  correction effort, and statistical reporting.
+- `protocol/execution_scoring.json`: E5 trial and portability record rules.
 - `scripts/run_evaluation.py`: E1–E4 runner.
-- `scripts/score_results.py`: per-run tables, Wilson intervals, and exact paired
-  McNemar comparisons.
+- `scripts/score_results.py`: per-run tables, mission-cluster intervals, paired
+  effects, human ratings, correction effort, and optional E5 summaries.
 - `scripts/export_blind_review.py`: removes model and method labels for manual
-  semantic review.
+  semantic review and creates the response template.
 - `colab/btgenbot2_server.ipynb`: authenticated BTGenBot-2 endpoint and batch
   workflow.
 
@@ -119,15 +147,19 @@ Multimodal mode is opt-in:
 python3 evaluation/scripts/run_evaluation.py --multimodal ...
 ```
 
-It blocks when an image file or hash is missing. The current placeholder
-metadata therefore cannot be claimed as multimodal evidence.
+It blocks when an image file or hash is missing. The repository now includes
+three immutable synthetic geometry fixtures:
+two M3 images and one C1 annotated map. They are controlled evaluation inputs,
+not field captures; replace them with frozen real imagery only if the study
+needs a real-world imagery claim.
 
 ## BTGenBot-2 on Colab
 
 The recommended workflow is batch execution:
 
-1. Make an M2 dry run so the exact requests are recorded. A Colab URL is not
-   required for this step.
+1. After freezing the protocol, make an M2 dry run with `--scored` and the
+   compiled `--factory-helper` so the exact requests and hashes are recorded.
+   A Colab URL is not required for this step.
 2. Export them:
 
    ```bash
@@ -139,11 +171,18 @@ The recommended workflow is batch execution:
 
    ```bash
    python3 evaluation/scripts/import_btgenbot2_batch.py \
-     evaluation_outputs.jsonl
+     evaluation_outputs.jsonl \
+     --scored \
+     --factory-helper install/bt_executor/lib/bt_executor/bt_factory_check
    ```
 
 The optional tunnel requires `COLAB_EVAL_TOKEN` on both sides. The server has no
 wildcard CORS policy and exposes no unauthenticated generation route.
+
+The AIRLab-POLIMI repository contains a complete checkpoint despite its LoRA
+name. The notebook loads its model and tokenizer directly; separate gated base
+weights and PEFT merging are not needed. Historical `adapter` fields record the
+full checkpoint revision. The pinned base revision is provenance metadata.
 
 The notebook returns `raw_text` and a separate `extracted_xml` diagnostic.
 Only `raw_text` is used for first-attempt scoring. It also records exact model
@@ -153,27 +192,65 @@ reason. Warm-up latency is excluded.
 ## Scoring and claims
 
 ```bash
-python3 evaluation/scripts/score_results.py
 python3 evaluation/scripts/export_blind_review.py
+
+# Fill blind_review_responses.jsonl, then aggregate it with the hidden key.
+python3 evaluation/scripts/score_results.py \
+  --reviews evaluation/results/blind_review_responses.jsonl \
+  --review-key evaluation/results/blind_review_key.json
 ```
 
 Both commands use only artifacts explicitly created with `--scored`. Use
 `--include-unscored` only to inspect pilots. The summary reports transport and
 protocol errors separately so missing results remain visible.
 
-For E1–E3, the primary automated metric is task success. It includes interface
-validity and the available deterministic semantic checks. For E4, the primary
-metric is the correct plan/clarification/refusal outcome; an expected plan must
-also pass the deterministic safety review. Manual semantic scores remain
-separate.
+The scorer keeps first-attempt validity, first-attempt task success, final
+automated task success, and human semantic pass separate. Every applicable
+semantic element receives 0, 1, or 2; a semantic pass requires 2 for every
+element. One reviewer scores every interpretable artifact. A second reviewer
+scores all complex and adverse artifacts and a deterministic 20 percent sample
+of the rest. Disagreements require adjudicated scores.
+
+For E1, the response template also records timed manual repair. The fixed
+budget is 300 seconds. Count one correction per validator or rubric finding,
+not per changed line or waypoint. Valid artifacts are `not_needed`; failed
+repairs are `attempted_failed`; omitted repairs are `not_attempted`, with null
+effort values. A `corrected` response cites the repaired artifact and saved
+validation record, records a passing deterministic recheck, and scores every
+original semantic element again. M3 validator-triggered payload calls are
+automatic refinements.
+Transport retries remain a separate provider-reliability metric.
+
+The summary groups E1 by platform, specificity, and complexity; E2 by context
+condition; E3 by scale; and E4 by adverse type and expected outcome. Primary
+intervals resample mission clusters 10,000 times. Intended pairs use a
+mission-cluster interval and exact sign-flip test.
+
+E5 records can be scored with:
+
+```bash
+python3 evaluation/scripts/score_results.py \
+  --reviews evaluation/results/blind_review_responses.jsonl \
+  --review-key evaluation/results/blind_review_key.json \
+  --execution-file evaluation/results/execution_trials.json
+```
+
+The file follows `protocol/execution_scoring.json`. Each trial cites its passed
+planning condition. It records the frozen route and measurement denominators,
+terminal outcome, duration, interventions, safety incidents, factory loading,
+integration checks, and evidence for all eight portability components. Copy
+the protocol file's SHA-256 into `execution_scoring_sha256` before trials begin.
+Put a planned trial that cannot start in `not_started` with its reason; the
+scorer reports it separately from an unrecorded planned trial.
 
 For the M1 scale conditions, each artifact also records the exact node order,
 condition-manifest hash, required-node recall, selected distractors, invented
 nodes, and port errors. The scorer groups E3 results by model and scale level.
 Control nodes remain fixed and are excluded from the 12/24/50/100 counts.
-The latest compiled plugin exposes 10 custom BT nodes because `FindAnything`
-now runs during pre-BT context gathering. Consequently, the four M1 libraries
-add 2, 14, 40, and 90 protocol-only alternatives, respectively. These options
+The source plugin registers 16 custom BT identifiers, including six BlueBoat
+interfaces. E3 deliberately retains the original ten-node Husky subset listed in
+`base_node_descriptions`; its four libraries add 2, 14, 40, and 90 protocol-only
+alternatives, respectively. E1 advertises the complete registered-node manifest. These options
 are presented uniformly in the prompt and are never identified as distractors
 to the evaluated model. Added nodes use the same PascalCase convention as the
 compiled BT interfaces; examples include `MoveToLocation`,
@@ -182,7 +259,9 @@ compiled BT interfaces; examples include `MoveToLocation`,
 Static XML validation checks raw parsing, registered names, ports, required
 inputs, and blackboard data flow. It does not pretend to be the real factory
 loader. `factory_load` is `not_run` unless a compiled helper is supplied with
-`--factory-helper`. After building and sourcing the ROS workspace, use:
+`--factory-helper`; `not_run` never counts as first-attempt validity. Scored M1
+and M2 runs require the executable helper. After building and sourcing the ROS
+workspace, use:
 
 ```bash
 --factory-helper install/bt_executor/lib/bt_executor/bt_factory_check
@@ -206,14 +285,14 @@ unseen hazards require separate ROS/execution evidence.
 
 Before using `--scored`:
 
-1. Implement and verify BlueBoat, or formally narrow the empirical scope and
-   revise the dataset counts.
+1. ✅ The offline BlueBoat contract, capability snapshot, and factory load are
+   verified. Physical ROS/Gazebo execution remains separate E5 evidence.
 2. Select exactly one OpenRouter provider per general model and verify the
    returned provider in a pilot.
 3. Pin the BTGenBot-2 base and adapter commit hashes.
-4. Add immutable context images and hashes, or label the study
-   structured-text-only.
-5. Compile and exercise the BT.CPP factory-load helper.
+4. ✅ Add immutable synthetic context images and hashes, or explicitly label
+   the study structured-text-only if those images are not retained.
+5. ✅ Compile and exercise the BT.CPP factory-load helper.
 6. Run pilots and exclude their outputs from the scored directory.
 7. Regenerate the protocol snapshot:
 
@@ -222,6 +301,7 @@ Before using `--scored`:
      --update-dataset-snapshot
    ```
 
-8. Review all routes and rubrics, change the relevant freeze fields to
-   `frozen`, including both E3 protocol files, commit the snapshot, and do not
-   change prompts or validators after observing scored failures.
+8. Review all routes and rubrics, then set the core missions, context variants,
+   E3 protocols, safety cases, scoring rubric, and execution scoring protocol
+   to `frozen`. Commit the snapshot and do not change prompts or validators
+   after observing scored failures.

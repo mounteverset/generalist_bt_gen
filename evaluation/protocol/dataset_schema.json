@@ -50,9 +50,10 @@
           "maxItems": 3,
           "items": {
             "type": "object",
-            "required": ["id", "text"],
+            "required": ["id", "text", "specificity"],
             "properties": {
               "id": {"type": "string"},
+              "specificity": {"enum": ["low", "medium", "high"]},
               "text": {"type": "string", "minLength": 10}
             }
           }

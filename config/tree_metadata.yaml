@@ -197,6 +197,7 @@ trees:
       - "navigation.waypoints"
       - "sensing.rgb_image"
       - "localization.gps"
+      - "localization.odometry"
     unsupported_requirements:
       - "locomotion.flight"
       - "sensing.thermal_image"

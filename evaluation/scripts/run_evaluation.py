@@ -67,10 +67,35 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_OUTPUT = EVALUATION / "raw_outputs"
 DEFAULT_LOG = EVALUATION / "run_log.jsonl"
 TRANSIENT_HTTP_CODES = {408, 409, 429, 502, 503, 504}
+CONDITION_HASH_KEYS = (
+    "runtime_contract_sha256",
+    "model_conditions_sha256",
+    "core_dataset_sha256",
+    "context_fixtures_sha256",
+    "context_variants_sha256",
+    "choice_space_variants_sha256",
+    "m1_action_distractors_sha256",
+    "safety_cases_sha256",
+    "scoring_rubric_sha256",
+)
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def protocol_hashes() -> dict[str, str]:
+    return {
+        "runtime_contract_sha256": sha256(PROTOCOL / "runtime_contract.json"),
+        "model_conditions_sha256": sha256(PROTOCOL / "model_conditions.json"),
+        "core_dataset_sha256": sha256(PROTOCOL / "core_missions.json"),
+        "context_fixtures_sha256": sha256(FIXTURES / "core_contexts.json"),
+        "context_variants_sha256": sha256(PROTOCOL / "context_variants.json"),
+        "choice_space_variants_sha256": sha256(PROTOCOL / "choice_space_variants.json"),
+        "m1_action_distractors_sha256": sha256(PROTOCOL / "m1_action_distractors.json"),
+        "safety_cases_sha256": sha256(PROTOCOL / "safety_cases.json"),
+        "scoring_rubric_sha256": sha256(PROTOCOL / "scoring_rubric.json"),
+    }
 
 
 def normalize_content(value: Any) -> str:
@@ -260,10 +285,11 @@ def call_openrouter(
             {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ],
-        "temperature": model["temperature"],
         "max_tokens": model["max_tokens"],
         "seed": seed,
     }
+    if model.get("temperature") is not None:
+        body["temperature"] = model["temperature"]
     if model.get("reasoning"):
         body["reasoning"] = model["reasoning"]
     providers = model.get("provider_only", [])
@@ -399,18 +425,25 @@ def direct_result(
     decision_envelope: bool = False,
 ) -> dict[str, Any]:
     decision = None
+    decision_json_syntax_valid: Optional[bool] = None
     if decision_envelope:
         decision, errors = parse_decision(raw_output)
+        decision_json_syntax_valid = decision is not None
         outcome = method_outcome(decision.get("action") if decision else None)
         if outcome != "plan":
+            task_success = not errors and outcome == expected_outcome
             return {
                 "decision": decision,
                 "decision_outcome": outcome,
                 "expected_outcome": expected_outcome,
                 "correct_outcome": outcome == expected_outcome,
-                "automated_task_success": outcome == expected_outcome,
+                "automated_task_success": task_success,
                 "first_attempt_valid": not errors,
-                "validation": {"decision_errors": errors},
+                "first_attempt_task_success": task_success,
+                "validation": {
+                    "decision_json_syntax_valid": decision_json_syntax_valid,
+                    "decision_errors": errors,
+                },
             }
         raw_xml = decision.get("xml", "") if decision else ""
         if not isinstance(raw_xml, str) or not raw_xml:
@@ -428,7 +461,11 @@ def direct_result(
             "correct_outcome": False,
             "automated_task_success": False,
             "first_attempt_valid": False,
-            "validation": {"decision_errors": errors},
+            "first_attempt_task_success": False,
+            "validation": {
+                "decision_json_syntax_valid": decision_json_syntax_valid,
+                "decision_errors": errors,
+            },
         }
     xml_validation = validate_xml_interface(
         raw_xml, runtime["bt_node_manifest"], initial_blackboard=()
@@ -461,23 +498,26 @@ def direct_result(
     first_valid = bool(
         xml_validation["syntax_valid"]
         and xml_validation["interface_valid_static"]
-        and factory.get("factory_load") != "fail"
+        and factory.get("factory_load") == "pass"
+    )
+    task_success = bool(
+        first_valid
+        and expected_outcome == "plan"
+        and semantic["required_nodes_present"]
+        and semantic["concrete_values_present"]
+        and spatial_review["approved"]
+        and not action_library_metrics["distractor_use"]
     )
     return {
         "decision": decision,
         "decision_outcome": "plan" if first_valid else "invalid_plan",
         "expected_outcome": expected_outcome,
         "correct_outcome": first_valid and expected_outcome == "plan",
-        "automated_task_success": bool(
-            first_valid
-            and expected_outcome == "plan"
-            and semantic["required_nodes_present"]
-            and semantic["concrete_values_present"]
-            and spatial_review["approved"]
-            and not action_library_metrics["distractor_use"]
-        ),
+        "automated_task_success": task_success,
         "first_attempt_valid": first_valid,
+        "first_attempt_task_success": task_success,
         "validation": {
+            "decision_json_syntax_valid": decision_json_syntax_valid,
             "xml": xml_validation,
             "automated_semantics": semantic,
             "action_library_metrics": action_library_metrics,
@@ -560,8 +600,10 @@ def execute_m3(
         }
     extracted_requirements: dict[str, Any] = {}
     requirements_errors: list[str] = []
+    requirements_json_parse_errors: list[str] = []
     if not dry_run:
         parsed, requirements_errors = parse_json_object(requirements_call["content"])
+        requirements_json_parse_errors = list(requirements_errors)
         if parsed:
             extracted_requirements = parsed
             requirements_errors.extend(requirements_shape_errors(parsed))
@@ -574,20 +616,25 @@ def execute_m3(
         extracted_requirements,
     )
     gate_record = reasoner_result_dict(gate)
-    gate_record["requirements_parse_errors"] = requirements_errors
+    gate_record["requirements_json_parse_errors"] = requirements_json_parse_errors
+    gate_record["requirements_errors"] = requirements_errors
     stages.append({"stage": "mission_reasoner", **gate_record})
 
     deterministic_outcome = gate_record["outcome"]
     if deterministic_outcome != "plan":
+        correct_outcome = deterministic_outcome == item["expected_outcome"]
+        task_success = bool(
+            not requirements_errors
+            and correct_outcome
+        )
         return {
-            "status": deterministic_outcome,
+            "status": "complete" if correct_outcome else "validation_failed",
             "decision_outcome": deterministic_outcome,
             "expected_outcome": item["expected_outcome"],
-            "correct_outcome": deterministic_outcome == item["expected_outcome"],
-            "automated_task_success": (
-                deterministic_outcome == item["expected_outcome"]
-            ),
+            "correct_outcome": correct_outcome,
+            "automated_task_success": task_success,
             "first_attempt_valid": not requirements_errors,
+            "first_attempt_task_success": task_success,
             "stages": stages,
         }
 
@@ -616,6 +663,7 @@ def execute_m3(
         }
     selection: Optional[dict[str, Any]] = None
     selection_errors: list[str] = []
+    selection_json_parse_errors: list[str] = []
     if dry_run:
         expected_tree = mission.get("expected", {}).get("tree_id")
         selected_tree_id = (
@@ -623,6 +671,7 @@ def execute_m3(
         )
     else:
         selection, selection_errors = parse_json_object(selection_call["content"])
+        selection_json_parse_errors = list(selection_errors)
         selected_tree_id = selection.get("tree_id") if selection else None
         if selection and not isinstance(selection.get("rationale"), str):
             selection_errors.append("selection rationale must be a string")
@@ -638,6 +687,7 @@ def execute_m3(
             "stage": "selection_validation",
             "selection": selection,
             "errors": selection_errors,
+            "selection_json_parse_errors": selection_json_parse_errors,
             "candidate_trees": candidates,
         }
     )
@@ -649,6 +699,7 @@ def execute_m3(
             "correct_outcome": False,
             "automated_task_success": False,
             "first_attempt_valid": False,
+            "first_attempt_task_success": False,
             "stages": stages,
         }
 
@@ -685,31 +736,64 @@ def execute_m3(
             "expected_outcome": item["expected_outcome"],
             "correct_outcome": None,
             "first_attempt_valid": None,
+            "first_attempt_task_success": None,
             "selected_tree": selected_tree_id,
             "stages": stages,
         }
 
     first_raw_output = payload_call["content"]
     payload, payload_errors = parse_payload_response(first_raw_output)
+    parse_errors = list(payload_errors)
+    contract_errors: list[str] = []
+    mission_review_errors: list[str] = []
     if payload is not None:
-        payload_errors.extend(generated_payload_errors(payload, contract, context))
-        payload_errors.extend(review_payload(payload, context, mission)["errors"])
+        contract_errors = generated_payload_errors(payload, contract, context)
+        mission_review_errors = review_payload(payload, context, mission)["errors"]
+        payload_errors.extend(contract_errors)
+        payload_errors.extend(mission_review_errors)
     first_attempt_valid = bool(
         not requirements_errors
         and not selection_errors
         and payload is not None
-        and not payload_errors
+        and not parse_errors
+        and not contract_errors
+    )
+    first_reference = (
+        compare_payload_to_reference(payload, mission)
+        if payload is not None and mission.get("expected", {}).get("canonical_payload")
+        else {}
+    )
+    exact_reference_required = (
+        mission.get("complexity", {}).get("scores", {}).get("spatial_reasoning", 0)
+        < 2
+    )
+    first_attempt_task_success = bool(
+        first_attempt_valid
+        and not mission_review_errors
+        and selected_tree_id == mission.get("expected", {}).get("tree_id")
+        and (
+            not exact_reference_required
+            or not first_reference
+            or first_reference.get("reference_match")
+        )
     )
     stages.append(
         {
             "stage": "payload_validation_1",
             "payload": payload,
             "errors": payload_errors,
+            "parse_errors": parse_errors,
+            "payload_json_parse_errors": parse_errors,
+            "contract_errors": contract_errors,
+            "mission_review_errors": mission_review_errors,
         }
     )
 
     final_payload = payload
     final_errors = list(payload_errors)
+    final_parse_errors = list(parse_errors)
+    final_contract_errors = list(contract_errors)
+    final_mission_review_errors = list(mission_review_errors)
     prior_raw = first_raw_output
     for refinement_index in range(refinement_attempts):
         if not final_errors:
@@ -741,19 +825,27 @@ def execute_m3(
             final_errors.append("refinement provider could not be verified")
             break
         prior_raw = refinement_call["content"]
-        final_payload, final_errors = parse_payload_response(prior_raw)
+        final_payload, final_parse_errors = parse_payload_response(prior_raw)
+        final_errors = list(final_parse_errors)
+        final_contract_errors = []
+        final_mission_review_errors = []
         if final_payload is not None:
-            final_errors.extend(
-                generated_payload_errors(final_payload, contract, context)
+            final_contract_errors = generated_payload_errors(
+                final_payload, contract, context
             )
-            final_errors.extend(
-                review_payload(final_payload, context, mission)["errors"]
-            )
+            final_mission_review_errors = review_payload(
+                final_payload, context, mission
+            )["errors"]
+            final_errors.extend(final_contract_errors)
+            final_errors.extend(final_mission_review_errors)
         stages.append(
             {
                 "stage": f"payload_validation_{attempt_number}",
                 "payload": final_payload,
                 "errors": final_errors,
+                "payload_json_parse_errors": final_parse_errors,
+                "contract_errors": final_contract_errors,
+                "mission_review_errors": final_mission_review_errors,
             }
         )
 
@@ -764,12 +856,6 @@ def execute_m3(
         else {}
     )
     actual_outcome = "plan" if final_valid else "invalid_plan"
-    exact_reference_required = (
-        mission.get("complexity", {})
-        .get("scores", {})
-        .get("spatial_reasoning", 0)
-        < 2
-    )
     return {
         "status": "complete" if final_valid else "validation_failed",
         "decision_outcome": actual_outcome,
@@ -785,10 +871,19 @@ def execute_m3(
             )
         ),
         "first_attempt_valid": first_attempt_valid,
+        "first_attempt_task_success": first_attempt_task_success,
         "selected_tree": selected_tree_id,
         "expected_tree": mission.get("expected", {}).get("tree_id"),
         "tree_match": selected_tree_id == mission.get("expected", {}).get("tree_id"),
         "final_payload": final_payload,
+        "final_payload_valid": bool(
+            final_payload is not None
+            and not final_parse_errors
+            and not final_contract_errors
+        ),
+        "final_spatial_valid": bool(
+            final_payload is not None and not final_mission_review_errors
+        ),
         "final_validation_errors": final_errors,
         "reference_comparison": reference,
         "stages": stages,
@@ -846,12 +941,18 @@ def build_work_items(
             ),
             (
                 "M3",
-                choice_space["m3_tree_catalogue"]["variants"],
+                [
+                    variant
+                    for variant in choice_space["m3_tree_catalogue"]["variants"]
+                    if variant.get("status") == "ready"
+                ],
             ),
         )
         for mission in core["missions"]:
             for paraphrase in mission["paraphrases"]:
                 for method, scale_variants in method_variants:
+                    if method == "M1" and mission["platform"] != "husky":
+                        continue
                     for scale_variant in scale_variants:
                         items.append(
                             {
@@ -879,6 +980,7 @@ def build_work_items(
                             "context": materialized,
                             "expected_outcome": variant["expected_outcome"],
                             "variant_id": variant["id"],
+                            "evaluation_reference": variant,
                         }
                     )
     elif experiment == "E4":
@@ -909,6 +1011,7 @@ def build_work_items(
                     "expected_outcome": expected["outcome"],
                     "variant_id": case["id"],
                     "safety_case": case,
+                    "evaluation_reference": case,
                 }
             )
     else:
@@ -1024,6 +1127,29 @@ def preflight_scored(
         return errors
     if core.get("freeze_status") != "frozen":
         errors.append("core_missions.json is not frozen")
+    scoring = load_json(PROTOCOL / "scoring_rubric.json")
+    if scoring.get("freeze_status") != "frozen":
+        errors.append("scoring_rubric.json is not frozen")
+    if args.experiment == "E2":
+        if load_json(PROTOCOL / "context_variants.json").get("freeze_status") != "frozen":
+            errors.append("context_variants.json is not frozen")
+    if args.experiment == "E4":
+        if load_json(PROTOCOL / "safety_cases.json").get("freeze_status") != "frozen":
+            errors.append("safety_cases.json is not frozen")
+    if any(method in {"M1", "M2"} for method in methods):
+        helper = Path(args.factory_helper) if args.factory_helper else None
+        if helper is None or not helper.is_file() or not os.access(helper, os.X_OK):
+            errors.append("M1 and M2 scored runs require an executable --factory-helper")
+    fixed = scoring.get("scored_run_settings", {})
+    for name, actual in (
+        ("repetitions", args.repetitions),
+        ("seed", args.seed),
+        ("timeout_s", args.timeout_s),
+        ("max_transport_retries", args.max_transport_retries),
+        ("m3_refinement_attempts", args.m3_refinement_attempts),
+    ):
+        if fixed.get(name) != actual:
+            errors.append(f"{name} must equal the frozen scoring value {fixed.get(name)}")
     if args.experiment == "E3" and choice_space.get("freeze_status") != "frozen":
         errors.append("choice_space_variants.json is not frozen")
     if (
@@ -1042,7 +1168,7 @@ def preflight_scored(
         local = model_conditions["local_model"]
         if local.get("freeze_status") != "frozen":
             errors.append("BTGenBot-2 base and adapter revisions are not frozen")
-        if not args.colab_url:
+        if not args.colab_url and not args.dry_run:
             errors.append("M2 requires --colab-url")
     return errors
 
@@ -1098,7 +1224,11 @@ def main() -> int:
         )
         return 2
     if args.models == "all":
-        model_keys = list(model_conditions["models"])
+        model_keys = (
+            [variants["reference_model_key"]]
+            if args.experiment == "E2"
+            else list(model_conditions["models"])
+        )
     else:
         model_keys = [value.strip() for value in args.models.split(",") if value.strip()]
     unknown_models = sorted(set(model_keys) - set(model_conditions["models"]))
@@ -1157,22 +1287,12 @@ def main() -> int:
         "models": model_keys,
         "repetitions": args.repetitions,
         "seed_base": args.seed,
-        "runtime_contract_sha256": sha256(PROTOCOL / "runtime_contract.json"),
-        "model_conditions_sha256": sha256(PROTOCOL / "model_conditions.json"),
-        "core_dataset_sha256": sha256(PROTOCOL / "core_missions.json"),
-        "context_fixtures_sha256": sha256(FIXTURES / "core_contexts.json"),
-        "context_variants_sha256": sha256(PROTOCOL / "context_variants.json"),
-        "choice_space_variants_sha256": sha256(
-            PROTOCOL / "choice_space_variants.json"
-        ),
-        "m1_action_distractors_sha256": sha256(
-            PROTOCOL / "m1_action_distractors.json"
-        ),
+        **protocol_hashes(),
         "choice_space_freeze_status": choice_space.get("freeze_status"),
         "m1_action_distractors_freeze_status": m1_distractors.get(
             "freeze_status"
         ),
-        "safety_cases_sha256": sha256(PROTOCOL / "safety_cases.json"),
+        "execution_scoring_sha256": sha256(PROTOCOL / "execution_scoring.json"),
         "repository_commit": runtime["repository_commit"],
         "host": {
             "python": sys.version,
@@ -1183,6 +1303,13 @@ def main() -> int:
         "multimodal": args.multimodal,
     }
     write_json(manifest_path, manifest)
+
+    protocol_fingerprint = condition_id(
+        [
+            manifest[key]
+            for key in CONDITION_HASH_KEYS
+        ]
+    )
 
     total = skipped = failed = completed = 0
     cumulative_cost = 0.0
@@ -1227,7 +1354,14 @@ def main() -> int:
                 continue
 
         for method in active_methods:
-            condition_models = ["btgenbot2"] if method == "M2" else model_keys
+            if method == "M2":
+                condition_models = ["btgenbot2"]
+            elif args.experiment == "E3" and method == "M3":
+                condition_models = [
+                    choice_space["m3_tree_catalogue"]["reference_model_key"]
+                ]
+            else:
+                condition_models = model_keys
             for model_key in condition_models:
                 for repetition in range(1, args.repetitions + 1):
                     total += 1
@@ -1241,7 +1375,7 @@ def main() -> int:
                             item["paraphrase"]["id"],
                             item.get("variant_id") or "base",
                             repetition,
-                            sha256(PROTOCOL / "runtime_contract.json"),
+                            protocol_fingerprint,
                             scale_condition.get("action_library_sha256")
                             or scale_condition.get("tree_catalogue_sha256")
                             or "base",
@@ -1277,11 +1411,23 @@ def main() -> int:
                         "repetition": repetition,
                         "seed": seed,
                         "expected_outcome": item["expected_outcome"],
+                        "evaluation_reference": item.get("evaluation_reference"),
                         "mission": mission,
                         "paraphrase": item["paraphrase"],
                         "context": item["context"],
                         "context_modality": "multimodal" if image_paths else "structured_text",
                         "runtime_contract_sha256": manifest["runtime_contract_sha256"],
+                        "protocol_hashes": {
+                            key: manifest[key] for key in CONDITION_HASH_KEYS
+                        },
+                        "scored_protocol": args.scored,
+                        "run_settings": {
+                            "repetitions": args.repetitions,
+                            "seed": args.seed,
+                            "timeout_s": args.timeout_s,
+                            "max_transport_retries": args.max_transport_retries,
+                            "m3_refinement_attempts": args.m3_refinement_attempts,
+                        },
                         "started_at": utc_now(),
                     }
                     write_json(artifact_dir / "request.json", request_record)

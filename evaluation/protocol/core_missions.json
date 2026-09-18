@@ -1,18 +1,19 @@
 {
-  "dataset_version": "0.2.0-draft",
+  "dataset_version": "0.4.0-draft",
   "freeze_status": "draft",
   "source_snapshot": {
-    "repository_commit": "2abd093a78d4f8468bef0cf16b3c971c52ad8341",
-    "tree_metadata_sha256": "2804dbfaa992cd73a8e5a5692c54deb8771f5e644a05f818f08f638a97046992",
+    "repository_commit": "c6f1041007552959375490cd39c3f72213f635e4",
+    "tree_metadata_sha256": "2e911e99a7f321fe0c89a9aacddfd2fed51db92560d9e4c680e02d753ae24c9a",
     "system_description_sha256": "395e58012cc12a450ef80ac55abe3938f9ccac04e54cec749e3a05e68bac92d4",
-    "bt_node_manifest_sha256": "2c0b695eb71208a8b468a53dad2604f9b22335e3fea83dbd115affa4b1e1d046"
+    "blueboat_system_description_sha256": "965f2f7b911eda7c56fe51416a1ebf535e6d21e8a1939550c22008369b9cdead",
+    "bt_node_manifest_sha256": "b415d69acee662f8e6c7023957434c62c456d45f99cae67c43e06f16a11c3541"
   },
   "design": {
     "mission_count": 9,
     "paraphrases_per_mission": 3,
     "platform_distribution": {
-      "husky": 5,
-      "blueboat": 4
+      "husky": 7,
+      "blueboat": 2
     },
     "complexity_distribution": {
       "simple": 3,
@@ -21,9 +22,10 @@
     },
     "primary_conditions": 7,
     "planned_primary_outputs": 189,
-    "currently_supported_primary_outputs": 105,
-    "blocked_blueboat_outputs": 84,
-    "condition_explanation": "Three general-purpose models each run M1 and M3; BTGenBot-2 adds one M2 condition."
+    "currently_supported_primary_outputs": 189,
+    "blocked_blueboat_outputs": 0,
+    "condition_explanation": "Three general-purpose models each run M1 and M3; BTGenBot-2 adds one M2 condition.",
+    "paraphrase_policy": "P1, P2, and P3 have low, medium, and high instruction specificity. They preserve the task when interpreted with the same fixed context and mission constraints. Low specificity states the goal and refers to supplied settings; medium specificity states the main steps and settings; high specificity expands those steps and restates relevant context facts. Facts absent from the shared context remain explicit at every level. Higher specificity must not add goals, constraints, coordinates, or preferred solutions. The reference behavior, acceptable outcomes, and complexity score are shared across levels."
   },
   "missions": [
     {
@@ -47,15 +49,18 @@
       "paraphrases": [
         {
           "id": "S1-P1",
-          "text": "Drive the Husky to inspection point P1 and log the temperature there."
+          "text": "Log one temperature reading at P1 with the Husky.",
+          "specificity": "low"
         },
         {
           "id": "S1-P2",
-          "text": "Go to P1 with the ground robot, then record one temperature measurement."
+          "text": "Drive the Husky to the supplied inspection point P1 and log one temperature reading after arrival.",
+          "specificity": "medium"
         },
         {
           "id": "S1-P3",
-          "text": "Take a temperature reading at the marked ground inspection point P1."
+          "text": "Use the supplied map-frame location of inspection point P1 to navigate the Husky there. After reaching P1, take and log one temperature reading; do not substitute another location.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/S1",
@@ -109,7 +114,7 @@
       "id": "S2",
       "title": "BlueBoat single-point water temperature reading",
       "platform": "blueboat",
-      "support_status": "blocked_blueboat_implementation",
+      "support_status": "implemented_catalogue",
       "complexity": {
         "label": "simple",
         "scores": {
@@ -126,15 +131,18 @@
       "paraphrases": [
         {
           "id": "S2-P1",
-          "text": "Take the BlueBoat to water station W1 and record the water temperature."
+          "text": "Log one water-temperature reading at W1 with the BlueBoat.",
+          "specificity": "low"
         },
         {
           "id": "S2-P2",
-          "text": "Sail to W1 and log one water-temperature measurement there."
+          "text": "Sail the BlueBoat to the supplied water station W1 and log one water-temperature reading after arrival.",
+          "specificity": "medium"
         },
         {
           "id": "S2-P3",
-          "text": "Measure the water temperature at the marked BlueBoat station W1."
+          "text": "Use the supplied chart location of water station W1 to navigate the BlueBoat there. After reaching W1, take and log one water-temperature reading at that station.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/S2",
@@ -146,16 +154,17 @@
         "required_capabilities": [
           "locomotion.water_surface",
           "navigation.waypoints",
+          "navigation.gps_waypoints",
           "localization.gps",
           "sensing.temperature",
-          "payload.parse_waypoints"
+          "payload.parse_gps_waypoints"
         ],
         "required_context": [
           "GPS_FIX",
           "NAMED_POINTS"
         ],
         "constraints": [
-          "Use water station W1 in the map frame."
+          "Convert water station W1 from the supplied map frame to WGS84."
         ],
         "forbidden_assumptions": [
           "Do not use the Husky ground tree or its navigation action name."
@@ -165,12 +174,13 @@
         "outcome": "plan",
         "tree_id": "blueboat_temperature_logging.xml",
         "canonical_payload": {
-          "waypoints": "5.0,5.0,0.0",
-          "logfile_path": "/tmp/evaluation/S2_water_temperature.txt"
+          "logfile_path": "/tmp/evaluation/S2_water_temperature.txt",
+          "gps_waypoints": "48.150044915764,11.570067321529,0"
         },
-        "equivalent_output_rule": "One map-frame waypoint at W1 and one water-temperature log action is acceptable."
+        "equivalent_output_rule": "One WGS84 waypoint corresponding to W1 and one water-temperature log action is acceptable."
       },
       "reference_behavior": [
+        "Convert the supplied synthetic east/north map route to WGS84 using map_origin_wgs84; provide gps_waypoints to the BlueBoat tree.",
         "Use the BlueBoat navigation interface.",
         "Navigate to W1.",
         "Log one water-temperature measurement after arrival."
@@ -183,8 +193,7 @@
         "sensing",
         "completeness"
       ],
-      "execution_subset_candidate": true,
-      "blocking_requirement": "Implement and validate the BlueBoat capability model, navigation adapter, temperature interface, tree XML, and metadata."
+      "execution_subset_candidate": true
     },
     {
       "id": "S3",
@@ -207,15 +216,18 @@
       "paraphrases": [
         {
           "id": "S3-P1",
-          "text": "Visit ground waypoints G1, G2, and G3 in that order and log temperature at each."
+          "text": "Follow the supplied Husky route in order and log one temperature reading at each point.",
+          "specificity": "low"
         },
         {
           "id": "S3-P2",
-          "text": "Drive the Husky through G1 to G3 and record one temperature value at every point."
+          "text": "Drive the Husky to G1, G2, and G3 in that order, logging one temperature reading after arrival at each point.",
+          "specificity": "medium"
         },
         {
           "id": "S3-P3",
-          "text": "Follow the supplied route G1–G2–G3, measuring temperature after each arrival."
+          "text": "Use the supplied map-frame locations to drive the Husky first to G1, then G2, and finally G3. After reaching each point, take and log one temperature reading before continuing; preserve all three locations and their order.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/S3",
@@ -286,15 +298,18 @@
       "paraphrases": [
         {
           "id": "M1-P1",
-          "text": "Follow inspection route R1 with the Husky and take a photograph every 10 metres."
+          "text": "Photograph route R1 with the Husky at the specified distance interval, saving images to the evaluation output directory.",
+          "specificity": "low"
         },
         {
           "id": "M1-P2",
-          "text": "Drive along R1 and save route photos at 10 m travel intervals."
+          "text": "Drive the Husky along R1 in the supplied order. Take a photograph every 10 metres travelled and save the images to the evaluation output directory.",
+          "specificity": "medium"
         },
         {
           "id": "M1-P3",
-          "text": "Document the supplied ground route R1 by capturing an image after each 10 metres travelled."
+          "text": "Follow every supplied map-frame waypoint of route R1 in order with the Husky. While navigating, use the supplied odometry to trigger an RGB photograph every 10 metres travelled, using the available camera, and save the images to the evaluation output directory.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/M1",
@@ -358,7 +373,7 @@
       "id": "M2",
       "title": "BlueBoat supplied shoreline stations with temperature logging",
       "platform": "blueboat",
-      "support_status": "blocked_blueboat_implementation",
+      "support_status": "implemented_catalogue",
       "complexity": {
         "label": "medium",
         "scores": {
@@ -375,15 +390,18 @@
       "paraphrases": [
         {
           "id": "M2-P1",
-          "text": "Take the BlueBoat through shoreline stations B1 to B4 and log water temperature at each station."
+          "text": "Follow the supplied BlueBoat station route in order, logging one water-temperature reading at every station within the water geofence.",
+          "specificity": "low"
         },
         {
           "id": "M2-P2",
-          "text": "Follow the supplied B1–B4 water route, recording temperature after every arrival."
+          "text": "Sail the BlueBoat to B1, B2, B3, and B4 in that order, staying inside the supplied water geofence and logging one water-temperature reading after each arrival.",
+          "specificity": "medium"
         },
         {
           "id": "M2-P3",
-          "text": "Survey the four marked shoreline points in order and save one water-temperature reading per point."
+          "text": "Use the supplied station locations to navigate the BlueBoat first to B1, then B2, B3, and B4. Keep the route inside the water geofence and take and log one water-temperature reading after reaching each station; do not omit or reorder stations.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/M2",
@@ -395,9 +413,10 @@
         "required_capabilities": [
           "locomotion.water_surface",
           "navigation.waypoints",
+          "navigation.gps_waypoints",
           "localization.gps",
           "sensing.temperature",
-          "payload.parse_waypoints"
+          "payload.parse_gps_waypoints"
         ],
         "required_context": [
           "GPS_FIX",
@@ -417,12 +436,13 @@
         "outcome": "plan",
         "tree_id": "blueboat_temperature_logging.xml",
         "canonical_payload": {
-          "waypoints": "10.0,5.0,0.0; 30.0,5.0,0.0; 50.0,10.0,0.24; 70.0,10.0,0.0",
-          "logfile_path": "/tmp/evaluation/M2_water_temperature.txt"
+          "logfile_path": "/tmp/evaluation/M2_water_temperature.txt",
+          "gps_waypoints": "48.150044915764,11.570134643059,0; 48.150044915764,11.570403929176,0; 48.150089831528,11.570673215293,0.24; 48.150089831528,11.570942501411,0"
         },
         "equivalent_output_rule": "The supplied coordinates and station order must be preserved."
       },
       "reference_behavior": [
+        "Convert the supplied synthetic east/north map route to WGS84 using map_origin_wgs84; provide gps_waypoints to the BlueBoat tree.",
         "Use the BlueBoat navigation interface.",
         "Visit B1 through B4 in order within the water geofence.",
         "Log water temperature after each arrival."
@@ -436,8 +456,7 @@
         "constraints",
         "completeness"
       ],
-      "execution_subset_candidate": false,
-      "blocking_requirement": "Implement and validate the BlueBoat capability model, navigation adapter, temperature interface, tree XML, and metadata."
+      "execution_subset_candidate": false
     },
     {
       "id": "M3",
@@ -460,15 +479,18 @@
       "paraphrases": [
         {
           "id": "M3-P1",
-          "text": "Choose three valid points in the northern monitoring zone and log temperature at each with the Husky."
+          "text": "Use the Husky to log one temperature reading at each of exactly three well-spaced, traversable points inside the northern monitoring zone.",
+          "specificity": "low"
         },
         {
           "id": "M3-P2",
-          "text": "Use the map context to plan three ground temperature readings across the north zone."
+          "text": "Choose exactly three traversable locations spread across the northern monitoring zone in the supplied context, then drive the Husky to each and log one temperature reading after arrival.",
+          "specificity": "medium"
         },
         {
           "id": "M3-P3",
-          "text": "Sample temperature at three well-spaced locations inside the marked northern area."
+          "text": "Use the supplied map and geographic context to locate the northern monitoring zone. Select exactly three traversable map-frame points inside its boundary, spread across the area rather than clustered together. Navigate the Husky to each selected point and take and log one temperature reading after arrival.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/M3",
@@ -546,15 +568,18 @@
       "paraphrases": [
         {
           "id": "C1-P1",
-          "text": "Cover the marked field with the Husky, stay inside its boundary, avoid the blocked patch, and only start with at least 20 percent battery."
+          "text": "Cover the marked field with the Husky, respecting the supplied boundary margin, blocked patch, and minimum starting battery.",
+          "specificity": "low"
         },
         {
           "id": "C1-P2",
-          "text": "Plan a ground coverage route for the whole field while respecting the boundary margin, mapped obstacle, and 20% battery minimum."
+          "text": "Plan a Husky coverage route across the marked field, keeping at least 2 metres inside its boundary and avoiding the blocked patch. Start only with at least 20 percent battery.",
+          "specificity": "medium"
         },
         {
           "id": "C1-P3",
-          "text": "Explore the defined field using safe coverage waypoints that remain inside the polygon and outside the blocked area."
+          "text": "Check that the Husky has at least 20 percent battery before approving the mission. Derive a fixed coverage route across the marked field using map-frame waypoints. Keep every route segment at least 2 metres inside the field boundary and outside the mapped blocked patch, then follow the planned route.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/C1",
@@ -619,82 +644,86 @@
     },
     {
       "id": "C2",
-      "title": "BlueBoat context-derived shoreline temperature survey",
-      "platform": "blueboat",
-      "support_status": "blocked_blueboat_implementation",
+      "title": "Husky OSM-derived Hollerner See temperature route",
+      "platform": "husky",
+      "support_status": "implemented_catalogue",
       "complexity": {
         "label": "complex",
         "scores": {
-          "mission_phases": 1,
+          "mission_phases": 2,
           "action_types": 0,
-          "context_sources": 2,
+          "context_sources": 1,
           "constraints": 2,
           "control_flow": 1,
           "spatial_reasoning": 2
         },
         "total": 8,
-        "rationale": "The route must be derived from shoreline geometry while satisfying interval, offset, geofence, exclusion-zone, and duration constraints."
+        "rationale": "The mission must derive, resample, and execute a complete geographic loop from OSM path geometry while sensing at each waypoint."
       },
       "paraphrases": [
         {
           "id": "C2-P1",
-          "text": "Survey water temperature along the marked shoreline about every 20 metres, staying 10–20 m from shore and outside the reed protection zone."
+          "text": "Drive the Husky around Hollerner See and log temperature along the route using the supplied route and sampling settings.",
+          "specificity": "low"
         },
         {
           "id": "C2-P2",
-          "text": "Use the BlueBoat to profile shoreline temperature at roughly 20 m spacing without entering the exclusion area or leaving the water geofence."
+          "text": "Use the supplied OSM context to generate a route around Hollerner See from the Husky's current location. Place waypoints about every 10 metres and log one temperature reading after reaching each waypoint.",
+          "specificity": "medium"
         },
         {
           "id": "C2-P3",
-          "text": "Plan a shoreline water-temperature route that keeps the required shore offset, avoids protected reeds, and finishes within 45 minutes."
+          "text": "Use the current GPS position and the connected, traversable paths in the supplied OSM context to form a complete route around Hollerner See. Start at the reachable path point nearest the Husky, avoid water, restricted paths, and barriers, and return to the starting point. Place GPS waypoints about 10 metres apart, drive through them in order, and log one temperature reading after each arrival.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/C2",
       "requirements": {
         "intents": [
           "navigate_waypoints",
-          "log_temperature",
-          "shoreline_survey"
+          "navigate_gps_waypoints",
+          "geographic_route",
+          "log_temperature"
         ],
         "required_capabilities": [
-          "locomotion.water_surface",
+          "locomotion.ground",
           "navigation.waypoints",
+          "navigation.gps_waypoints",
           "localization.gps",
+          "localization.odometry",
           "sensing.temperature",
-          "payload.parse_waypoints"
+          "payload.parse_gps_waypoints"
         ],
         "required_context": [
+          "ROBOT_POSE",
           "GPS_FIX",
-          "SHORELINE_GEOMETRY",
-          "WATER_GEOFENCE",
-          "EXCLUSION_ZONES",
-          "BATTERY_STATE"
+          "OSM_CONTEXT"
         ],
         "constraints": [
-          "Target approximately 20 m sampling spacing.",
-          "Stay 10–20 m from shore.",
-          "Remain inside the water geofence.",
-          "Avoid the reed protection zone.",
-          "Keep the estimated mission duration within 45 minutes."
+          "Form a complete route around Hollerner See from connected OSM path geometry.",
+          "Begin at the reachable route point nearest the robot and return to it.",
+          "Use only traversable paths and avoid water, restricted paths, and barriers.",
+          "Place waypoints approximately 10 m apart.",
+          "Log one temperature reading after reaching each waypoint."
         ],
         "forbidden_assumptions": [
-          "Do not place waypoints on land or inside the reed protection polygon."
+          "Do not use the lake boundary as an executable route or invent connections absent from OSM."
         ]
       },
       "expected": {
         "outcome": "plan",
-        "tree_id": "blueboat_temperature_logging.xml",
+        "tree_id": "gps_temperature_logging.xml",
         "canonical_payload": {
-          "waypoints": "10.0,15.0,0.0; 30.0,15.0,0.0; 45.0,18.0,0.20; 60.0,18.0,-0.20; 80.0,15.0,0.0; 100.0,15.0,0.0",
-          "logfile_path": "/tmp/evaluation/C2_water_temperature.txt"
+          "gps_waypoints": "48.2819040,11.6054023,0.0,0.179; 48.2819200,11.6055353,0.0,0.170; 48.2819352,11.6056684,0.0,-0.150; 48.2819233,11.6057873,0.0,-0.997; 48.2818478,11.6058607,0.0,0.070; 48.2818525,11.6059618,0.0,0.550; 48.2818995,11.6060770,0.0,0.001; 48.2818996,11.6061995,0.0,-0.474; 48.2818587,11.6063192,0.0,-0.538; 48.2818126,11.6064353,0.0,-0.538; 48.2817665,11.6065513,0.0,-0.538; 48.2817204,11.6066673,0.0,-0.538; 48.2816743,11.6067833,0.0,-0.538; 48.2816282,11.6068993,0.0,-0.538; 48.2815821,11.6070154,0.0,-0.538; 48.2815360,11.6071314,0.0,0.155; 48.2815457,11.6072250,0.0,1.059; 48.2816242,11.6072912,0.0,1.059; 48.2817026,11.6073573,0.0,1.059; 48.2817810,11.6074235,0.0,1.059; 48.2818594,11.6074896,0.0,1.059; 48.2819378,11.6075557,0.0,1.059; 48.2820162,11.6076219,0.0,1.059; 48.2820946,11.6076880,0.0,1.085; 48.2821724,11.6077497,0.0,2.543; 48.2822230,11.6076381,0.0,2.445; 48.2822804,11.6075350,0.0,2.326; 48.2823459,11.6074424,0.0,2.173; 48.2824199,11.6073660,0.0,2.157; 48.2824948,11.6072913,0.0,2.157; 48.2825697,11.6072165,0.0,1.348; 48.2826450,11.6072421,0.0,0.997; 48.2827205,11.6073155,0.0,0.997; 48.2827960,11.6073889,0.0,1.033; 48.2828731,11.6074579,0.0,1.175; 48.2829560,11.6075101,0.0,1.257; 48.2830414,11.6075517,0.0,1.329; 48.2831285,11.6075840,0.0,1.487; 48.2832181,11.6075953,0.0,1.508; 48.2833078,11.6076038,0.0,1.560; 48.2833977,11.6076053,0.0,1.560; 48.2834876,11.6076069,0.0,1.517; 48.2835774,11.6076141,0.0,1.303; 48.2836635,11.6076496,0.0,1.172; 48.2837462,11.6077020,0.0,1.129; 48.2838274,11.6077597,0.0,2.087; 48.2838824,11.6077129,0.0,2.893; 48.2839045,11.6075820,0.0,2.950; 48.2839216,11.6074495,0.0,2.997; 48.2839346,11.6073158,0.0,3.048; 48.2839430,11.6071817,0.0,2.853; 48.2839612,11.6070896,0.0,1.238; 48.2840462,11.6071338,0.0,1.246; 48.2841314,11.6071769,0.0,1.299; 48.2842177,11.6072131,0.0,1.510; 48.2843074,11.6072212,0.0,1.564; 48.2843974,11.6072222,0.0,1.564; 48.2844873,11.6072232,0.0,1.490; 48.2845768,11.6072341,0.0,1.368; 48.2846647,11.6072613,0.0,1.162; 48.2847452,11.6073137,0.0,0.849; 48.2848126,11.6074029,0.0,1.438; 48.2848876,11.6074180,0.0,1.925; 48.2849719,11.6073711,0.0,1.932; 48.2850560,11.6073233,0.0,1.963; 48.2851390,11.6072717,0.0,1.395; 48.2852029,11.6072888,0.0,0.259; 48.2852255,11.6074170,0.0,0.102; 48.2852346,11.6075513,0.0,0.242; 48.2852561,11.6076825,0.0,0.541; 48.2853025,11.6077983,0.0,0.542; 48.2853488,11.6079140,0.0,0.403; 48.2853841,11.6080383,0.0,0.403; 48.2854193,11.6081626,0.0,0.403; 48.2854546,11.6082869,0.0,0.403; 48.2854899,11.6084113,0.0,0.518; 48.2855342,11.6085282,0.0,0.583; 48.2855837,11.6086410,0.0,0.583; 48.2856332,11.6087538,0.0,0.583; 48.2856827,11.6088667,0.0,0.646; 48.2857366,11.6089741,0.0,0.785; 48.2858002,11.6090697,0.0,0.953; 48.2858729,11.6091473,0.0,1.046; 48.2859507,11.6092150,0.0,1.046; 48.2860286,11.6092827,0.0,1.198; 48.2861119,11.6093317,0.0,1.264; 48.2861976,11.6093725,0.0,1.264; 48.2862833,11.6094133,0.0,1.338; 48.2863705,11.6094444,0.0,1.445; 48.2864597,11.6094613,0.0,1.445; 48.2865489,11.6094783,0.0,1.445; 48.2866381,11.6094952,0.0,1.557; 48.2867280,11.6094971,0.0,1.647; 48.2868173,11.6094868,0.0,1.749; 48.2869058,11.6094628,0.0,1.893; 48.2869906,11.6094202,0.0,1.960; 48.2870738,11.6093689,0.0,1.996; 48.2871557,11.6093132,0.0,2.019; 48.2872368,11.6092547,0.0,2.082; 48.2873150,11.6091887,0.0,2.153; 48.2873901,11.6091144,0.0,2.209; 48.2874621,11.6090341,0.0,2.311; 48.2875285,11.6089430,0.0,2.311; 48.2875949,11.6088519,0.0,2.403; 48.2876554,11.6087521,0.0,2.418; 48.2877150,11.6086508,0.0,2.498; 48.2877687,11.6085431,0.0,2.597; 48.2878153,11.6084276,0.0,2.597; 48.2878619,11.6083120,0.0,2.690; 48.2879009,11.6081913,0.0,2.837; 48.2879279,11.6080623,0.0,2.837; 48.2879548,11.6079334,0.0,2.835; 48.2879819,11.6078046,0.0,2.824; 48.2880100,11.6076762,0.0,2.824; 48.2880381,11.6075478,0.0,2.824; 48.2880662,11.6074195,0.0,2.824; 48.2880942,11.6072911,0.0,2.824; 48.2881223,11.6071627,0.0,2.824; 48.2881504,11.6070343,0.0,2.824; 48.2881785,11.6069060,0.0,2.824; 48.2882065,11.6067776,0.0,2.824; 48.2882346,11.6066492,0.0,2.824; 48.2882627,11.6065208,0.0,2.824; 48.2882908,11.6063925,0.0,2.780; 48.2883226,11.6062662,0.0,2.702; 48.2883609,11.6061439,0.0,2.555; 48.2884103,11.6060322,0.0,2.444; 48.2884680,11.6059286,0.0,2.420; 48.2885274,11.6058272,0.0,2.372; 48.2885899,11.6057302,0.0,2.372; 48.2886525,11.6056331,0.0,2.512; 48.2887054,11.6055239,0.0,2.547; 48.2887557,11.6054120,0.0,2.630; 48.2887996,11.6052944,0.0,2.772; 48.2888321,11.6051685,0.0,2.850; 48.2888579,11.6050390,0.0,2.850; 48.2888837,11.6049096,0.0,2.850; 48.2889095,11.6047802,0.0,2.923; 48.2889290,11.6046483,0.0,2.975; 48.2889439,11.6045152,0.0,3.101; 48.2889475,11.6043806,0.0,-3.086; 48.2889425,11.6042457,0.0,-3.086; 48.2889376,11.6041107,0.0,-3.030; 48.2889276,11.6039765,0.0,-3.018; 48.2889165,11.6038424,0.0,-2.952; 48.2888996,11.6037102,0.0,-2.837; 48.2888726,11.6035813,0.0,-2.837; 48.2888457,11.6034524,0.0,-2.835; 48.2888186,11.6033235,0.0,-2.817; 48.2887899,11.6031955,0.0,-2.817; 48.2887612,11.6030674,0.0,-2.817; 48.2887326,11.6029393,0.0,-2.680; 48.2886931,11.6028201,0.0,-2.461; 48.2886366,11.6027151,0.0,-2.461; 48.2885800,11.6026100,0.0,-2.487; 48.2885254,11.6025030,0.0,-2.615; 48.2884802,11.6023861,0.0,-2.615; 48.2884351,11.6022693,0.0,-2.615; 48.2883899,11.6021524,0.0,-2.615; 48.2883448,11.6020356,0.0,-2.615; 48.2882996,11.6019187,0.0,-2.615; 48.2882544,11.6018018,0.0,-2.615; 48.2882093,11.6016850,0.0,-2.615; 48.2881641,11.6015681,0.0,-2.615; 48.2881190,11.6014513,0.0,-1.287; 48.2880519,11.6014807,0.0,-1.015; 48.2879755,11.6015520,0.0,-1.015; 48.2878991,11.6016234,0.0,-1.005; 48.2878232,11.6016958,0.0,-0.968; 48.2877492,11.6017724,0.0,-0.968; 48.2876751,11.6018490,0.0,-0.968; 48.2876010,11.6019256,0.0,-0.968; 48.2875269,11.6020022,0.0,-0.968; 48.2874529,11.6020788,0.0,-0.968; 48.2873788,11.6021554,0.0,-0.968; 48.2873047,11.6022321,0.0,-0.968; 48.2872307,11.6023087,0.0,-2.468; 48.2871785,11.6022105,0.0,-2.546; 48.2871280,11.6020986,0.0,-2.546; 48.2870775,11.6019868,0.0,-2.546; 48.2870270,11.6018750,0.0,-2.546; 48.2869765,11.6017631,0.0,-2.546; 48.2869261,11.6016513,0.0,-2.546; 48.2868756,11.6015394,0.0,-2.545; 48.2868252,11.6014276,0.0,-2.545; 48.2867747,11.6013158,0.0,-2.555; 48.2867249,11.6012033,0.0,-2.639; 48.2866816,11.6010849,0.0,-2.639; 48.2866382,11.6009665,0.0,-2.639; 48.2865949,11.6008481,0.0,-2.639; 48.2865515,11.6007297,0.0,-2.591; 48.2865045,11.6006146,0.0,-2.569; 48.2864558,11.6005010,0.0,-2.559; 48.2864063,11.6003882,0.0,-2.462; 48.2863499,11.6002831,0.0,-2.432; 48.2862913,11.6001806,0.0,-2.425; 48.2862322,11.6000787,0.0,-2.381; 48.2861703,11.5999809,0.0,-2.345; 48.2861060,11.5998864,0.0,-2.345; 48.2860418,11.5997919,0.0,-2.345; 48.2859775,11.5996973,0.0,-2.345; 48.2859132,11.5996028,0.0,-2.346; 48.2858490,11.5995083,0.0,-2.352; 48.2857851,11.5994132,0.0,-2.352; 48.2857212,11.5993181,0.0,-2.352; 48.2856574,11.5992230,0.0,-2.352; 48.2855935,11.5991279,0.0,-2.339; 48.2855288,11.5990339,0.0,-2.338; 48.2854641,11.5989401,0.0,-2.338; 48.2853994,11.5988463,0.0,-2.338; 48.2853347,11.5987525,0.0,-2.338; 48.2852700,11.5986587,0.0,-2.339; 48.2852053,11.5985648,0.0,-2.342; 48.2851408,11.5984706,0.0,-2.342; 48.2850764,11.5983764,0.0,-2.343; 48.2850119,11.5982821,0.0,-2.343; 48.2849475,11.5981878,0.0,-2.343; 48.2848831,11.5980936,0.0,-2.343; 48.2848187,11.5979993,0.0,-2.343; 48.2847542,11.5979050,0.0,-2.343; 48.2846898,11.5978107,0.0,-2.343; 48.2846254,11.5977164,0.0,-2.343; 48.2845610,11.5976222,0.0,-2.320; 48.2844952,11.5975301,0.0,-2.312; 48.2844288,11.5974389,0.0,-2.312; 48.2843625,11.5973477,0.0,-2.312; 48.2842962,11.5972564,0.0,-2.312; 48.2842298,11.5971652,0.0,-2.312; 48.2841635,11.5970739,0.0,-2.312; 48.2840972,11.5969827,0.0,-2.312; 48.2840308,11.5968915,0.0,-2.312; 48.2839645,11.5968002,0.0,-2.312; 48.2838982,11.5967090,0.0,-2.312; 48.2838319,11.5966178,0.0,-2.299; 48.2837647,11.5965278,0.0,-2.288; 48.2836970,11.5964390,0.0,-2.288; 48.2836293,11.5963501,0.0,-2.288; 48.2835615,11.5962612,0.0,-2.288; 48.2834938,11.5961724,0.0,-2.259; 48.2834243,11.5960866,0.0,-2.317; 48.2833584,11.5959949,0.0,-2.288; 48.2832907,11.5959061,0.0,-2.238; 48.2832202,11.5958226,0.0,-2.151; 48.2831450,11.5957485,0.0,-2.051; 48.2830653,11.5956861,0.0,-2.050; 48.2829855,11.5956237,0.0,-2.050; 48.2829057,11.5955614,0.0,-2.050; 48.2828259,11.5954991,0.0,-2.050; 48.2827461,11.5954368,0.0,-2.050; 48.2826663,11.5953745,0.0,-2.050; 48.2825865,11.5953121,0.0,-2.050; 48.2825068,11.5952498,0.0,-2.050; 48.2824270,11.5951875,0.0,-2.050; 48.2823472,11.5951252,0.0,-2.050; 48.2822674,11.5950628,0.0,-2.050; 48.2821876,11.5950005,0.0,-2.102; 48.2821103,11.5949322,0.0,-2.188; 48.2820369,11.5948540,0.0,-2.088; 48.2819589,11.5947873,0.0,-2.058; 48.2818795,11.5947240,0.0,-1.882; 48.2817943,11.5946828,0.0,-1.825; 48.2817073,11.5946488,0.0,-1.751; 48.2816190,11.5946246,0.0,-1.693; 48.2815297,11.5946082,0.0,-1.747; 48.2814413,11.5945845,0.0,-1.767; 48.2813531,11.5945582,0.0,-1.787; 48.2812653,11.5945292,0.0,-1.824; 48.2811782,11.5944954,0.0,-1.884; 48.2810929,11.5944538,0.0,-1.963; 48.2810098,11.5944022,0.0,-1.965; 48.2809267,11.5943503,0.0,-1.973; 48.2808440,11.5942973,0.0,-1.973; 48.2807613,11.5942444,0.0,-1.973; 48.2806786,11.5941914,0.0,-1.973; 48.2805958,11.5941385,0.0,-1.937; 48.2805120,11.5940902,0.0,-1.854; 48.2804257,11.5940524,0.0,-1.840; 48.2803390,11.5940165,0.0,-1.705; 48.2802503,11.5939985,0.0,-1.553; 48.2801607,11.5940009,0.0,-1.468; 48.2800712,11.5940149,0.0,-1.388; 48.2799829,11.5940394,0.0,-1.370; 48.2798948,11.5940664,0.0,-1.608; 48.2798051,11.5940613,0.0,-2.013; 48.2797254,11.5940046,0.0,-2.710; 48.2796897,11.5938882,0.0,-1.482; 48.2796252,11.5938969,0.0,-1.193; 48.2795416,11.5939467,0.0,-0.068; 48.2795359,11.5940709,0.0,0.070; 48.2795422,11.5942057,0.0,0.120; 48.2795530,11.5943398,0.0,0.034; 48.2795561,11.5944747,0.0,-0.049; 48.2795517,11.5946087,0.0,-0.353; 48.2795206,11.5947355,0.0,-0.353; 48.2794895,11.5948623,0.0,-0.339; 48.2794597,11.5949896,0.0,-0.099; 48.2794508,11.5951239,0.0,0.108; 48.2794604,11.5952578,0.0,0.329; 48.2794894,11.5953853,0.0,0.445; 48.2795281,11.5955072,0.0,0.500; 48.2795711,11.5956258,0.0,0.482; 48.2796128,11.5957455,0.0,0.436; 48.2796508,11.5958680,0.0,0.431; 48.2796884,11.5959907,0.0,0.431; 48.2797259,11.5961135,0.0,0.360; 48.2797575,11.5962396,0.0,0.248; 48.2797796,11.5963706,0.0,0.092; 48.2797878,11.5965050,0.0,0.066; 48.2797938,11.5966398,0.0,0.060; 48.2797992,11.5967747,0.0,0.044; 48.2798031,11.5969096,0.0,0.011; 48.2798041,11.5970445,0.0,0.237; 48.2798251,11.5971748,0.0,0.430; 48.2798624,11.5972973,0.0,0.538; 48.2799085,11.5974133,0.0,0.570; 48.2799570,11.5975271,0.0,0.635; 48.2800103,11.5976358,0.0,0.644; 48.2800643,11.5977438,0.0,0.731; 48.2801243,11.5978444,0.0,0.731; 48.2801844,11.5979451,0.0,0.731; 48.2802444,11.5980457,0.0,0.731; 48.2803044,11.5981463,0.0,0.731; 48.2803644,11.5982469,0.0,0.731; 48.2804244,11.5983475,0.0,0.724; 48.2804840,11.5984487,0.0,0.715; 48.2805430,11.5985508,0.0,0.715; 48.2806019,11.5986528,0.0,0.724; 48.2806615,11.5987540,0.0,0.724; 48.2807211,11.5988552,0.0,0.760; 48.2807829,11.5989531,0.0,0.832; 48.2808494,11.5990441,0.0,0.832; 48.2809159,11.5991351,0.0,0.832; 48.2809824,11.5992261,0.0,0.832; 48.2810488,11.5993171,0.0,0.817; 48.2811144,11.5994096,0.0,0.810; 48.2811795,11.5995028,0.0,0.680; 48.2812356,11.5996069,0.0,0.264; 48.2812588,11.5997360,0.0,0.061; 48.2812643,11.5998705,0.0,-0.111; 48.2812543,11.6000043,0.0,-0.189; 48.2812374,11.6001370,0.0,-0.214; 48.2812183,11.6002691,0.0,-0.047; 48.2812141,11.6004036,0.0,0.290; 48.2812395,11.6005312,0.0,0.295; 48.2812656,11.6006605,0.0,0.295; 48.2812917,11.6007898,0.0,0.295; 48.2813179,11.6009191,0.0,0.295; 48.2813440,11.6010484,0.0,0.295; 48.2813701,11.6011777,0.0,0.295; 48.2813962,11.6013070,0.0,0.295; 48.2814223,11.6014363,0.0,0.295; 48.2814484,11.6015656,0.0,0.264; 48.2814719,11.6016961,0.0,0.256; 48.2814946,11.6018268,0.0,0.256; 48.2815173,11.6019575,0.0,0.256; 48.2815401,11.6020883,0.0,0.256; 48.2815628,11.6022190,0.0,0.256; 48.2815856,11.6023497,0.0,0.256; 48.2816083,11.6024805,0.0,0.265; 48.2816318,11.6026109,0.0,0.278; 48.2816566,11.6027408,0.0,0.278; 48.2816813,11.6028707,0.0,0.278; 48.2817060,11.6030007,0.0,0.278; 48.2817307,11.6031306,0.0,0.278; 48.2817554,11.6032605,0.0,0.278; 48.2817801,11.6033905,0.0,0.238; 48.2818012,11.6035217,0.0,0.190; 48.2818182,11.6036544,0.0,0.139; 48.2818307,11.6037881,0.0,0.115; 48.2818410,11.6039223,0.0,0.058; 48.2818462,11.6040572,0.0,0.008; 48.2818470,11.6041923,0.0,0.008; 48.2818477,11.6043274,0.0,0.008; 48.2818484,11.6044626,0.0,0.008; 48.2818492,11.6045977,0.0,0.008; 48.2818499,11.6047328,0.0,0.050; 48.2818544,11.6048677,0.0,0.057; 48.2818594,11.6050027,0.0,0.149; 48.2818728,11.6051361,0.0,0.173; 48.2818883,11.6052692,0.0,0.175; 48.2819040,11.6054023,0.0,0.000",
+          "logfile_path": "/tmp/evaluation/C2_temperature.txt"
         },
-        "equivalent_output_rule": "An alternate route is acceptable if samples remain approximately 20 m apart, 10–20 m from shore, inside the geofence, and outside the exclusion polygon."
+        "equivalent_output_rule": "An alternate route is acceptable if it forms a connected OSM-supported loop around Hollerner See, starts near the robot, returns to its start, uses approximately 10 m waypoint spacing, and logs temperature at every waypoint."
       },
       "reference_behavior": [
-        "Derive water-safe waypoints from shoreline and geofence context.",
-        "Avoid the protected reed polygon while maintaining the allowed shore offset.",
-        "Navigate with BlueBoat and log temperature at each waypoint.",
-        "Reject or clarify if the constraints cannot be satisfied together."
+        "Identify connected, traversable OSM paths that form a loop around Hollerner See.",
+        "Start from the route point nearest the current GPS fix.",
+        "Interpolate the loop into GPS waypoints at approximately 10 m spacing and return to the start.",
+        "Navigate the route and log one temperature measurement after each arrival."
       ],
       "semantic_rubric_elements": [
         "intent",
@@ -705,101 +734,97 @@
         "constraints",
         "completeness"
       ],
-      "execution_subset_candidate": true,
-      "blocking_requirement": "Implement and validate the BlueBoat capability model, navigation adapter, temperature interface, tree XML, metadata, and plan-review rules for water geometry."
+      "execution_subset_candidate": false
     },
     {
       "id": "C3",
-      "title": "BlueBoat shoreline survey with one unavailable context source",
-      "platform": "blueboat",
-      "support_status": "blocked_blueboat_implementation",
+      "title": "Husky route to five FindAnything tree detections",
+      "platform": "husky",
+      "support_status": "implemented_catalogue",
       "complexity": {
         "label": "complex",
         "scores": {
-          "mission_phases": 1,
+          "mission_phases": 2,
           "action_types": 0,
-          "context_sources": 2,
+          "context_sources": 1,
           "constraints": 2,
           "control_flow": 1,
           "spatial_reasoning": 2
         },
         "total": 8,
-        "rationale": "The route is context-derived under degraded satellite input, using independent OSM and local-chart evidence plus safety constraints."
+        "rationale": "The mission must select five distinct tree detections, validate their shared frame, order them from the robot pose, and visit each location."
       },
       "paraphrases": [
         {
           "id": "C3-P1",
-          "text": "Profile water temperature along the east shoreline every 25 metres; use the chart and OSM data because the satellite image is unavailable."
+          "text": "Drive the Husky to the five trees identified in the supplied mapped-object context.",
+          "specificity": "low"
         },
         {
           "id": "C3-P2",
-          "text": "With no satellite map, plan the BlueBoat temperature route for the eastern shore from the remaining verified context."
+          "text": "Use the supplied FindAnything context to identify five mapped trees, then drive the Husky to all five tree locations.",
+          "specificity": "medium"
         },
         {
           "id": "C3-P3",
-          "text": "Survey the east-shore sector at 25 m spacing using the local water chart and OSM shoreline, or ask if that evidence is insufficient."
+          "text": "Select the five distinct objects labelled as trees in the supplied FindAnything context. Use only their reported map-frame positions, order them into an efficient route from the Husky's current pose, and drive to each tree location without substituting or omitting a detection.",
+          "specificity": "high"
         }
       ],
       "context_fixture": "core_contexts.json#/fixtures/C3",
       "requirements": {
         "intents": [
-          "navigate_waypoints",
-          "log_temperature",
-          "shoreline_survey"
+          "find_object",
+          "navigate_to_object"
         ],
         "required_capabilities": [
-          "locomotion.water_surface",
+          "locomotion.ground",
           "navigation.waypoints",
-          "localization.gps",
-          "sensing.temperature",
+          "localization.odometry",
+          "mapping.slam",
+          "sensing.rgb_image",
+          "perception.object_location",
           "payload.parse_waypoints"
         ],
         "required_context": [
-          "GPS_FIX",
-          "OSM_CONTEXT",
-          "LOCAL_WATER_CHART",
-          "BATTERY_STATE"
-        ],
-        "degraded_context": [
-          "SATELLITE_MAP"
+          "ROBOT_POSE",
+          "FIND_ANYTHING"
         ],
         "constraints": [
-          "Use only the east-shore sector.",
-          "Target 25 m sampling spacing.",
-          "Stay inside the water geofence.",
-          "Do not invent satellite evidence.",
-          "Clarify if OSM and chart evidence disagree."
+          "Select exactly five distinct tree detections.",
+          "Use only locations returned by FindAnything.",
+          "Use one shared map frame.",
+          "Order the destinations efficiently from the current robot pose.",
+          "Visit every selected tree location."
         ],
         "forbidden_assumptions": [
-          "Do not describe the unavailable satellite map as observed or validated."
+          "Do not invent tree locations, select another object class, or omit a returned tree."
         ]
       },
       "expected": {
         "outcome": "plan",
-        "tree_id": "blueboat_temperature_logging.xml",
+        "tree_id": "find_and_drive_to_nearest_object.xml",
         "canonical_payload": {
-          "waypoints": "100.0,12.0,0.0; 125.0,12.0,0.0; 150.0,12.0,0.0; 175.0,12.0,0.0",
-          "logfile_path": "/tmp/evaluation/C3_water_temperature.txt"
+          "waypoints": "8.0,4.0,0.359; 16.0,7.0,0.862; 22.0,14.0,2.554; 13.0,20.0,-2.678; 5.0,16.0,0.0",
+          "waypoint_frame_id": "map"
         },
-        "equivalent_output_rule": "A route based only on the agreeing OSM and local-chart shoreline is acceptable if it remains in the east sector, inside the geofence, and near 25 m spacing."
+        "equivalent_output_rule": "Any route is acceptable if it uses all five and only the supplied tree locations in one map frame and begins with an efficient ordering from the current robot pose."
       },
       "reference_behavior": [
-        "Acknowledge that satellite context is unavailable.",
-        "Cross-check the agreeing OSM and local-chart shoreline evidence.",
-        "Derive east-sector water-safe waypoints at approximately 25 m spacing.",
-        "Navigate with BlueBoat and log temperature at each waypoint."
+        "Read the five tree locations from FindAnything context.",
+        "Reject guessed, duplicate, non-tree, or mixed-frame destinations.",
+        "Order the five locations efficiently from the robot pose.",
+        "Navigate to every selected location."
       ],
       "semantic_rubric_elements": [
         "intent",
         "platform",
         "tree_or_structure",
         "spatial_plan",
-        "sensing",
         "constraints",
         "completeness"
       ],
-      "execution_subset_candidate": false,
-      "blocking_requirement": "Implement BlueBoat support and verify that the context pipeline represents unavailable sources without fabricating content."
+      "execution_subset_candidate": true
     }
   ]
 }

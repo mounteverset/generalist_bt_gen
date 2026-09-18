@@ -42,7 +42,7 @@ This notebook runs the frozen BTGenBot-2 baseline. It preserves `raw_text`; `ext
 Before running:
 
 1. Select a GPU runtime.
-2. Accept the Hugging Face access terms for both the base and adapter repositories.
+2. Accept the Hugging Face access terms for the AIRLab-POLIMI checkpoint repository. It contains a full model, despite the LoRA repository name; separate base-model weights are not downloaded.
 3. Set `HF_TOKEN`, `COLAB_EVAL_TOKEN`, and `NGROK_TOKEN` in Colab Secrets.
 4. For scored runs, also set the two exact revision hashes shown in `evaluation/protocol/model_conditions.json`.
 
@@ -52,7 +52,6 @@ Prefer batch mode when possible. The authenticated tunnel is provided for small 
                 """# Pinned software environment. Torch is supplied by the selected Colab runtime.
 !pip install -q \\
   transformers==4.56.2 \\
-  peft==0.17.1 \\
   accelerate==1.10.1 \\
   huggingface-hub==0.34.4 \\
   fastapi==0.116.1 \\

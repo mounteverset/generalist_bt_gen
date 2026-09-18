@@ -1,18 +1,21 @@
 {
   "contract_version": "1.0.0",
-  "repository_commit": "2abd093a78d4f8468bef0cf16b3c971c52ad8341",
+  "repository_commit": "c6f1041007552959375490cd39c3f72213f635e4",
   "source_hashes": {
-    "tree_metadata_sha256": "2804dbfaa992cd73a8e5a5692c54deb8771f5e644a05f818f08f638a97046992",
+    "tree_metadata_sha256": "2e911e99a7f321fe0c89a9aacddfd2fed51db92560d9e4c680e02d753ae24c9a",
     "system_description_sha256": "395e58012cc12a450ef80ac55abe3938f9ccac04e54cec749e3a05e68bac92d4",
-    "bt_node_manifest_sha256": "2c0b695eb71208a8b468a53dad2604f9b22335e3fea83dbd115affa4b1e1d046"
+    "blueboat_system_description_sha256": "965f2f7b911eda7c56fe51416a1ebf535e6d21e8a1939550c22008369b9cdead",
+    "bt_node_manifest_sha256": "b415d69acee662f8e6c7023957434c62c456d45f99cae67c43e06f16a11c3541"
   },
   "implementation_hashes": {
+    "evaluation_coordinates_sha256": "25547193454713b7dfb6a74c058ef3c0980545a7127a3ebf7e146c1c493d0d41",
     "mission_reasoner_sha256": "7ffa8b368fab8e7298b33f00c07b53d58b3497b53ef9c5d0655198e82e9d83d3",
     "payload_validation_sha256": "3f1b67bfdc7fffcb170736c32d109df8b3239a48b47992bc5c1c4e3863f7266c",
     "plan_safety_validation_sha256": "80cfd620f26a20514754baaf7f15cee5d68745c4823715563bbd5ce32602c5a0",
-    "evaluation_core_sha256": "fbcc3916c3008357af92eb6085cecb7317ee07d563dfff98e55999592cb04868",
-    "evaluation_runner_sha256": "3702d4faa739971722e3e7d28db38e41bd3218443840f532b275faf3746cfdcd",
-    "btgenbot2_server_sha256": "1333b99f27fb9c124290f4503eeb4e9705661e1c012f09997cfb1b9404e27b81",
+    "evaluation_core_sha256": "6e683b67928caf748b53b8e0149b92101dffbde43c89d72bb70a8ab6a3fa297a",
+    "evaluation_runner_sha256": "858694dbf67ef3c7927089480572f880faea54330a47d95e8c86a6424c2d3598",
+    "btgenbot2_importer_sha256": "e79b05fe5bb61bf51b97e47c731f1899fb16e164641c543c925226b5a15a8b70",
+    "btgenbot2_server_sha256": "e77c8f4a39ece49563725a2d5a3d0560ff39163c1061955219f858689a8e4aea",
     "factory_helper_source_sha256": "63b4565062fa55de5c9cbadf06fe9f151d83c1d60317aad0c5142f1ecfb46cca"
   },
   "tree_catalogue": [
@@ -267,7 +270,8 @@
         "locomotion.ground",
         "navigation.waypoints",
         "sensing.rgb_image",
-        "localization.gps"
+        "localization.gps",
+        "localization.odometry"
       ],
       "unsupported_requirements": [
         "locomotion.flight",
@@ -807,6 +811,265 @@
       }
     ]
   },
+  "blueboat_system_description": {
+    "platform": {
+      "name": "BlueBoat",
+      "type": "water_surface_vessel",
+      "locomotion": [
+        "water_surface"
+      ],
+      "max_range_m": 1000,
+      "max_speed_ms": 1.0,
+      "max_probe_depth_cm": 200,
+      "speed_control": "ArduPilot"
+    },
+    "autopilot": {
+      "type": "ArduPilot Rover",
+      "connection": {
+        "transport": "udp",
+        "fcu_url": "udp://@192.168.2.2:14600",
+        "system_id": 255,
+        "component_id": 190,
+        "target_system": 1,
+        "target_component": 1
+      },
+      "mode_transition": [
+        "HOLD",
+        "GUIDED"
+      ],
+      "required_control_mode": "GUIDED",
+      "required_armed": true,
+      "mode_service": "/mavros/set_mode",
+      "arming_service": "/mavros/cmd/arming",
+      "state_topic": "/mavros/state"
+    },
+    "sensors": [
+      {
+        "id": "gps",
+        "capability": "localization.gps",
+        "type": "navigation",
+        "modality": "GPS",
+        "topic": "/mavros/global_position/raw/fix",
+        "position_feedback_topic": "/mavros/global_position/global"
+      },
+      {
+        "id": "water_temperature_probe",
+        "capability": "sensing.temperature",
+        "type": "temperature",
+        "modality": "water_temperature",
+        "ros_interface": "/read_temp",
+        "ros_type": "service"
+      }
+    ],
+    "actions": [
+      {
+        "id": "enter_guided_mode",
+        "capability": "control.guided_mode",
+        "type": "autopilot_control",
+        "ros_interface": "/mavros/set_mode",
+        "ros_type": "service"
+      },
+      {
+        "id": "arm_vehicle",
+        "capability": "control.arming",
+        "type": "autopilot_control",
+        "ros_interface": "/mavros/cmd/arming",
+        "ros_type": "service"
+      },
+      {
+        "id": "navigate_global_setpoints",
+        "capability": "navigation.gps_waypoints",
+        "type": "locomotion",
+        "ros_interface": "/mavros/setpoint_position/global",
+        "ros_type": "topic",
+        "message_type": "geographic_msgs/msg/GeoPoseStamped",
+        "publish_rate_hz": 5.0,
+        "qos_reliability": "reliable",
+        "position_feedback_topic": "/mavros/global_position/global",
+        "requires": [
+          "locomotion.water_surface",
+          "control.guided_mode",
+          "control.arming",
+          "localization.gps"
+        ]
+      },
+      {
+        "id": "navigate_waypoints",
+        "capability": "navigation.waypoints",
+        "type": "locomotion",
+        "ros_interface": "/mavros/setpoint_position/global",
+        "ros_type": "topic"
+      },
+      {
+        "id": "set_probe_depth",
+        "capability": "actuation.probe_depth",
+        "type": "payload",
+        "ros_interface": "/stepper/set_depth",
+        "ros_type": "action",
+        "limits": {
+          "min_depth_cm": 0,
+          "max_depth_cm": 200,
+          "default_measurement_depth_cm": 20
+        }
+      },
+      {
+        "id": "read_temperature",
+        "capability": "sensing.temperature",
+        "type": "sensing",
+        "ros_interface": "/read_temp",
+        "ros_type": "service"
+      },
+      {
+        "id": "parse_gps_waypoints",
+        "capability": "payload.parse_gps_waypoints",
+        "type": "utility"
+      }
+    ],
+    "capabilities": {
+      "supported": [
+        "locomotion.water_surface",
+        "control.guided_mode",
+        "control.arming",
+        "actuation.probe_depth",
+        "navigation.waypoints",
+        "navigation.gps_waypoints",
+        "localization.gps",
+        "sensing.temperature",
+        "payload.parse_gps_waypoints"
+      ],
+      "unsupported": {
+        "locomotion.ground": "The configured platform is a water-surface vessel.",
+        "locomotion.flight": "The BlueBoat cannot fly.",
+        "sensing.rgb_image": "No RGB camera is declared for this BlueBoat profile.",
+        "sensing.depth_image": "No depth camera is declared for this BlueBoat profile.",
+        "sensing.thermal_image": "No thermal camera is declared for this BlueBoat profile.",
+        "manipulation.pick_place": "No manipulator or gripper is declared.",
+        "sampling.soil": "The BlueBoat has no soil-sampling tool.",
+        "sampling.water": "The probe measures temperature but does not collect water samples."
+      }
+    },
+    "command_capability_rules": [
+      {
+        "capability": "locomotion.water_surface",
+        "keywords": [
+          "blueboat",
+          "boat",
+          "sail",
+          "shoreline",
+          "across the lake"
+        ]
+      },
+      {
+        "capability": "control.guided_mode",
+        "keywords": [
+          "guided",
+          "guided mode"
+        ]
+      },
+      {
+        "capability": "control.arming",
+        "keywords": [
+          "arm",
+          "arming",
+          "armed"
+        ]
+      },
+      {
+        "capability": "actuation.probe_depth",
+        "keywords": [
+          "winch",
+          "probe depth",
+          "lower the sensor",
+          "raise the sensor"
+        ]
+      },
+      {
+        "capability": "navigation.waypoints",
+        "keywords": [
+          "drive",
+          "navigate",
+          "go to",
+          "patrol",
+          "survey",
+          "waypoint",
+          "waypoints",
+          "route"
+        ]
+      },
+      {
+        "capability": "navigation.gps_waypoints",
+        "keywords": [
+          "gps waypoint",
+          "gps waypoints",
+          "latitude",
+          "longitude",
+          "lat/lon",
+          "geographic route"
+        ]
+      },
+      {
+        "capability": "sensing.temperature",
+        "keywords": [
+          "temperature",
+          "water temperature",
+          "measure temperature",
+          "log temperature"
+        ]
+      },
+      {
+        "capability": "locomotion.flight",
+        "keywords": [
+          "fly",
+          "flight",
+          "aerial",
+          "drone"
+        ]
+      },
+      {
+        "capability": "sensing.rgb_image",
+        "keywords": [
+          "photo",
+          "photos",
+          "picture",
+          "photograph",
+          "image"
+        ]
+      },
+      {
+        "capability": "sensing.thermal_image",
+        "keywords": [
+          "thermal",
+          "infrared",
+          "ir image"
+        ]
+      },
+      {
+        "capability": "manipulation.pick_place",
+        "keywords": [
+          "pick up",
+          "grip",
+          "grab",
+          "collect object"
+        ]
+      },
+      {
+        "capability": "sampling.soil",
+        "keywords": [
+          "dig",
+          "soil sample",
+          "sample soil"
+        ]
+      },
+      {
+        "capability": "sampling.water",
+        "keywords": [
+          "water sample",
+          "sample water",
+          "collect water"
+        ]
+      }
+    ]
+  },
   "bt_node_manifest": {
     "manifest_version": "1.0.0",
     "source": {
@@ -823,6 +1086,18 @@
       "_autoremap"
     ],
     "control_nodes": {
+      "ForceFailure": {
+        "ports": {}
+      },
+      "Sleep": {
+        "ports": {
+          "msec": {
+            "direction": "input",
+            "type": "unsigned",
+            "required": true
+          }
+        }
+      },
       "Sequence": {
         "ports": {}
       },
@@ -870,18 +1145,6 @@
       },
       "KeepRunningUntilFailure": {
         "ports": {}
-      },
-      "ForceFailure": {
-        "ports": {}
-      },
-      "Sleep": {
-        "ports": {
-          "msec": {
-            "direction": "input",
-            "type": "unsigned",
-            "required": true
-          }
-        }
       },
       "Precondition": {
         "ports": {
@@ -938,6 +1201,7 @@
         }
       },
       "MoveToGlobalSetpoint": {
+        "description": "Decorator with exactly one child: navigate to a WGS84 target, then tick the child while continuing to publish the hold setpoint.",
         "ports": {
           "gps_pose": {
             "direction": "input",

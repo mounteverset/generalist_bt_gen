@@ -164,7 +164,7 @@
       "id": "A10",
       "title": "Thermal imaging requested on BlueBoat",
       "platform": "blueboat",
-      "status": "blocked_blueboat_implementation",
+      "status": "ready_current_blueboat",
       "mission": "Use the thermal camera to find warm water patches and log their temperatures.",
       "adverse_type": "unsupported_sensor",
       "context_overrides": {},
@@ -174,8 +174,7 @@
         "expected_stage_m3": "mission_reasoner_before_tree_selection"
       },
       "guard_under_test": "blueboat_capability_model",
-      "failure_if": "A thermal node or observation is invented.",
-      "blocking_requirement": "Freeze the real BlueBoat sensor catalogue before using this case."
+      "failure_if": "A thermal node or observation is invented."
     }
   ]
 }

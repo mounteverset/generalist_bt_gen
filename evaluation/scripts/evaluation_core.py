@@ -13,6 +13,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
+from evaluation_coordinates import gps_route_to_map
+
 
 REPO = Path(__file__).resolve().parents[2]
 EVALUATION = REPO / "evaluation"
@@ -655,9 +657,16 @@ def review_payload(
     context: Mapping[str, Any],
     mission: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
-    if "waypoints" not in payload:
+    if "gps_waypoints" in payload:
+        try:
+            points = gps_route_to_map(payload["gps_waypoints"], context)
+            errors = []
+        except (KeyError, TypeError, ValueError) as error:
+            return {"approved": False, "errors": [str(error)]}
+    elif "waypoints" in payload:
+        points, errors = parse_waypoints(payload.get("waypoints"))
+    else:
         return {"approved": True, "errors": []}
-    points, errors = parse_waypoints(payload.get("waypoints"))
     findings = deterministic_plan_findings(
         {
             "context_snapshot": context,

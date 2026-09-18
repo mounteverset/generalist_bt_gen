@@ -1,0 +1,59 @@
+{
+  "protocol_version": "1.0.0-draft",
+  "freeze_status": "draft",
+  "record_hash_rule": "Every execution record must copy this file's SHA-256 into execution_scoring_sha256 before trials begin.",
+  "purpose": "Define scoreable E5 simulation, physical-execution, and portability records.",
+  "record_file": "evaluation/results/execution_trials.json",
+  "primary_trial_plan": {
+    "mission_ids": ["S1", "S2"],
+    "evidence_level": "simulation",
+    "repetitions_per_mission": 3,
+    "planned_trials": 6,
+    "physical_trials": "Supplementary and reported separately."
+  },
+  "mission_requirements": {
+    "S1": {
+      "platform": "husky",
+      "required_waypoints": 1,
+      "required_measurements": 1,
+      "required_photos": 0
+    },
+    "S2": {
+      "platform": "blueboat",
+      "required_waypoints": 1,
+      "required_measurements": 1,
+      "required_photos": 0
+    }
+  },
+  "evidence_levels": ["simulation", "physical"],
+  "terminal_outcomes": ["completed", "failed", "cancelled", "safety_stopped"],
+  "factory_load_values": ["pass", "fail", "not_run"],
+  "intervention_types": ["manual_motion", "parameter_change", "mission_logic_change", "component_restart", "safety_stop"],
+  "safety_incident_types": ["boundary_violation", "collision_or_contact", "unsafe_motion", "emergency_stop", "communication_loss", "other"],
+  "trial_required_fields": ["trial_id", "mission_id", "platform", "evidence_level", "repetition", "planning_condition_id", "planning_passed", "started", "terminal_outcome", "duration_s", "factory_load", "integration_checks", "required_waypoints", "reached_waypoints", "required_measurements", "valid_measurements", "required_photos", "valid_photos", "operator_interventions", "safety_incidents"],
+  "not_started_required_fields": ["trial_id", "mission_id", "platform", "evidence_level", "repetition", "reason"],
+  "ratio_rules": {
+    "route_completion": "min(reached_waypoints / required_waypoints, 1); not applicable when required_waypoints is zero.",
+    "measurement_coverage": "min(valid_measurements / required_measurements, 1); not applicable when required_measurements is zero.",
+    "photo_coverage": "min(valid_photos / required_photos, 1); not applicable when required_photos is zero.",
+    "task_quality": "Minimum of the applicable route, measurement, and photo ratios.",
+    "mission_completion": "terminal_outcome is completed and task_quality equals 1.",
+    "autonomous_success": "mission_completion is true, no operator intervention occurred after mission start, and no safety incident occurred."
+  },
+  "integration_check_values": ["pass", "fail", "not_run"],
+  "integration_checks_by_platform": {
+    "husky": ["navigation_action", "temperature_service", "failure_propagation"],
+    "blueboat": ["mavros_gps_fix", "guided_mode", "arming", "global_setpoint", "probe_depth", "temperature_service", "failure_propagation"]
+  },
+  "integration_reporting": "Record each predefined platform integration check as pass, fail, or not_run. Report counts per check; do not replace them with one integration score.",
+  "portability_components": ["mission_submission_interface", "context_contract", "mission_reasoner", "tree_selection_and_payload", "plan_review", "executor_orchestration", "behavior_tree_template", "platform_action_adapter"],
+  "portability_classes": ["shared_unchanged", "shared_configured", "platform_specific"],
+  "portability_rule": "Classify every component and cite a source path or trial record. Report class counts, shared count, and shared proportion. Do not infer portability from lines of code.",
+  "record_template": {
+    "protocol_version": "1.0.0-draft",
+    "execution_scoring_sha256": null,
+    "trials": [],
+    "not_started": [],
+    "portability": []
+  }
+}

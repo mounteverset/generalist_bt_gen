@@ -17,10 +17,12 @@ REPO = Path(__file__).resolve().parents[2]
 PROTOCOL = REPO / "evaluation" / "protocol"
 TREE_METADATA = REPO / "config" / "tree_metadata.yaml"
 SYSTEM_DESCRIPTION = REPO / "config" / "system_description.yaml"
+BLUEBOAT_SYSTEM_DESCRIPTION = REPO / "config" / "system_description_blueboat.yaml"
 NODE_MANIFEST = PROTOCOL / "bt_node_manifest.json"
 CORE_MISSIONS = PROTOCOL / "core_missions.json"
 OUTPUT = PROTOCOL / "runtime_contract.json"
 IMPLEMENTATION_FILES = {
+    "evaluation_coordinates_sha256": REPO / "evaluation" / "scripts" / "evaluation_coordinates.py",
     "mission_reasoner_sha256": REPO
     / "src"
     / "mission_reasoner"
@@ -44,6 +46,10 @@ IMPLEMENTATION_FILES = {
     / "evaluation"
     / "scripts"
     / "run_evaluation.py",
+    "btgenbot2_importer_sha256": REPO
+    / "evaluation"
+    / "scripts"
+    / "import_btgenbot2_batch.py",
     "btgenbot2_server_sha256": REPO
     / "evaluation"
     / "colab"
@@ -94,6 +100,7 @@ def build_snapshot(commit: str) -> dict[str, Any]:
     hashes = {
         "tree_metadata_sha256": sha256(TREE_METADATA),
         "system_description_sha256": sha256(SYSTEM_DESCRIPTION),
+        "blueboat_system_description_sha256": sha256(BLUEBOAT_SYSTEM_DESCRIPTION),
         "bt_node_manifest_sha256": sha256(NODE_MANIFEST),
     }
     return {
@@ -105,6 +112,7 @@ def build_snapshot(commit: str) -> dict[str, Any]:
         },
         "tree_catalogue": load_yaml(TREE_METADATA).get("trees", []),
         "system_description": load_yaml(SYSTEM_DESCRIPTION),
+        "blueboat_system_description": load_yaml(BLUEBOAT_SYSTEM_DESCRIPTION),
         "bt_node_manifest": load_json(NODE_MANIFEST),
     }
 

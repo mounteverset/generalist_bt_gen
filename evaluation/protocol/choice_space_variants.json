@@ -1,5 +1,5 @@
 {
-  "protocol_version": "1.1.0-draft",
+  "protocol_version": "1.2.0-draft",
   "freeze_status": "draft",
   "experiment": "E3",
   "purpose": "Separate mission complexity from the choice-space size presented to each method.",
@@ -60,6 +60,7 @@
   },
   "m3_tree_catalogue": {
     "method": "M3",
+    "reference_model_key": "gpt-5.6-sol",
     "variants": [
       {
         "id": "CS1",

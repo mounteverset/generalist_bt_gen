@@ -57,6 +57,11 @@ def test_openrouter_dry_request_disables_cache_and_provider_fallbacks():
         "data_collection": "deny",
     }
     assert request["body"]["seed"] == 42
+    result = call_openrouter(
+        dict(model, temperature=None), "system", "user", image_paths=[],
+        seed=42, dry_run=True, timeout_s=60, max_transport_retries=3,
+    )
+    assert "temperature" not in result["request"]["body"]
 
 
 def test_e4_decision_envelope_scores_refusal_without_xml():
@@ -122,7 +127,7 @@ def test_e3_work_items_keep_m1_and_m3_scale_conditions_separate():
         item["variant_id"]
         for item in selected
         if item["variant_method"] == "M3"
-    } == {"CS1", "CS2", "CS3"}
+    } == {"CS1", "CS2"}
 
 
 def test_e3_m1_distractor_use_is_recorded_and_fails_task_success():
@@ -145,7 +150,7 @@ def test_e3_m1_distractor_use_is_recorded_and_fails_task_success():
         selected,
         "plan",
         scaled,
-        None,
+        Path("/bin/true"),
         CONTEXTS["fixtures"]["S1"],
     )
     metrics = result["validation"]["action_library_metrics"]

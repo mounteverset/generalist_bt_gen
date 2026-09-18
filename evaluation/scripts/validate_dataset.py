@@ -12,6 +12,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from evaluation_coordinates import gps_route_to_map
+
 
 EVALUATION_DIR = Path(__file__).resolve().parents[1]
 REPOSITORY_DIR = EVALUATION_DIR.parent
@@ -131,6 +133,7 @@ def validate() -> list[str]:
     core = load_json(PROTOCOL_DIR / "core_missions.json")
     complexity = load_json(PROTOCOL_DIR / "complexity_rubric.json")
     scoring = load_json(PROTOCOL_DIR / "scoring_rubric.json")
+    execution_scoring = load_json(PROTOCOL_DIR / "execution_scoring.json")
     contexts = load_json(CONTEXT_FILE)
     safety = load_json(PROTOCOL_DIR / "safety_cases.json")
     variants = load_json(PROTOCOL_DIR / "context_variants.json")
@@ -159,11 +162,88 @@ def validate() -> list[str]:
     label_counts = Counter(mission["complexity"]["label"] for mission in missions)
     require(dict(platform_counts) == design["platform_distribution"], "Platform distribution does not match design")
     require(dict(label_counts) == design["complexity_distribution"], "Complexity distribution does not match design")
-    require(abs(platform_counts["husky"] - platform_counts["blueboat"]) <= 1, "Platform split should be balanced within one mission")
+    require(dict(platform_counts) == {"husky": 7, "blueboat": 2}, "Core dataset must contain seven Husky and two BlueBoat missions")
 
     fixture_ids = set(contexts["fixtures"])
     require(fixture_ids == set(mission_ids), "Context fixtures must match mission IDs exactly")
     common_rubric_ids = set(scoring["common_elements"])
+    require(
+        set(scoring["common_semantic_scale"]) == {"0", "1", "2"},
+        "Semantic scale must contain exactly 0, 1, and 2",
+    )
+    require(
+        scoring["semantic_scoring"]["semantic_pass"].startswith("Every applicable"),
+        "Semantic pass rule is missing",
+    )
+    require(
+        scoring["effort_metrics"]["manual_repair_budget_s"] == 300,
+        "Manual repair budget must be 300 seconds",
+    )
+    require(
+        set(scoring["effort_metrics"]["manual_repair_statuses"])
+        == {"not_needed", "corrected", "attempted_failed", "not_attempted", "not_applicable"},
+        "Manual repair statuses are incomplete",
+    )
+    require(
+        scoring["scored_run_settings"]
+        == {
+            "repetitions": 1,
+            "seed": 42,
+            "timeout_s": 60,
+            "max_transport_retries": 3,
+            "m3_refinement_attempts": 1,
+        },
+        "Scored-run settings differ from the fixed protocol",
+    )
+    for name, protocol in (
+        ("scoring_rubric.json", scoring),
+        ("execution_scoring.json", execution_scoring),
+        ("context_variants.json", variants),
+        ("safety_cases.json", safety),
+    ):
+        require(
+            protocol.get("freeze_status") in {"draft", "frozen"},
+            f"{name}: freeze status is invalid",
+        )
+    require(
+        set(execution_scoring["integration_checks_by_platform"])
+        == {"husky", "blueboat"},
+        "E5 integration checks must cover both platforms",
+    )
+    require(
+        len(execution_scoring["portability_components"]) == 8
+        and len(set(execution_scoring["portability_components"])) == 8,
+        "E5 must define eight unique portability components",
+    )
+    require(
+        execution_scoring["primary_trial_plan"]
+        == {
+            "mission_ids": ["S1", "S2"],
+            "evidence_level": "simulation",
+            "repetitions_per_mission": 3,
+            "planned_trials": 6,
+            "physical_trials": "Supplementary and reported separately.",
+        },
+        "E5 primary trial plan differs from the thesis protocol",
+    )
+    require(
+        execution_scoring["mission_requirements"]
+        == {
+            "S1": {
+                "platform": "husky",
+                "required_waypoints": 1,
+                "required_measurements": 1,
+                "required_photos": 0,
+            },
+            "S2": {
+                "platform": "blueboat",
+                "required_waypoints": 1,
+                "required_measurements": 1,
+                "required_photos": 0,
+            },
+        },
+        "E5 mission denominators differ from the thesis protocol",
+    )
 
     blocked_blueboat = 0
     placeholder_artifacts = 0
@@ -183,6 +263,10 @@ def validate() -> list[str]:
 
         paraphrases = mission["paraphrases"]
         require(len(paraphrases) == 3, f"{mission_id}: exactly three paraphrases are required")
+        require(
+            [item.get("specificity") for item in paraphrases] == ["low", "medium", "high"],
+            f"{mission_id}: P1/P2/P3 must have low/medium/high specificity",
+        )
         for index, paraphrase in enumerate(paraphrases, start=1):
             expected_id = f"{mission_id}-P{index}"
             require(paraphrase["id"] == expected_id, f"{mission_id}: expected paraphrase ID {expected_id}")
@@ -199,8 +283,15 @@ def validate() -> list[str]:
         require(bool(mission["expected"]["tree_id"]), f"{mission_id}: expected tree is missing")
         payload = mission["expected"]["canonical_payload"]
         require(isinstance(payload, dict) and payload, f"{mission_id}: canonical payload is empty")
-        require("waypoints" in payload, f"{mission_id}: canonical payload needs waypoints")
-        reference_routes[mission_id] = parse_waypoints(payload["waypoints"], mission_id)
+        if mission["platform"] == "blueboat":
+            require("gps_waypoints" in payload and "waypoints" not in payload, f"{mission_id}: BlueBoat requires GPS waypoints")
+        if "gps_waypoints" in payload:
+            reference_routes[mission_id] = gps_route_to_map(
+                payload["gps_waypoints"], contexts["fixtures"][mission_id]
+            )
+        else:
+            require("waypoints" in payload, f"{mission_id}: canonical payload needs waypoints")
+            reference_routes[mission_id] = parse_waypoints(payload["waypoints"], mission_id)
         require(set(mission["semantic_rubric_elements"]).issubset(common_rubric_ids), f"{mission_id}: unknown semantic rubric element")
         require(len(mission["reference_behavior"]) >= 1, f"{mission_id}: reference behavior is empty")
 
@@ -217,7 +308,7 @@ def validate() -> list[str]:
     for mission_id, point_id in (("S1", "P1"), ("S2", "W1")):
         expected_point = fixture_data[mission_id]["named_points"][point_id]
         actual = reference_routes[mission_id][0]
-        require(actual == (expected_point["x"], expected_point["y"], expected_point["yaw"]), f"{mission_id}: canonical point differs from context")
+        require(all(abs(a - b) < 0.001 for a, b in zip(actual, (expected_point["x"], expected_point["y"], expected_point["yaw"]))), f"{mission_id}: canonical point differs from context")
 
     for mission_id, order_key in (("S3", "route_order"), ("M2", "route_order")):
         expected_route = [
@@ -228,7 +319,8 @@ def validate() -> list[str]:
             )
             for point_id in fixture_data[mission_id][order_key]
         ]
-        require(reference_routes[mission_id] == expected_route, f"{mission_id}: canonical route differs from named-point context")
+        actual_route = reference_routes[mission_id]
+        require(len(actual_route) == len(expected_route) and all(abs(a - b) < 0.001 for actual, expected in zip(actual_route, expected_route) for a, b in zip(actual, expected)), f"{mission_id}: canonical route differs from named-point context")
 
     m1_expected = [
         (point["x"], point["y"], point["yaw"])
@@ -251,31 +343,27 @@ def validate() -> list[str]:
     for blocked_region in c1_context["blocked_regions"]:
         require(not route_intersects_polygon(reference_routes["C1"], blocked_region["polygon"]), f"C1: route intersects {blocked_region['id']}")
 
-    for mission_id in ("M2", "C2", "C3"):
-        geofence = fixture_data[mission_id]["water_geofence"]["polygon"]
-        require(all(point_in_polygon((point[0], point[1]), geofence) for point in reference_routes[mission_id]), f"{mission_id}: canonical route leaves water geofence")
+    geofence = fixture_data["M2"]["water_geofence"]["polygon"]
+    require(all(point_in_polygon((point[0], point[1]), geofence) for point in reference_routes["M2"]), "M2: canonical route leaves water geofence")
 
     c2_context = fixture_data["C2"]
-    min_offset = c2_context["shore_offset_m"]["minimum"]
-    max_offset = c2_context["shore_offset_m"]["maximum"]
-    require(all(min_offset <= point[1] <= max_offset for point in reference_routes["C2"]), "C2: canonical route violates shore offset")
-    for exclusion in c2_context["exclusion_zones"]:
-        require(not route_intersects_polygon(reference_routes["C2"], exclusion["polygon"]), f"C2: route intersects {exclusion['id']}")
     c2_target = c2_context["target_sampling_interval_m"]
     c2_distances = [
         math.hypot(second[0] - first[0], second[1] - first[1])
         for first, second in zip(reference_routes["C2"], reference_routes["C2"][1:])
     ]
-    require(all(0.7 * c2_target <= distance <= 1.3 * c2_target for distance in c2_distances), "C2: canonical sample spacing exceeds ±30% tolerance")
-    c2_duration_min = sum(c2_distances) / c2_context["planning_speed_m_s"] / 60.0
-    require(c2_duration_min <= c2_context["maximum_duration_min"], "C2: canonical route exceeds duration limit")
+    require(all(0.6 * c2_target <= distance <= 1.3 * c2_target for distance in c2_distances), "C2: canonical straight-line spacing is inconsistent with the 10 m path interval")
+    require(math.hypot(reference_routes["C2"][-1][0] - reference_routes["C2"][0][0], reference_routes["C2"][-1][1] - reference_routes["C2"][0][1]) < 1.0, "C2: canonical route is not a roundtrip")
+    require(c2_context["osm_context"]["linear_features"], "C2: OSM route geometry is missing")
 
-    c3_target = fixture_data["C3"]["target_sampling_interval_m"]
-    c3_distances = [
-        math.hypot(second[0] - first[0], second[1] - first[1])
-        for first, second in zip(reference_routes["C3"], reference_routes["C3"][1:])
+    c3_context = fixture_data["C3"]
+    c3_locations = [
+        (location["point"]["x"], location["point"]["y"])
+        for location in c3_context["find_anything"]["locations"]
     ]
-    require(all(abs(distance - c3_target) <= 1e-9 for distance in c3_distances), "C3: canonical sample spacing differs from target")
+    c3_route = [(point[0], point[1]) for point in reference_routes["C3"]]
+    require(len(c3_route) == 5 and set(c3_route) == set(c3_locations), "C3: canonical route must use all five FindAnything tree locations")
+    require(core["missions"][-1]["expected"]["canonical_payload"].get("waypoint_frame_id") == "map", "C3: canonical route must use the FindAnything map frame")
 
     def count_placeholders(value: Any) -> int:
         if isinstance(value, dict):
@@ -314,17 +402,21 @@ def validate() -> list[str]:
         require(
             case["status"] in {
                 "ready_current_husky",
-                "blocked_blueboat_implementation",
+                "ready_current_blueboat",
             },
             f"{case['id']}: safety guard status is not resolved",
         )
 
     variant_ids: set[str] = set()
+    require(
+        variants.get("reference_model_key") in model_conditions["models"],
+        "E2 reference model is unknown",
+    )
     for mission_group in variants["selected_missions"]:
         require(mission_group["mission_id"] in mission_ids, "Context variant references unknown mission")
-        require(len(mission_group["variants"]) == 5, f"{mission_group['mission_id']}: expected five context conditions")
+        require(len(mission_group["variants"]) == 6, f"{mission_group['mission_id']}: expected six context conditions")
         conditions = {variant["condition"] for variant in mission_group["variants"]}
-        require(conditions == {"complete", "text_only", "missing_one_source", "contradictory", "irrelevant_distractor"}, f"{mission_group['mission_id']}: context condition set is incomplete")
+        require(conditions == {"complete", "text_only", "missing_one_source", "contradictory", "irrelevant_distractor", "stale"}, f"{mission_group['mission_id']}: context condition set is incomplete")
         for variant in mission_group["variants"]:
             require(variant["id"] not in variant_ids, f"Duplicate context variant ID {variant['id']}")
             require(variant["expected_outcome"] in valid_outcomes, f"{variant['id']}: invalid expected outcome")
@@ -338,6 +430,7 @@ def validate() -> list[str]:
     snapshot_files = {
         "tree_metadata_sha256": REPOSITORY_DIR / "config" / "tree_metadata.yaml",
         "system_description_sha256": REPOSITORY_DIR / "config" / "system_description.yaml",
+        "blueboat_system_description_sha256": REPOSITORY_DIR / "config" / "system_description_blueboat.yaml",
         "bt_node_manifest_sha256": PROTOCOL_DIR / "bt_node_manifest.json",
     }
     for key, path in snapshot_files.items():
@@ -353,11 +446,13 @@ def validate() -> list[str]:
         "Runtime contract hashes differ from the dataset source snapshot",
     )
     implementation_files = {
+        "evaluation_coordinates_sha256": EVALUATION_DIR / "scripts" / "evaluation_coordinates.py",
         "mission_reasoner_sha256": REPOSITORY_DIR / "src" / "mission_reasoner" / "mission_reasoner" / "reasoner.py",
         "payload_validation_sha256": REPOSITORY_DIR / "src" / "llm_interface" / "llm_interface" / "payload_validation.py",
         "plan_safety_validation_sha256": REPOSITORY_DIR / "src" / "plan_reviewer" / "plan_reviewer" / "safety_validation.py",
         "evaluation_core_sha256": EVALUATION_DIR / "scripts" / "evaluation_core.py",
         "evaluation_runner_sha256": EVALUATION_DIR / "scripts" / "run_evaluation.py",
+        "btgenbot2_importer_sha256": EVALUATION_DIR / "scripts" / "import_btgenbot2_batch.py",
         "btgenbot2_server_sha256": EVALUATION_DIR / "colab" / "btgenbot2_server.py",
         "factory_helper_source_sha256": REPOSITORY_DIR / "src" / "bt_executor" / "src" / "bt_factory_check.cpp",
     }
@@ -380,6 +475,7 @@ def validate() -> list[str]:
             "navigate_and_photograph.xml",
             "find_and_drive_to_nearest_object.xml",
             "explore_area.xml",
+            "blueboat_temperature_logging.xml",
         },
         "Runtime tree catalogue does not contain the seven current tree templates",
     )
@@ -509,6 +605,8 @@ def validate() -> list[str]:
     )
     require(
         choice_space["m3_tree_catalogue"]["method"] == "M3"
+        and choice_space["m3_tree_catalogue"].get("reference_model_key")
+        in model_conditions["models"]
         and {
             variant["id"]
             for variant in choice_space["m3_tree_catalogue"]["variants"]
@@ -529,7 +627,7 @@ def main() -> int:
 
     print("DATASET VALID")
     print("Core missions: 9; paraphrases: 27; designed E1 outputs: 189")
-    print("Currently supported Husky E1 outputs: 105; BlueBoat outputs remain blocked")
+    print("Currently supported E1 outputs: 189; BlueBoat outputs are available offline")
     for warning in warnings:
         print(f"WARNING: {warning}")
     return 0
