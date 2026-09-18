@@ -569,9 +569,10 @@ class MissionCoordinatorNode(Node):
                 goal_handle.succeed()
                 self._set_lifecycle_state(self.STATE_FAILED)
                 result.accepted = False
-                result.outcome_message = (
-                    gather_result.message if gather_result else 'Context gather failed.'
+                reason = (
+                    gather_result.message if gather_result else 'result unavailable'
                 )
+                result.outcome_message = f'Context gather failed: {reason}'
                 self._publish_status(result.outcome_message)
                 return result
 

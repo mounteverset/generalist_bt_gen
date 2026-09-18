@@ -381,3 +381,23 @@ def test_rgb_context_uses_d455_color_camera_topic():
 
     assert '"/okvis/rgb2/image_raw", 10' in source
     assert params['rgb360_sweep_camera_topic'] == '/okvis/rgb2/image_raw'
+
+
+def test_required_gps_fix_is_validated_and_aborts_with_reason():
+    source = CONTEXT_GATHERER_NODE.read_text()
+    params = yaml.safe_load(
+        (
+            REPO_ROOT
+            / 'src'
+            / 'context_gatherer'
+            / 'config'
+            / 'context_gatherer_params.yaml'
+        ).read_text()
+    )['context_gatherer']['ros__parameters']
+
+    assert 'snapshot.status < sensor_msgs::msg::NavSatStatus::STATUS_FIX' in source
+    assert 'snapshot.latitude == 0.0 && snapshot.longitude == 0.0' in source
+    assert 'snapshot.age_sec > gps_fix_max_age_sec_' in source
+    assert 'Required GPS_FIX context unavailable on ' in source
+    assert 'goal_handle->abort(result);' in source
+    assert params['gps_fix_max_age_sec'] == 5.0

@@ -5,6 +5,7 @@ context_gatherer:
     odom_topic: "/target/odometry/fused"
     pose_cov_topic: "/pose"
     gps_fix_topic: "/gps/fix"
+    gps_fix_max_age_sec: 5.0
     slam_map_topic: "/map"
     annotated_map_service_name: "/annotated_map_saver/save_map"
     annotated_map_service_timeout_sec: 10.0

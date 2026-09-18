@@ -17,6 +17,10 @@ under `/tmp/context_gatherer` by default, and returns JSON plus attachment URIs.
 | `FIND_ANYTHING` | Object-location service result |
 | `RGB360SWEEP` | Images produced by the internal `360_rgb_sweep.xml` routine |
 
+`GPS_FIX` is required to contain a current, nonzero fix with a valid receiver
+status. Missing, invalid, or older-than-`gps_fix_max_age_sec` samples abort the
+gather action with a reason that the mission coordinator publishes to the UI.
+
 ## OpenStreetMap route context
 
 `OSM_CONTEXT` is centered on the current GPS fix or the mission's geographic

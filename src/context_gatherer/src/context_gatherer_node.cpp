@@ -13,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_set>
@@ -60,6 +61,10 @@ public:
     odom_topic_ = this->declare_parameter<std::string>("odom_topic", "/target/odometry/fused");
     pose_cov_topic_ = this->declare_parameter<std::string>("pose_cov_topic", "");
     gps_fix_topic_ = this->declare_parameter<std::string>("gps_fix_topic", "/gps/fix");
+    gps_fix_max_age_sec_ = this->declare_parameter<double>("gps_fix_max_age_sec", 5.0);
+    if (!std::isfinite(gps_fix_max_age_sec_) || gps_fix_max_age_sec_ <= 0.0) {
+      throw std::invalid_argument("gps_fix_max_age_sec must be positive");
+    }
     slam_map_topic_ = this->declare_parameter<std::string>("slam_map_topic", "/map");
     annotated_map_service_name_ = this->declare_parameter<std::string>(
       "annotated_map_service_name", "/annotated_map_saver/save_map");
@@ -261,6 +266,8 @@ private:
     int status{0};
     std::string frame_id;
     int64_t stamp_sec{0};
+    double age_sec{0.0};
+    std::string unavailable_reason;
   };
 
   struct AnnotatedMapArtifacts
@@ -363,6 +370,7 @@ private:
   std::string odom_topic_;
   std::string pose_cov_topic_;
   std::string gps_fix_topic_;
+  double gps_fix_max_age_sec_;
   std::string slam_map_topic_;
   std::string annotated_map_service_name_;
   double annotated_map_service_timeout_sec_;
@@ -635,7 +643,9 @@ private:
   {
     const GpsSnapshot gps = get_latest_gps_snapshot();
     if (!gps.available) {
-      RCLCPP_WARN(get_logger(), "GPS_FIX requested but no GPS fix data available");
+      RCLCPP_WARN(
+        get_logger(), "GPS_FIX requested but unavailable: %s",
+        gps.unavailable_reason.c_str());
       return;
     }
 
@@ -1217,17 +1227,58 @@ private:
     std::lock_guard<std::mutex> lock(data_mutex_);
     GpsSnapshot snapshot;
     if (!latest_gps_fix_) {
+      snapshot.unavailable_reason = "no GPS messages received";
       return snapshot;
     }
 
-    snapshot.available = std::isfinite(latest_gps_fix_->latitude) &&
-      std::isfinite(latest_gps_fix_->longitude);
     snapshot.latitude = latest_gps_fix_->latitude;
     snapshot.longitude = latest_gps_fix_->longitude;
     snapshot.altitude = latest_gps_fix_->altitude;
     snapshot.status = latest_gps_fix_->status.status;
     snapshot.frame_id = latest_gps_fix_->header.frame_id;
     snapshot.stamp_sec = latest_gps_fix_->header.stamp.sec;
+
+    if (!std::isfinite(snapshot.latitude) || !std::isfinite(snapshot.longitude)) {
+      snapshot.unavailable_reason = "GPS coordinates are not finite";
+      return snapshot;
+    }
+    if (
+      snapshot.latitude < -90.0 || snapshot.latitude > 90.0 ||
+      snapshot.longitude < -180.0 || snapshot.longitude > 180.0)
+    {
+      snapshot.unavailable_reason = "GPS coordinates are outside valid latitude/longitude bounds";
+      return snapshot;
+    }
+    if (snapshot.status < sensor_msgs::msg::NavSatStatus::STATUS_FIX) {
+      snapshot.unavailable_reason =
+        "receiver reports no fix (status=" + std::to_string(snapshot.status) + ")";
+      return snapshot;
+    }
+    if (snapshot.latitude == 0.0 && snapshot.longitude == 0.0) {
+      snapshot.unavailable_reason = "GPS coordinates are 0,0";
+      return snapshot;
+    }
+
+    const rclcpp::Time stamp(
+      latest_gps_fix_->header.stamp, this->get_clock()->get_clock_type());
+    if (stamp.nanoseconds() == 0) {
+      snapshot.unavailable_reason = "GPS message has no timestamp";
+      return snapshot;
+    }
+    snapshot.age_sec = (this->now() - stamp).seconds();
+    if (!std::isfinite(snapshot.age_sec) || snapshot.age_sec < -1.0) {
+      snapshot.unavailable_reason = "GPS timestamp is invalid or in the future";
+      return snapshot;
+    }
+    if (snapshot.age_sec > gps_fix_max_age_sec_) {
+      std::ostringstream reason;
+      reason << "GPS sample is stale (age=" << snapshot.age_sec
+             << "s, maximum=" << gps_fix_max_age_sec_ << "s)";
+      snapshot.unavailable_reason = reason.str();
+      return snapshot;
+    }
+
+    snapshot.available = true;
     return snapshot;
   }
 
@@ -3455,6 +3506,18 @@ private:
         requirement_handlers_[req](context_json, attachment_uris);
       } else {
         RCLCPP_WARN(get_logger(), "Unknown requirement: %s", req.c_str());
+      }
+
+      if (req == "GPS_FIX" && !context_json.contains("GPS_FIX")) {
+        const GpsSnapshot gps = get_latest_gps_snapshot();
+        result->success = false;
+        result->message = "Required GPS_FIX context unavailable on " + gps_fix_topic_ +
+          ": " + gps.unavailable_reason;
+        feedback->stage = "FAILED";
+        feedback->detail = result->message;
+        goal_handle->publish_feedback(feedback);
+        goal_handle->abort(result);
+        return;
       }
     }
 
