@@ -226,6 +226,9 @@ source "${CONDA_SH}"
 conda activate "${CONDA_ENV}"
 set -u
 
+# Do not let previously sourced ROS workspaces leak into this Jazzy overlay.
+unset AMENT_PREFIX_PATH CMAKE_PREFIX_PATH COLCON_PREFIX_PATH LD_LIBRARY_PATH PYTHONPATH
+
 # Keep broken or incompatible ~/.local Python packages out of this build.
 export PYTHONNOUSERSITE=1
 export COLCON_PYTHON_EXECUTABLE="${CONDA_PREFIX}/bin/python"
