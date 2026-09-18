@@ -78,11 +78,14 @@ def test_blueboat_temperature_tree_visits_waypoints_and_cycles_probe():
         '{raise_depth_cm}',
         '{raise_depth_cm}',
     ]
+    assert {node.attrib['action_name'] for node in depths} == {
+        '/green/stepper/set_depth'
+    }
     assert {node.attrib['max_depth_cm'] for node in depths} == {'200'}
 
     temperature = root.find('.//LogTemperature')
     assert temperature is not None
-    assert temperature.attrib['service_name'] == '/read_temp'
+    assert temperature.attrib['service_name'] == '/green/read_temp'
 
     recovery = root.find('.//Fallback/ForceFailure/SetDepth')
     assert recovery is not None
