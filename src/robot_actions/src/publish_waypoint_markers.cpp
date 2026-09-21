@@ -15,6 +15,15 @@
 namespace robot_actions
 {
 
+std::string marker_frame_or_map(
+  const std::string & requested_frame,
+  const std::vector<std::string> & available_frames)
+{
+  return requested_frame == "map" ||
+         std::find(available_frames.begin(), available_frames.end(), requested_frame) !=
+         available_frames.end() ? requested_frame : "map";
+}
+
 namespace
 {
 
@@ -90,6 +99,8 @@ PublishWaypointMarkers::PublishWaypointMarkers(
   const auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
   publisher_ = node_->create_publisher<visualization_msgs::msg::MarkerArray>(marker_topic_, qos);
   from_ll_client_ = node_->create_client<FromLL>(from_ll_service_);
+  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(node_->get_clock());
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, node_, false);
 }
 
 BT::PortsList PublishWaypointMarkers::providedPorts()
@@ -221,6 +232,16 @@ void PublishWaypointMarkers::read_parameters()
     0,
     parameter_or_declare<int>(
       node_, "waypoint_marker_conversion_timeout_ms", conversion_timeout_ms_));
+  line_width_ = parameter_or_declare<double>(
+    node_, "waypoint_marker_line_width", line_width_);
+  arrow_scale_x_ = parameter_or_declare<double>(
+    node_, "waypoint_marker_arrow_scale_x", arrow_scale_x_);
+  arrow_scale_y_ = parameter_or_declare<double>(
+    node_, "waypoint_marker_arrow_scale_y", arrow_scale_y_);
+  arrow_scale_z_ = parameter_or_declare<double>(
+    node_, "waypoint_marker_arrow_scale_z", arrow_scale_z_);
+  label_height_ = parameter_or_declare<double>(
+    node_, "waypoint_marker_label_height", label_height_);
 }
 
 bool PublishWaypointMarkers::parse_cartesian_waypoint(
@@ -356,11 +377,29 @@ void PublishWaypointMarkers::publish_markers()
   clear.action = visualization_msgs::msg::Marker::DELETEALL;
   markers.markers.push_back(clear);
 
-  append_route_markers(
-    markers, map_waypoints_, map_frame_, "map", 0.10F, 0.75F, 1.00F);
-  append_route_markers(
-    markers, converted_gps_waypoints_, gps_frame_, "gps", 1.00F, 0.55F, 0.10F);
+  if (!map_waypoints_.empty()) {
+    append_route_markers(
+      markers, map_waypoints_, available_frame_or_map(map_frame_), "map", 0.10F, 0.75F, 1.00F);
+  }
+  if (!converted_gps_waypoints_.empty()) {
+    append_route_markers(
+      markers, converted_gps_waypoints_, available_frame_or_map(gps_frame_), "gps",
+      1.00F, 0.55F, 0.10F);
+  }
   publisher_->publish(markers);
+}
+
+std::string PublishWaypointMarkers::available_frame_or_map(
+  const std::string & requested_frame) const
+{
+  const auto resolved_frame = marker_frame_or_map(
+    requested_frame, tf_buffer_ ? tf_buffer_->getAllFrameNames() : std::vector<std::string>{});
+  if (resolved_frame != requested_frame) {
+    RCLCPP_WARN(
+      get_logger(), "PublishWaypointMarkers -> frame '%s' is unavailable; using 'map'.",
+      requested_frame.c_str());
+  }
+  return resolved_frame;
 }
 
 void PublishWaypointMarkers::append_route_markers(
@@ -385,7 +424,7 @@ void PublishWaypointMarkers::append_route_markers(
   line.type = visualization_msgs::msg::Marker::LINE_STRIP;
   line.action = visualization_msgs::msg::Marker::ADD;
   line.pose.orientation.w = 1.0;
-  line.scale.x = 0.08;
+  line.scale.x = line_width_;
   line.color.r = red;
   line.color.g = green;
   line.color.b = blue;
@@ -406,9 +445,9 @@ void PublishWaypointMarkers::append_route_markers(
     arrow.pose.position = route_point;
     arrow.pose.orientation.z = std::sin(waypoints[index].yaw / 2.0);
     arrow.pose.orientation.w = std::cos(waypoints[index].yaw / 2.0);
-    arrow.scale.x = 0.65;
-    arrow.scale.y = 0.18;
-    arrow.scale.z = 0.18;
+    arrow.scale.x = arrow_scale_x_;
+    arrow.scale.y = arrow_scale_y_;
+    arrow.scale.z = arrow_scale_z_;
     arrow.color.r = red;
     arrow.color.g = green;
     arrow.color.b = blue;
@@ -425,7 +464,7 @@ void PublishWaypointMarkers::append_route_markers(
     label.pose.position = waypoints[index].point;
     label.pose.position.z += 0.65;
     label.pose.orientation.w = 1.0;
-    label.scale.z = 0.35;
+    label.scale.z = label_height_;
     label.color.r = red;
     label.color.g = green;
     label.color.b = blue;

@@ -19,6 +19,7 @@ find_package(rclcpp REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(stepper_interfaces REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 
@@ -36,6 +37,7 @@ set(dependencies
   std_srvs
   sensor_msgs
   stepper_interfaces
+  tf2_ros
   cv_bridge
 )
 
@@ -86,6 +88,9 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_gps_waypoint_utils test/test_gps_waypoint_utils.cpp)
   target_link_libraries(test_gps_waypoint_utils ${PROJECT_NAME})
+
+  ament_add_gtest(test_waypoint_marker_frame test/test_waypoint_marker_frame.cpp)
+  target_link_libraries(test_waypoint_marker_frame ${PROJECT_NAME})
 endif()
 
 ament_export_dependencies(${dependencies})
