@@ -1900,8 +1900,10 @@ private:
     const std::string& post_body,
     double timeout_sec,
     std::string& response_text,
-    std::string& error_message)
+    std::string& error_message,
+    long& http_code)
   {
+    http_code = 0;
     if (!curl_ready_) {
       error_message = "libcurl is not initialized";
       return false;
@@ -1930,7 +1932,6 @@ private:
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
     const CURLcode rc = curl_easy_perform(curl);
-    long http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
@@ -1939,11 +1940,16 @@ private:
       error_message = curl_easy_strerror(rc);
       return false;
     }
+    response_text.assign(buffer.begin(), buffer.end());
     if (http_code < 200 || http_code >= 300) {
       error_message = "HTTP " + std::to_string(http_code);
+      if (!response_text.empty()) {
+        std::replace(response_text.begin(), response_text.end(), '\n', ' ');
+        std::replace(response_text.begin(), response_text.end(), '\r', ' ');
+        error_message += ": " + response_text.substr(0, 500);
+      }
       return false;
     }
-    response_text.assign(buffer.begin(), buffer.end());
     return true;
   }
 
@@ -1990,22 +1996,40 @@ private:
       if (endpoint.empty() || !attempted.insert(endpoint).second) {
         continue;
       }
-      std::string response_text;
-      std::string error_message;
-      if (!download_text_post(endpoint, post_body, overpass_timeout_sec_, response_text, error_message)) {
-        RCLCPP_WARN(
-          get_logger(), "Overpass context request to %s failed: %s",
-          endpoint.c_str(), error_message.c_str());
-        continue;
-      }
-      try {
-        json response = json::parse(response_text);
-        response["__source_endpoint"] = endpoint;
-        return response;
-      } catch (const std::exception& exc) {
-        RCLCPP_WARN(
-          get_logger(), "Failed to parse Overpass response from %s: %s",
-          endpoint.c_str(), exc.what());
+      for (int attempt = 0; attempt < 2; ++attempt) {
+        std::string response_text;
+        std::string error_message;
+        long http_code = 0;
+        // Public servers may queue for 15 s before execution; keep 5 s for transfer overhead.
+        if (!download_text_post(
+            endpoint, post_body, overpass_timeout_sec_ + 20.0,
+            response_text, error_message, http_code))
+        {
+          RCLCPP_WARN(
+            get_logger(), "Overpass context request to %s failed: %s",
+            endpoint.c_str(), error_message.c_str());
+          if (http_code == 429 && attempt == 0) {
+            std::this_thread::sleep_for(15s);
+            continue;
+          }
+          break;
+        }
+        try {
+          json response = json::parse(response_text);
+          if (response.contains("remark")) {
+            RCLCPP_WARN(
+              get_logger(), "Overpass request to %s returned an error: %s",
+              endpoint.c_str(), response["remark"].dump().c_str());
+            break;
+          }
+          response["__source_endpoint"] = endpoint;
+          return response;
+        } catch (const std::exception& exc) {
+          RCLCPP_WARN(
+            get_logger(), "Failed to parse Overpass response from %s: %s",
+            endpoint.c_str(), exc.what());
+          break;
+        }
       }
     }
     return json::object();

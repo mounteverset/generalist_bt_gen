@@ -45,6 +45,7 @@ Key parameters:
 | `waypoint_marker_topic` | Transient-local MarkerArray published by `PublishWaypointMarkers`. | `"/mission_coordinator/waypoint_markers"` |
 | `waypoint_marker_map_frame` / `waypoint_marker_gps_frame` | Default frames for Cartesian payload points and `/fromLL` results. | `"target/map"`, `"target/odom"` |
 | `waypoint_marker_from_ll_service` / `waypoint_marker_conversion_timeout_ms` | GPS conversion service and best-effort visualization timeout. | `"/fromLL"`, `2000` ms |
+| `waypoint_marker_line_width` / `waypoint_marker_arrow_scale_{x,y,z}` / `waypoint_marker_label_height` | RViz route line, arrow, and number-label sizes in meters. | `0.08`, `[0.65, 0.18, 0.18]`, `0.35` |
 | `log_temperature_service_name` / `take_photo_image_topic` / `get_current_pose_pose_topic` / `distance_traveled_odom_topic` / `get_current_pose_odom_topic` | Default service/topic names used by the respective `robot_actions` sensing nodes. `TakePicture`/`TakePhoto`, `DistanceTraveled`, and `GetCurrentPose` can override image/pose/odometry topics with input ports. | `"/log_temperature"`, `"/okvis/rgb2/image_raw"`, `"/pose"`, `"/target/odometry/fused"`, `"/target/odometry/fused"` |
 | `behavior_trees` | List of `package/subfolder` entries that contain BT XML files to pre-register. | `["bt_executor/trees"]` |
 | `status_topic` / `active_node_topic` | Topics publishing textual status + active subtree for UI/mission coordinator. | `/mission_coordinator/status_text`, `/mission_coordinator/active_subtree` |

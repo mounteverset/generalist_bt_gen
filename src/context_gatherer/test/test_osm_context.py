@@ -208,6 +208,16 @@ def test_overpass_query_requests_full_geometry_for_highway_ways():
     assert ');out geom center;' not in source
 
 
+def test_overpass_request_handles_public_server_load_shedding():
+    source = CONTEXT_GATHERER_NODE.read_text()
+
+    assert 'overpass_timeout_sec_ + 20.0' in source
+    assert 'http_code == 429' in source
+    assert 'std::this_thread::sleep_for(15s);' in source
+    assert 'response.contains("remark")' in source
+    assert 'error_message += ": " + response_text.substr(0, 500);' in source
+
+
 def test_way_geometry_fixture_builds_linear_features_with_coordinates():
     overpass = {
         'elements': [
