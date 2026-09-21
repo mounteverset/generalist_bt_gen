@@ -166,6 +166,20 @@ def validate() -> list[str]:
 
     fixture_ids = set(contexts["fixtures"])
     require(fixture_ids == set(mission_ids), "Context fixtures must match mission IDs exactly")
+    trees_by_id = {tree["id"]: tree for tree in runtime["tree_catalogue"]}
+    for mission in missions:
+        mission_id = mission["id"]
+        tree_id = mission["expected"]["tree_id"]
+        require(tree_id in trees_by_id, f"{mission_id}: expected tree is absent from the runtime catalogue")
+        expected_context = trees_by_id[tree_id].get("context_requirements", [])
+        require(
+            mission["requirements"]["required_context"] == expected_context,
+            f"{mission_id}: required context differs from {tree_id}",
+        )
+        require(
+            contexts["fixtures"][mission_id]["available_context"] == expected_context,
+            f"{mission_id}: available context differs from {tree_id}",
+        )
     common_rubric_ids = set(scoring["common_elements"])
     require(
         set(scoring["common_semantic_scale"]) == {"0", "1", "2"},
@@ -218,11 +232,14 @@ def validate() -> list[str]:
     require(
         execution_scoring["primary_trial_plan"]
         == {
-            "mission_ids": ["S1", "S2"],
-            "evidence_level": "simulation",
+            "mission_ids": ["S1", "S2", "S3", "M1", "M2", "M3", "C1", "C2", "C3"],
+            "evidence_level": "physical",
             "repetitions_per_mission": 3,
-            "planned_trials": 6,
-            "physical_trials": "Supplementary and reported separately.",
+            "planned_trials": 27,
+            "planning_method": "M3",
+            "planning_model": "gpt-5.6-sol",
+            "planning_paraphrase": "P2",
+            "simulation_trials": "Excluded from the primary result.",
         },
         "E5 primary trial plan differs from the thesis protocol",
     )
@@ -239,6 +256,48 @@ def validate() -> list[str]:
                 "platform": "blueboat",
                 "required_waypoints": 1,
                 "required_measurements": 1,
+                "required_photos": 0,
+            },
+            "S3": {
+                "platform": "husky",
+                "required_waypoints": 3,
+                "required_measurements": 3,
+                "required_photos": 0,
+            },
+            "M1": {
+                "platform": "husky",
+                "required_waypoints": 3,
+                "required_measurements": 0,
+                "required_photos": 4,
+            },
+            "M2": {
+                "platform": "blueboat",
+                "required_waypoints": 4,
+                "required_measurements": 4,
+                "required_photos": 0,
+            },
+            "M3": {
+                "platform": "husky",
+                "required_waypoints": 3,
+                "required_measurements": 3,
+                "required_photos": 0,
+            },
+            "C1": {
+                "platform": "husky",
+                "required_waypoints": 8,
+                "required_measurements": 0,
+                "required_photos": 0,
+            },
+            "C2": {
+                "platform": "husky",
+                "required_waypoints": 381,
+                "required_measurements": 381,
+                "required_photos": 0,
+            },
+            "C3": {
+                "platform": "husky",
+                "required_waypoints": 5,
+                "required_measurements": 0,
                 "required_photos": 0,
             },
         },
@@ -283,6 +342,16 @@ def validate() -> list[str]:
         require(bool(mission["expected"]["tree_id"]), f"{mission_id}: expected tree is missing")
         payload = mission["expected"]["canonical_payload"]
         require(isinstance(payload, dict) and payload, f"{mission_id}: canonical payload is empty")
+        contract = trees_by_id[mission["expected"]["tree_id"]].get("blackboard_contract", {})
+        required_keys = {key for key, value in contract.items() if value.get("required")}
+        require(
+            required_keys <= set(payload),
+            f"{mission_id}: canonical payload misses required keys {sorted(required_keys - set(payload))}",
+        )
+        require(
+            set(payload) <= set(contract),
+            f"{mission_id}: canonical payload contains unknown keys {sorted(set(payload) - set(contract))}",
+        )
         if mission["platform"] == "blueboat":
             require("gps_waypoints" in payload and "waypoints" not in payload, f"{mission_id}: BlueBoat requires GPS waypoints")
         if "gps_waypoints" in payload:
@@ -292,6 +361,12 @@ def validate() -> list[str]:
         else:
             require("waypoints" in payload, f"{mission_id}: canonical payload needs waypoints")
             reference_routes[mission_id] = parse_waypoints(payload["waypoints"], mission_id)
+        if mission_id in {"S1", "S2", "S3", "M2"}:
+            route = payload.get("gps_waypoints", payload.get("waypoints"))
+            require(
+                all(route in item["text"] for item in paraphrases),
+                f"{mission_id}: every paraphrase must state the exact supplied coordinates",
+            )
         require(set(mission["semantic_rubric_elements"]).issubset(common_rubric_ids), f"{mission_id}: unknown semantic rubric element")
         require(len(mission["reference_behavior"]) >= 1, f"{mission_id}: reference behavior is empty")
 
@@ -303,24 +378,31 @@ def validate() -> list[str]:
                 require("blocking_requirement" in mission, f"{mission_id}: blocked mission needs blocking requirement")
 
     fixture_data = contexts["fixtures"]
-
-    # Validate canonical route coordinates against the fixed context, not only syntax.
-    for mission_id, point_id in (("S1", "P1"), ("S2", "W1")):
-        expected_point = fixture_data[mission_id]["named_points"][point_id]
-        actual = reference_routes[mission_id][0]
-        require(all(abs(a - b) < 0.001 for a, b in zip(actual, (expected_point["x"], expected_point["y"], expected_point["yaw"]))), f"{mission_id}: canonical point differs from context")
-
-    for mission_id, order_key in (("S3", "route_order"), ("M2", "route_order")):
-        expected_route = [
-            (
-                fixture_data[mission_id]["named_points"][point_id]["x"],
-                fixture_data[mission_id]["named_points"][point_id]["y"],
-                fixture_data[mission_id]["named_points"][point_id]["yaw"],
-            )
-            for point_id in fixture_data[mission_id][order_key]
-        ]
-        actual_route = reference_routes[mission_id]
-        require(len(actual_route) == len(expected_route) and all(abs(a - b) < 0.001 for actual, expected in zip(actual_route, expected_route) for a, b in zip(actual, expected)), f"{mission_id}: canonical route differs from named-point context")
+    default_gps = (48.284180, 11.608129)
+    for mission_id, context in fixture_data.items():
+        if "GPS_FIX" not in context["available_context"]:
+            continue
+        gps_fix = context.get("gps_fix", {})
+        require(
+            abs(gps_fix.get("latitude", math.inf) - default_gps[0]) < 1e-9
+            and abs(gps_fix.get("longitude", math.inf) - default_gps[1]) < 1e-9,
+            f"{mission_id}: GPS_FIX must use the frozen Hollerner Lake default",
+        )
+    c2_osm = fixture_data["C2"]["osm_context"]
+    require(
+        c2_osm.get("provider") == "overpass"
+        and c2_osm.get("source_endpoint") == "https://overpass-api.de/api/interpreter"
+        and c2_osm.get("center") == {"lat": default_gps[0], "lon": default_gps[1]}
+        and c2_osm.get("radius_m") == 1200.0,
+        "C2: OSM context must use the context gatherer's Hollerner Lake request",
+    )
+    require(
+        c2_osm.get("feature_counts", {}).get("linear") == len(c2_osm.get("linear_features", []))
+        and c2_osm.get("feature_counts", {}).get("point") == len(c2_osm.get("point_features", []))
+        and c2_osm.get("feature_counts", {}).get("area") == len(c2_osm.get("area_features", []))
+        and any(area.get("name") == "Hollerner See" for area in c2_osm.get("area_features", [])),
+        "C2: OSM context is incomplete or does not contain Hollerner See",
+    )
 
     m1_expected = [
         (point["x"], point["y"], point["yaw"])

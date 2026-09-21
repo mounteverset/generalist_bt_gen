@@ -82,15 +82,14 @@ The coordinator reads metadata to decide:
 | `gps_temperature_logging.xml` | Selectable | `gps_waypoints`, plus optional `logfile_path` | `MoveToGPS`, `LogTemperature` |
 | `navigate_and_photograph.xml` | Selectable | `waypoints`: map-frame `x,y,yaw` | `MoveTo`, `DistanceTraveled`, `TakePhoto` |
 | `find_and_drive_to_nearest_object.xml` | Selectable | FindAnything-derived map-frame `waypoints` | `ParseWaypoints`, `MoveTo` |
-| `explore_area.xml` | Selectable | geographic `gps_waypoints`, plus optional `area_polygon_geo` and `frontiers_geo` | `ParseGpsWaypoints`, `MoveToGPS` |
+| `explore_area.xml` | Selectable | map-frame `waypoints`, plus optional `area_polygon` and `frontiers` | `ParseWaypoints`, `MoveTo` |
 | `360_rgb_sweep.xml` | Internal context routine | current pose plus camera/output options | `GetCurrentPose`, `MoveTo`, `TakePhoto` |
 
 Map-frame routes and geographic routes deliberately use different blackboard
 keys and parsers. The generic `waypoints` contract rejects latitude/longitude so
-geographic values cannot be silently sent to `NavigateToPose`. The geographic
-trees—including `explore_area.xml`—preserve latitude/longitude in
-`gps_waypoints`; `ParseGpsWaypoints` validates each point and `MoveToGPS` sends
-it to Nav2 `FollowGPSWaypoints`.
+geographic values cannot be silently sent to `NavigateToPose`. Geographic trees
+preserve latitude/longitude in `gps_waypoints`; `ParseGpsWaypoints` validates
+each point and `MoveToGPS` sends it to Nav2 `FollowGPSWaypoints`.
 
 `GeneralistBehaviorTreeServer::onTreeCreated` sets:
 

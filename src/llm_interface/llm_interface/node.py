@@ -1157,7 +1157,12 @@ class LLMInterfaceNode(Node):
     def _coerce_payload_to_contract(self, payload: dict, contract: dict) -> dict:
         if not isinstance(payload, dict) or not isinstance(contract, dict):
             return payload
-        coerced = dict(payload)
+        coerced = {
+            key: spec['default']
+            for key, spec in contract.items()
+            if isinstance(spec, dict) and 'default' in spec
+        }
+        coerced.update(payload)
         waypoints_spec = contract.get('waypoints')
         if isinstance(waypoints_spec, dict):
             converted = self._coerce_waypoints_field(coerced)

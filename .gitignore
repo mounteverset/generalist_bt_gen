@@ -23,3 +23,5 @@ evaluation/run_log.jsonl
 .env
 evaluation/.venv_btgenbot312/**
 evaluation/EXECUTION_STATUS.md
+evaluation/Eching/**
+evaluation/Hollern/**

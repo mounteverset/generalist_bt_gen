@@ -761,8 +761,6 @@ def score_xml_against_mission(
             "frontiers",
             "area_polygon_geo",
             "frontiers_geo",
-            "return_home_on_low_battery",
-            "min_battery_percent",
             "exploration_strategy",
         ):
             continue

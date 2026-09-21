@@ -42,6 +42,18 @@ def mission(mission_id: str):
     return next(item for item in CORE["missions"] if item["id"] == mission_id)
 
 
+def test_core_context_declarations_match_selected_tree_requirements():
+    trees = {tree["id"]: tree for tree in RUNTIME["tree_catalogue"]}
+    for selected in CORE["missions"]:
+        required = trees[selected["expected"]["tree_id"]]["context_requirements"]
+        assert selected["requirements"]["required_context"] == required
+        assert CONTEXTS["fixtures"][selected["id"]]["available_context"] == required
+        contract = trees[selected["expected"]["tree_id"]]["blackboard_contract"]
+        payload = selected["expected"]["canonical_payload"]
+        assert {key for key, value in contract.items() if value.get("required")} <= set(payload)
+        assert set(payload) <= set(contract)
+
+
 def test_runtime_contract_contains_current_tree_catalogue():
     assert {tree["id"] for tree in RUNTIME["tree_catalogue"]} == {
         "temperature_logging.xml",
@@ -108,8 +120,7 @@ def test_m1_and_m2_receive_the_same_concrete_context():
     context = CONTEXTS["fixtures"]["S1"]
     _, m1_user = build_m1_prompt(selected, paraphrase, context, RUNTIME)
     m2_task, m2_actions = build_m2_prompt(selected, paraphrase, context, RUNTIME)
-    assert '"P1"' in m1_user and '"P1"' in m2_task
-    assert '"x": 10.0' in m1_user and '"x": 10.0' in m2_task
+    assert "10.0,5.0,0.0" in m1_user and "10.0,5.0,0.0" in m2_task
     assert m2_actions.startswith("[MoveTo(")
     assert m2_actions.endswith("]")
 
@@ -266,11 +277,11 @@ def test_shared_payload_validator_checks_current_contract():
         tree for tree in RUNTIME["tree_catalogue"] if tree["id"] == "explore_area.xml"
     )
     errors = generated_payload_errors(
-        {"waypoints": "1.0,2.0,0.0", "frontiers": "1.0,2.0,0.0"},
+        {"gps_waypoints": "48.0,11.0,0.0"},
         tree["blackboard_contract"],
         {},
     )
-    assert "missing required key 'gps_waypoints'" in errors
+    assert "missing required key 'waypoints'" in errors
 
 
 def test_m3_payload_parser_rejects_nonproduction_status_wrapper():

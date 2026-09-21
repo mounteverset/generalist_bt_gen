@@ -25,7 +25,7 @@
     "tree_or_structure": "M3 selects the expected compatible tree; M1 and M2 provide behaviorally suitable control flow.",
     "spatial_plan": "Points, route, frame, units, and ordering are valid for the supplied context.",
     "sensing": "The requested sensing action, interval, and output behavior are represented.",
-    "constraints": "All explicit boundary, distance, battery, exclusion, and duration constraints are respected.",
+    "constraints": "All explicit boundary, distance, exclusion, and duration constraints are respected.",
     "completeness": "No required mission phase is silently omitted.",
     "failure_quality": "A clarification identifies the missing or conflicting information, or a refusal identifies the unavailable capability or unsafe condition given in the case reference."
   },

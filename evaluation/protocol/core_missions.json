@@ -2,8 +2,8 @@
   "dataset_version": "0.4.0-draft",
   "freeze_status": "draft",
   "source_snapshot": {
-    "repository_commit": "c6f1041007552959375490cd39c3f72213f635e4",
-    "tree_metadata_sha256": "2e911e99a7f321fe0c89a9aacddfd2fed51db92560d9e4c680e02d753ae24c9a",
+    "repository_commit": "3231c333d3b38fcb47f598651524c2cf955b7936",
+    "tree_metadata_sha256": "64c6a43154061fc5f3e37faf25a8ee79405117229dbdf853f5d9d125eb045921",
     "system_description_sha256": "395e58012cc12a450ef80ac55abe3938f9ccac04e54cec749e3a05e68bac92d4",
     "blueboat_system_description_sha256": "965f2f7b911eda7c56fe51416a1ebf535e6d21e8a1939550c22008369b9cdead",
     "bt_node_manifest_sha256": "b415d69acee662f8e6c7023957434c62c456d45f99cae67c43e06f16a11c3541"
@@ -49,17 +49,17 @@
       "paraphrases": [
         {
           "id": "S1-P1",
-          "text": "Log one temperature reading at P1 with the Husky.",
+          "text": "With the Husky, navigate to map-frame waypoint x,y,yaw = 10.0,5.0,0.0 and log one temperature reading after arrival.",
           "specificity": "low"
         },
         {
           "id": "S1-P2",
-          "text": "Drive the Husky to the supplied inspection point P1 and log one temperature reading after arrival.",
+          "text": "Drive the Husky to the exact supplied map-frame waypoint x,y,yaw = 10.0,5.0,0.0 and log one temperature reading after arrival.",
           "specificity": "medium"
         },
         {
           "id": "S1-P3",
-          "text": "Use the supplied map-frame location of inspection point P1 to navigate the Husky there. After reaching P1, take and log one temperature reading; do not substitute another location.",
+          "text": "Use the supplied map-frame waypoint x,y,yaw = 10.0,5.0,0.0 to navigate the Husky. After reaching that exact pose, take and log one temperature reading; do not substitute another location.",
           "specificity": "high"
         }
       ],
@@ -77,13 +77,16 @@
         ],
         "required_context": [
           "ROBOT_POSE",
-          "NAMED_POINTS"
+          "GPS_FIX",
+          "ANNOTATED_SLAM_MAP_IMAGE",
+          "OSM_CONTEXT",
+          "SATELLITE_MAP"
         ],
         "constraints": [
-          "Use point P1 in the map frame."
+          "Use the exact map-frame waypoint 10.0,5.0,0.0."
         ],
         "forbidden_assumptions": [
-          "Do not replace P1 with a guessed location."
+          "Do not replace the supplied waypoint with a guessed location."
         ]
       },
       "expected": {
@@ -93,11 +96,11 @@
           "waypoints": "10.0,5.0,0.0",
           "logfile_path": "/tmp/evaluation/S1_temperature.txt"
         },
-        "equivalent_output_rule": "One map-frame waypoint at P1 and one temperature log action is acceptable."
+        "equivalent_output_rule": "One map-frame waypoint at 10.0,5.0,0.0 and one temperature log action is acceptable."
       },
       "reference_behavior": [
         "Parse or otherwise represent the supplied point.",
-        "Navigate to P1.",
+        "Navigate to 10.0,5.0,0.0 in the map frame.",
         "Log one temperature measurement after arrival."
       ],
       "semantic_rubric_elements": [
@@ -107,8 +110,7 @@
         "spatial_plan",
         "sensing",
         "completeness"
-      ],
-      "execution_subset_candidate": true
+      ]
     },
     {
       "id": "S2",
@@ -131,17 +133,17 @@
       "paraphrases": [
         {
           "id": "S2-P1",
-          "text": "Log one water-temperature reading at W1 with the BlueBoat.",
+          "text": "With the BlueBoat, navigate to WGS84 latitude,longitude,yaw = 48.284224915764,11.608196498199,0 and log one water-temperature reading after arrival.",
           "specificity": "low"
         },
         {
           "id": "S2-P2",
-          "text": "Sail the BlueBoat to the supplied water station W1 and log one water-temperature reading after arrival.",
+          "text": "Sail the BlueBoat to the exact supplied WGS84 waypoint latitude,longitude,yaw = 48.284224915764,11.608196498199,0 and log one water-temperature reading after arrival.",
           "specificity": "medium"
         },
         {
           "id": "S2-P3",
-          "text": "Use the supplied chart location of water station W1 to navigate the BlueBoat there. After reaching W1, take and log one water-temperature reading at that station.",
+          "text": "Use the supplied WGS84 waypoint latitude,longitude,yaw = 48.284224915764,11.608196498199,0 to navigate the BlueBoat. After reaching that exact waypoint, take and log one water-temperature reading.",
           "specificity": "high"
         }
       ],
@@ -161,10 +163,10 @@
         ],
         "required_context": [
           "GPS_FIX",
-          "NAMED_POINTS"
+          "SATELLITE_MAP"
         ],
         "constraints": [
-          "Convert water station W1 from the supplied map frame to WGS84."
+          "Use the exact supplied WGS84 waypoint 48.284224915764,11.608196498199,0."
         ],
         "forbidden_assumptions": [
           "Do not use the Husky ground tree or its navigation action name."
@@ -175,14 +177,14 @@
         "tree_id": "blueboat_temperature_logging.xml",
         "canonical_payload": {
           "logfile_path": "/tmp/evaluation/S2_water_temperature.txt",
-          "gps_waypoints": "48.150044915764,11.570067321529,0"
+          "gps_waypoints": "48.284224915764,11.608196498199,0"
         },
-        "equivalent_output_rule": "One WGS84 waypoint corresponding to W1 and one water-temperature log action is acceptable."
+        "equivalent_output_rule": "The supplied WGS84 waypoint and one water-temperature log action are required."
       },
       "reference_behavior": [
-        "Convert the supplied synthetic east/north map route to WGS84 using map_origin_wgs84; provide gps_waypoints to the BlueBoat tree.",
+        "Provide the supplied WGS84 waypoint as gps_waypoints to the BlueBoat tree.",
         "Use the BlueBoat navigation interface.",
-        "Navigate to W1.",
+        "Navigate to 48.284224915764,11.608196498199,0.",
         "Log one water-temperature measurement after arrival."
       ],
       "semantic_rubric_elements": [
@@ -192,8 +194,7 @@
         "spatial_plan",
         "sensing",
         "completeness"
-      ],
-      "execution_subset_candidate": true
+      ]
     },
     {
       "id": "S3",
@@ -216,17 +217,17 @@
       "paraphrases": [
         {
           "id": "S3-P1",
-          "text": "Follow the supplied Husky route in order and log one temperature reading at each point.",
+          "text": "With the Husky, follow the map-frame x,y,yaw route 5.0,0.0,0.0; 10.0,0.0,0.0; 10.0,5.0,1.57 in order and log one temperature reading after arrival at each waypoint.",
           "specificity": "low"
         },
         {
           "id": "S3-P2",
-          "text": "Drive the Husky to G1, G2, and G3 in that order, logging one temperature reading after arrival at each point.",
+          "text": "Drive the Husky through the supplied map-frame x,y,yaw route 5.0,0.0,0.0; 10.0,0.0,0.0; 10.0,5.0,1.57 in that order, logging one temperature reading after arrival at each waypoint.",
           "specificity": "medium"
         },
         {
           "id": "S3-P3",
-          "text": "Use the supplied map-frame locations to drive the Husky first to G1, then G2, and finally G3. After reaching each point, take and log one temperature reading before continuing; preserve all three locations and their order.",
+          "text": "Use the supplied map-frame x,y,yaw route 5.0,0.0,0.0; 10.0,0.0,0.0; 10.0,5.0,1.57. Drive the Husky through all three waypoints in that order. After reaching each waypoint, take and log one temperature reading before continuing; preserve every coordinate and the route order.",
           "specificity": "high"
         }
       ],
@@ -243,10 +244,14 @@
           "payload.parse_waypoints"
         ],
         "required_context": [
-          "NAMED_POINTS"
+          "ROBOT_POSE",
+          "GPS_FIX",
+          "ANNOTATED_SLAM_MAP_IMAGE",
+          "OSM_CONTEXT",
+          "SATELLITE_MAP"
         ],
         "constraints": [
-          "Preserve the order G1, G2, G3."
+          "Preserve the supplied coordinate order."
         ],
         "forbidden_assumptions": [
           "Do not omit a supplied point or reorder the route."
@@ -274,8 +279,7 @@
         "sensing",
         "constraints",
         "completeness"
-      ],
-      "execution_subset_candidate": false
+      ]
     },
     {
       "id": "M1",
@@ -325,9 +329,8 @@
           "localization.odometry"
         ],
         "required_context": [
-          "ROUTE_DEFINITION",
-          "RGB_IMAGE",
-          "ROBOT_POSE"
+          "ROBOT_POSE",
+          "GPS_FIX"
         ],
         "constraints": [
           "Follow R1 in order.",
@@ -366,8 +369,7 @@
         "sensing",
         "constraints",
         "completeness"
-      ],
-      "execution_subset_candidate": true
+      ]
     },
     {
       "id": "M2",
@@ -390,17 +392,17 @@
       "paraphrases": [
         {
           "id": "M2-P1",
-          "text": "Follow the supplied BlueBoat station route in order, logging one water-temperature reading at every station within the water geofence.",
+          "text": "With the BlueBoat, follow the WGS84 latitude,longitude,yaw route 48.284224915764,11.608263996398,0; 48.284224915764,11.608533989194,0; 48.284269831528,11.608803981989,0.24; 48.284269831528,11.609073974785,0 in order, remain inside the supplied water geofence, and log one water-temperature reading after arrival at each waypoint.",
           "specificity": "low"
         },
         {
           "id": "M2-P2",
-          "text": "Sail the BlueBoat to B1, B2, B3, and B4 in that order, staying inside the supplied water geofence and logging one water-temperature reading after each arrival.",
+          "text": "Sail the BlueBoat through the supplied WGS84 latitude,longitude,yaw route 48.284224915764,11.608263996398,0; 48.284224915764,11.608533989194,0; 48.284269831528,11.608803981989,0.24; 48.284269831528,11.609073974785,0 in that order, staying inside the supplied water geofence and logging one water-temperature reading after each arrival.",
           "specificity": "medium"
         },
         {
           "id": "M2-P3",
-          "text": "Use the supplied station locations to navigate the BlueBoat first to B1, then B2, B3, and B4. Keep the route inside the water geofence and take and log one water-temperature reading after reaching each station; do not omit or reorder stations.",
+          "text": "Use the supplied WGS84 latitude,longitude,yaw route 48.284224915764,11.608263996398,0; 48.284224915764,11.608533989194,0; 48.284269831528,11.608803981989,0.24; 48.284269831528,11.609073974785,0. Navigate the BlueBoat through all four waypoints in that order, keep the route inside the water geofence, and log one water-temperature reading after reaching each waypoint; do not omit or reorder coordinates.",
           "specificity": "high"
         }
       ],
@@ -420,11 +422,10 @@
         ],
         "required_context": [
           "GPS_FIX",
-          "NAMED_POINTS",
-          "WATER_GEOFENCE"
+          "SATELLITE_MAP"
         ],
         "constraints": [
-          "Preserve B1–B4 order.",
+          "Preserve the supplied WGS84 coordinate order.",
           "Remain inside the water geofence.",
           "Log at every station."
         ],
@@ -437,14 +438,14 @@
         "tree_id": "blueboat_temperature_logging.xml",
         "canonical_payload": {
           "logfile_path": "/tmp/evaluation/M2_water_temperature.txt",
-          "gps_waypoints": "48.150044915764,11.570134643059,0; 48.150044915764,11.570403929176,0; 48.150089831528,11.570673215293,0.24; 48.150089831528,11.570942501411,0"
+          "gps_waypoints": "48.284224915764,11.608263996398,0; 48.284224915764,11.608533989194,0; 48.284269831528,11.608803981989,0.24; 48.284269831528,11.609073974785,0"
         },
         "equivalent_output_rule": "The supplied coordinates and station order must be preserved."
       },
       "reference_behavior": [
-        "Convert the supplied synthetic east/north map route to WGS84 using map_origin_wgs84; provide gps_waypoints to the BlueBoat tree.",
+        "Provide the supplied WGS84 route as gps_waypoints to the BlueBoat tree.",
         "Use the BlueBoat navigation interface.",
-        "Visit B1 through B4 in order within the water geofence.",
+        "Visit all four supplied WGS84 waypoints in order within the water geofence.",
         "Log water temperature after each arrival."
       ],
       "semantic_rubric_elements": [
@@ -455,8 +456,7 @@
         "sensing",
         "constraints",
         "completeness"
-      ],
-      "execution_subset_candidate": false
+      ]
     },
     {
       "id": "M3",
@@ -544,8 +544,7 @@
         "sensing",
         "constraints",
         "completeness"
-      ],
-      "execution_subset_candidate": false
+      ]
     },
     {
       "id": "C1",
@@ -563,22 +562,22 @@
           "spatial_reasoning": 2
         },
         "total": 8,
-        "rationale": "Coverage waypoints must be derived from a field polygon while respecting obstacles, boundary margin, and battery admission."
+        "rationale": "Coverage waypoints must be derived from a field polygon while respecting obstacles and the boundary margin."
       },
       "paraphrases": [
         {
           "id": "C1-P1",
-          "text": "Cover the marked field with the Husky, respecting the supplied boundary margin, blocked patch, and minimum starting battery.",
+          "text": "Cover the marked field with the Husky, respecting the supplied boundary margin and blocked patch.",
           "specificity": "low"
         },
         {
           "id": "C1-P2",
-          "text": "Plan a Husky coverage route across the marked field, keeping at least 2 metres inside its boundary and avoiding the blocked patch. Start only with at least 20 percent battery.",
+          "text": "Plan a Husky coverage route across the marked field, keeping at least 2 metres inside its boundary and avoiding the blocked patch.",
           "specificity": "medium"
         },
         {
           "id": "C1-P3",
-          "text": "Check that the Husky has at least 20 percent battery before approving the mission. Derive a fixed coverage route across the marked field using map-frame waypoints. Keep every route segment at least 2 metres inside the field boundary and outside the mapped blocked patch, then follow the planned route.",
+          "text": "Derive a fixed coverage route across the marked field using map-frame waypoints. Keep every route segment at least 2 metres inside the field boundary and outside the mapped blocked patch, then follow the planned route.",
           "specificity": "high"
         }
       ],
@@ -598,14 +597,14 @@
         "required_context": [
           "ROBOT_POSE",
           "ANNOTATED_SLAM_MAP_IMAGE",
+          "GPS_FIX",
           "OSM_CONTEXT",
-          "BATTERY_STATE"
+          "SATELLITE_MAP"
         ],
         "constraints": [
           "Remain inside the field polygon.",
           "Keep a 2 m boundary margin.",
           "Avoid the blocked patch.",
-          "Do not start below 20% battery.",
           "Use map-frame waypoints."
         ],
         "forbidden_assumptions": [
@@ -619,15 +618,11 @@
           "waypoints": "3.0,3.0,0.0; 27.0,3.0,0.0; 27.0,7.0,3.14; 3.0,7.0,3.14; 3.0,15.0,0.0; 27.0,15.0,0.0; 27.0,18.0,3.14; 3.0,18.0,3.14",
           "area_polygon": "0.0,0.0; 30.0,0.0; 30.0,20.0; 0.0,20.0",
           "frontiers": "3.0,3.0,0.0; 27.0,3.0,0.0; 27.0,7.0,3.14; 3.0,7.0,3.14; 3.0,15.0,0.0; 27.0,15.0,0.0; 27.0,18.0,3.14; 3.0,18.0,3.14",
-          "exploration_strategy": "coverage_waypoints",
-          "min_battery_percent": 20.0,
-          "return_home_on_low_battery": true
+          "exploration_strategy": "coverage_waypoints"
         },
-        "equivalent_output_rule": "An alternate route is acceptable if every segment stays in the inset polygon, avoids the blocked patch, and provides comparable field coverage.",
-        "safety_note": "Battery is an admission/review condition. The current XML does not implement a runtime low-battery or return-home guard."
+        "equivalent_output_rule": "An alternate route is acceptable if every segment stays in the inset polygon, avoids the blocked patch, and provides comparable field coverage."
       },
       "reference_behavior": [
-        "Check the current battery against the 20% admission threshold before approval.",
         "Derive a coverage route in the map frame.",
         "Keep route segments inside the inset boundary and outside the blocked patch.",
         "Execute the fixed route; do not claim online frontier computation."
@@ -639,8 +634,7 @@
         "spatial_plan",
         "constraints",
         "completeness"
-      ],
-      "execution_subset_candidate": true
+      ]
     },
     {
       "id": "C2",
@@ -697,7 +691,8 @@
         "required_context": [
           "ROBOT_POSE",
           "GPS_FIX",
-          "OSM_CONTEXT"
+          "OSM_CONTEXT",
+          "SATELLITE_MAP"
         ],
         "constraints": [
           "Form a complete route around Hollerner See from connected OSM path geometry.",
@@ -733,8 +728,7 @@
         "sensing",
         "constraints",
         "completeness"
-      ],
-      "execution_subset_candidate": false
+      ]
     },
     {
       "id": "C3",
@@ -788,6 +782,7 @@
         ],
         "required_context": [
           "ROBOT_POSE",
+          "ANNOTATED_SLAM_MAP_IMAGE",
           "FIND_ANYTHING"
         ],
         "constraints": [
@@ -823,8 +818,7 @@
         "spatial_plan",
         "constraints",
         "completeness"
-      ],
-      "execution_subset_candidate": true
+      ]
     }
   ]
 }

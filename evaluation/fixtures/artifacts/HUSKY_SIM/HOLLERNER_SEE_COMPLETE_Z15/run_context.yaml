@@ -1,0 +1,63 @@
+artifact_status: provisional_simulation_fixture
+captured_at: 2026-09-20T22:09:11+02:00
+platform: Clearpath Husky A200
+platform_id: a200_0000
+session_id: HUSKY_HOLLERNEr_SEE_COMPLETE
+component: context_gatherer
+action: /context_gatherer/gather
+requirement: SATELLITE_MAP
+mission_text: Navigate around and inspect the complete Hollerner See mission area
+request:
+  center:
+    latitude: 48.284180
+    longitude: 11.608129
+  robot_location:
+    latitude: 48.284180
+    longitude: 11.608129
+    label: Husky
+  maptiler_api_mode: tiles
+  zoom: dynamic
+provider:
+  name: MapTiler
+  style_id: satellite-v2
+  endpoint: "https://api.maptiler.com/tiles/{style_id}/{z}/{x}/{y}?key=REDACTED"
+planner:
+  mode: dynamic
+  artifact_count: 5
+  overview_zoom: 15
+  detail_zoom: 18
+  overview_tile_bounds:
+    x: [17438, 17442]
+    y: [11350, 11354]
+overview:
+  bounds:
+    north: 48.29781249243716
+    south: 48.26125565204098
+    east: 11.634521484375
+    west: 11.57958984375
+  width_px: 2560
+  height_px: 2560
+  meters_per_px: 1.5878653679268415
+  overlays:
+    - lat_lon_grid
+    - points_of_interest
+    - robot_location
+    - scale_bar
+    - header
+files:
+  overview_source.png:
+    sha256: a247918bdde4eb9ea4648316c560d088685977b7a814e332ddceeb0161c9da45
+  overview.png:
+    sha256: 53db0821938a5267b9f3097cf12a4ed576f6fb8ce8784c6a01806cd5b7ccfa92
+  overview.json:
+    sha256: 41e3e0011a508f5b3e0175091009ccb222a0dd21c509565e48f6334c1463bbac
+  detail_start.png:
+    sha256: d7ea48a744f58564ca616ac9f9caff6882fbd10fee41b0e82e8f06cb09525c53
+  detail_route_1.png:
+    sha256: d7ea48a744f58564ca616ac9f9caff6882fbd10fee41b0e82e8f06cb09525c53
+  detail_route_2.png:
+    sha256: d7ea48a744f58564ca616ac9f9caff6882fbd10fee41b0e82e8f06cb09525c53
+  detail_route_3.png:
+    sha256: d7ea48a744f58564ca616ac9f9caff6882fbd10fee41b0e82e8f06cb09525c53
+observation: The four detail images are byte-identical because the current center resolver prioritizes robot_location over each planned detail center.
+primary_e5_evidence: false

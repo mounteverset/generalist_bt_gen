@@ -1,0 +1,35 @@
+artifact_status: provisional_simulation_fixture
+captured_at: 2026-09-20T21:58:04+02:00
+platform: Clearpath Husky A200
+platform_id: a200_0000
+simulation_world: solar_farm
+gps_reference:
+  latitude: 48.284180
+  longitude: 11.608129
+slam_map_topic: /a200_0000/map
+map_saver_service: /annotated_map_saver/save_map
+service_request:
+  map_topic: /a200_0000/map
+  map_url: /tmp/context_gatherer/husky_sim_annotated_slam_map.yaml
+  image_format: png
+  map_mode: trinary
+  free_thresh: 0.25
+  occupied_thresh: 0.65
+map:
+  frame: map
+  width_cells: 489
+  height_cells: 708
+  resolution_m_per_cell: 0.05
+  origin: [-12.4527, -15.9394, 0.0]
+robot_pose: [0.0, 0.01, 0.0]
+files:
+  annotated_slam_map.png:
+    sha256: d3f1253e81d816d0555213bca6cc69feb90fedc7501002fae7508d6abb1ba3bb
+  annotated_slam_map.yaml:
+    sha256: 6f2e3e7a3741f77327617154a82d43014e3e7f42a6b111f71ca799c66ff42952
+ros_packages:
+  ros-jazzy-controller-manager: 4.48.0-1noble.20260905.073118
+  ros-jazzy-joy-linux: 3.3.0-3noble.20260903.065655
+  ros-jazzy-nav2-lifecycle-manager: 1.3.13-1noble.20260903.024931
+  ros-jazzy-robot-localization: 3.8.3-1noble.20260903.023731
+primary_e5_evidence: false

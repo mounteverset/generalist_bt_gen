@@ -1,0 +1,48 @@
+artifact_status: provisional_simulation_fixture
+captured_at: 2026-09-20T22:04:48+02:00
+platform: Clearpath Husky A200
+platform_id: a200_0000
+session_id: HUSKY_SIM_satellite
+component: context_gatherer
+action: /context_gatherer/gather
+requirement: SATELLITE_MAP
+request:
+  center:
+    latitude: 48.284180
+    longitude: 11.608129
+  robot_location:
+    latitude: 48.284180
+    longitude: 11.608129
+    label: Husky
+  zoom: 18
+  tile_radius: 1
+  maptiler_api_mode: tiles
+provider:
+  name: MapTiler
+  style_id: satellite-v2
+  endpoint: "https://api.maptiler.com/tiles/{style_id}/{z}/{x}/{y}?key=REDACTED"
+tile_bounds:
+  x: [139523, 139525]
+  y: [90813, 90815]
+map_bounds:
+  north: 48.285934388727256
+  south: 48.28319289548348
+  east: 11.60980224609375
+  west: 11.605682373046875
+image:
+  width_px: 1536
+  height_px: 1536
+  meters_per_px: 0.19846363294466926
+overlays:
+  - lat_lon_grid
+  - robot_location
+  - scale_bar
+  - header
+files:
+  satellite_map_source.png:
+    sha256: 85b7ce67a6e1571fa05ca3f7ff033d7496bff77aaa22751c78868c6317d03fa6
+  satellite_map.png:
+    sha256: 5c34bfe41bab4c145a72e38e4ab3dd2a7e3163015dd55c5edfa85e5836ff10d1
+  satellite_map.json:
+    sha256: 161b2beceb8be2b4021184dc5996dc4420deb6efd73c63e35de44bfa68486995
+primary_e5_evidence: false

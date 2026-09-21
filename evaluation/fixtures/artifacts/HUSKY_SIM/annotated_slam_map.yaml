@@ -1,0 +1,14 @@
+image: husky_sim_annotated_slam_map.png
+mode: trinary
+resolution: 0.05
+origin: [-12.4527, -15.9394, 0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.25
+annotated: true
+grid_spacing_m: 5
+robot_pose_available: true
+robot_pose_drawn: true
+robot_pose_source: pose_with_covariance
+robot_pose_frame_id: map
+robot_pose: [2.40345e-10, 0.01, 1.21649e-10]

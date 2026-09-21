@@ -11,8 +11,8 @@ raw first model output.
 - Seven Husky missions are implemented in the current catalogue.
 - Two BlueBoat missions specify the multi-platform evaluation. The capability
   profile, six BlueBoat node interfaces, and tree are in the runtime snapshot;
-  both cases are available for offline scored runs. Physical ROS/Gazebo evidence
-  remains a separate E5 result.
+  both cases are available for offline scored runs. E5 uses physical execution
+  evidence from both platforms.
 - The designed E1 matrix contains 189 outputs: 27 prompts times six
   general-model method conditions plus BTGenBot-2.
 - All 189 planned E1 outputs are supported offline: 27 prompts times seven
@@ -76,8 +76,9 @@ they had drifted from the implementation.
   current trees. M1 produces 252 outputs; M3 produces 54.
 - `E4`: adverse requests and safety/failure quality. Clarification and refusal
   are correct outcomes for predefined cases.
-- `E5`: ROS/Gazebo or physical execution evidence. This is not produced by the
-  offline runner and must be reported separately.
+- `E5`: three physical executions of the accepted GPT-5.6-Sol M3 P2 plan for
+  each of the nine missions. This is not produced by the offline runner and
+  must be reported separately.
 
 ## Important files
 
@@ -98,6 +99,8 @@ they had drifted from the implementation.
 - `protocol/scoring_rubric.json`: pass rules, denominators, review coverage,
   correction effort, and statistical reporting.
 - `protocol/execution_scoring.json`: E5 trial and portability record rules.
+- `protocol/e5_physical_runbook.md`: physical preflight, trial order, abort rules,
+  and evidence layout.
 - `scripts/run_evaluation.py`: E1–E4 runner.
 - `scripts/score_results.py`: per-run tables, mission-cluster intervals, paired
   effects, human ratings, correction effort, and optional E5 summaries.
@@ -226,7 +229,7 @@ condition; E3 by scale; and E4 by adverse type and expected outcome. Primary
 intervals resample mission clusters 10,000 times. Intended pairs use a
 mission-cluster interval and exact sign-flip test.
 
-E5 records can be scored with:
+E5 physical-execution records can be scored with:
 
 ```bash
 python3 evaluation/scripts/score_results.py \
@@ -271,7 +274,7 @@ Safety evidence is limited to the guards actually tested:
 
 - unsupported capability and wrong-platform refusal;
 - missing-area clarification;
-- range and battery admission;
+- range admission and blocked-region review;
 - map/GPS contradiction handling;
 - geofence and blocked-region review;
 - prompt-injection coordinate rejection.

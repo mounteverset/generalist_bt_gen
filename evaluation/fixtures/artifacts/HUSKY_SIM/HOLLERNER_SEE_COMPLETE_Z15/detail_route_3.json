@@ -1,0 +1,367 @@
+{
+  "bounds": {
+    "east": 11.60980224609375,
+    "north": 48.285934388727256,
+    "south": 48.28319289548348,
+    "west": 11.605682373046875
+  },
+  "center": {
+    "lat": 48.28456364210537,
+    "lon": 11.607742309570313
+  },
+  "draw_lat_lon_grid": true,
+  "draw_scale_bar": true,
+  "image_height_px": 1536,
+  "image_width_px": 1536,
+  "meters_per_px": 0.19846363294466926,
+  "overlays_applied": [
+    "lat_lon_grid",
+    "points_of_interest",
+    "robot_location",
+    "scale_bar",
+    "header"
+  ],
+  "points_of_interest": [
+    {
+      "description": "Barrier: gate",
+      "id": 1,
+      "label": "1",
+      "lat": 48.2790102,
+      "lon": 11.6072426,
+      "osm_id": 401315493,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "gate",
+        "bicycle": "no",
+        "foot": "no"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Barrier: lift_gate",
+      "id": 2,
+      "label": "2",
+      "lat": 48.2757671,
+      "lon": 11.6035518,
+      "osm_id": 1331077833,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "lift_gate",
+        "bicycle": "yes",
+        "foot": "yes"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Barrier: cycle_barrier",
+      "id": 3,
+      "label": "3",
+      "lat": 48.2868905,
+      "lon": 11.6125253,
+      "osm_id": 1739559341,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "cycle_barrier",
+        "bicycle": "yes",
+        "cycle_barrier": "diagonal",
+        "cycle_barrier:installation": "fixed",
+        "foot": "yes"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Barrier: lift_gate",
+      "id": 4,
+      "label": "4",
+      "lat": 48.2809546,
+      "lon": 11.6079197,
+      "osm_id": 1745646307,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "lift_gate",
+        "vehicle": "private"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Barrier: lift_gate",
+      "id": 5,
+      "label": "5",
+      "lat": 48.2840153,
+      "lon": 11.6093594,
+      "osm_id": 1800371134,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "lift_gate",
+        "bicycle": "yes",
+        "foot": "yes"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Barrier: lift_gate",
+      "id": 6,
+      "label": "6",
+      "lat": 48.2820042,
+      "lon": 11.6057088,
+      "osm_id": 1800997911,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "lift_gate",
+        "motor_vehicle": "agricultural"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Operator-visible landmark",
+      "id": 7,
+      "label": "7",
+      "lat": 48.2835275,
+      "lon": 11.60697,
+      "osm_id": 1800997912,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "amenity": "toilets",
+        "changing_table": "yes",
+        "changing_table:location": "wheelchair_toilet",
+        "check_date": "2023-01-06",
+        "fee": "no",
+        "wheelchair": "yes"
+      },
+      "type": "landmark"
+    },
+    {
+      "description": "Barrier: block",
+      "id": 8,
+      "label": "8",
+      "lat": 48.2837381,
+      "lon": 11.6102375,
+      "osm_id": 1800997914,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "block",
+        "bicycle": "yes",
+        "foot": "yes",
+        "maxwidth:physical": "3"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Operator-visible landmark (Hecht und Sonne)",
+      "id": 9,
+      "label": "9",
+      "lat": 48.2841959,
+      "lon": 11.6068818,
+      "name": "Hecht und Sonne",
+      "osm_id": 1800997928,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "addr:city": "Eching",
+        "addr:housenumber": "3",
+        "addr:postcode": "85386",
+        "addr:street": "Am Fretz",
+        "amenity": "fast_food",
+        "check_date": "2025-05-30",
+        "email": "hallo@hechtundsonne.de",
+        "indoor_seating": "no",
+        "instagram": "hechtundsonne_official",
+        "name": "Hecht und Sonne",
+        "opening_hours": "May-Aug Mo-Fr 14:00-19:00; May-Aug Su, PH 13:00-19:00",
+        "outdoor_seating": "yes",
+        "phone": "+491704105227",
+        "website": "https://www.hechtundsonne.de/"
+      },
+      "type": "landmark"
+    },
+    {
+      "description": "Operator-visible landmark",
+      "id": 10,
+      "label": "10",
+      "lat": 48.2835248,
+      "lon": 11.6048141,
+      "osm_id": 2754430382,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "amenity": "waste_basket",
+        "check_date": "2021-03-26"
+      },
+      "type": "landmark"
+    },
+    {
+      "description": "Operator-visible landmark",
+      "id": 11,
+      "label": "11",
+      "lat": 48.2815534,
+      "lon": 11.6018932,
+      "osm_id": 3822972919,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "amenity": "waste_basket",
+        "check_date": "2023-01-06"
+      },
+      "type": "landmark"
+    },
+    {
+      "description": "Barrier: bollard",
+      "id": 12,
+      "label": "12",
+      "lat": 48.2910238,
+      "lon": 11.6195401,
+      "osm_id": 4080906119,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "bollard",
+        "bollard": "removable"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Barrier: gate",
+      "id": 13,
+      "label": "13",
+      "lat": 48.2910354,
+      "lon": 11.6201951,
+      "osm_id": 4519851460,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "gate"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Barrier: block",
+      "id": 14,
+      "label": "14",
+      "lat": 48.2867296,
+      "lon": 11.601216,
+      "osm_id": 4663410884,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "block",
+        "bicycle": "yes",
+        "foot": "yes"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Barrier: block",
+      "id": 15,
+      "label": "15",
+      "lat": 48.2880753,
+      "lon": 11.6014588,
+      "osm_id": 4663410885,
+      "osm_type": "node",
+      "recommended_use": "avoid_or_confirm",
+      "tags": {
+        "barrier": "block",
+        "bicycle": "yes",
+        "foot": "yes"
+      },
+      "type": "barrier"
+    },
+    {
+      "description": "Operator-visible landmark",
+      "id": 16,
+      "label": "16",
+      "lat": 48.2834102,
+      "lon": 11.6069544,
+      "osm_id": 4785581759,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "amenity": "bicycle_parking",
+        "bicycle_parking": "stands",
+        "capacity": "28",
+        "covered": "no"
+      },
+      "type": "landmark"
+    },
+    {
+      "description": "Operator-visible landmark",
+      "id": 17,
+      "label": "17",
+      "lat": 48.2839202,
+      "lon": 11.606878,
+      "osm_id": 4785581760,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "amenity": "bicycle_parking",
+        "bicycle_parking": "stands",
+        "capacity": "22",
+        "covered": "no"
+      },
+      "type": "landmark"
+    },
+    {
+      "description": "Operator-visible landmark",
+      "id": 18,
+      "label": "18",
+      "lat": 48.2816057,
+      "lon": 11.6021512,
+      "osm_id": 4785581780,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "amenity": "bench",
+        "backrest": "no",
+        "check_date": "2023-06-30"
+      },
+      "type": "landmark"
+    },
+    {
+      "description": "Operator-visible landmark",
+      "id": 19,
+      "label": "19",
+      "lat": 48.2816057,
+      "lon": 11.6020339,
+      "osm_id": 4785581781,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "amenity": "bench",
+        "backrest": "no",
+        "check_date": "2023-06-30"
+      },
+      "type": "landmark"
+    },
+    {
+      "description": "Operator-visible landmark",
+      "id": 20,
+      "label": "20",
+      "lat": 48.2815713,
+      "lon": 11.601944,
+      "osm_id": 4785581782,
+      "osm_type": "node",
+      "recommended_use": "reference",
+      "tags": {
+        "amenity": "bench",
+        "backrest": "no",
+        "check_date": "2023-06-30"
+      },
+      "type": "landmark"
+    }
+  ],
+  "robot_location": {
+    "label": "Robot",
+    "lat": 48.28418,
+    "lon": 11.608129
+  },
+  "source": "maptiler",
+  "source_image_uri": "file:///tmp/context_gatherer/maptiler_satellite_HUSKY_HOLLERNEr_SEE_COMPLETE_1789934956555026838.png",
+  "zoom": 18
+}

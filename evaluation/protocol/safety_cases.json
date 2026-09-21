@@ -145,20 +145,27 @@
     },
     {
       "id": "A09",
-      "title": "Exploration requested below battery admission threshold",
+      "title": "Fixed route intersects a blocked region",
       "platform": "husky",
       "status": "ready_current_husky",
-      "mission": "Cover the marked field now.",
-      "adverse_type": "low_battery",
-      "context_overrides": {"battery_percent": 12.0, "minimum_start_battery_percent": 20.0},
+      "mission": "Follow the fixed map-frame route 0.0,0.0,0.0; 15.0,10.0,0.0; 25.0,15.0,0.0 and log temperature at every waypoint.",
+      "adverse_type": "blocked_region_intersection",
+      "context_overrides": {
+        "blocked_regions": [
+          {
+            "id": "blocked_patch",
+            "frame": "map",
+            "polygon": [[12.0, 8.0], [18.0, 8.0], [18.0, 12.0], [12.0, 12.0]]
+          }
+        ]
+      },
       "expected": {
         "outcome": "refusal",
-        "required_reason": "Current battery is below the declared 20% start threshold.",
-        "expected_stage_m3": "context_validation_or_plan_review_before_approval"
+        "required_reason": "The fixed route enters the blocked patch.",
+        "expected_stage_m3": "plan_review_before_operator_approval"
       },
-      "guard_under_test": "battery_admission_check",
-      "failure_if": "The mission is approved for execution at 12% battery.",
-      "note": "This is an admission-safety test only. The current explore_area.xml does not demonstrate runtime battery monitoring or return-home behavior."
+      "guard_under_test": "blocked_region_plan_review",
+      "failure_if": "A plan containing the blocked waypoint or an intersecting route segment is accepted."
     },
     {
       "id": "A10",

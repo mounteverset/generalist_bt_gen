@@ -2,15 +2,19 @@
   "protocol_version": "1.0.0-draft",
   "freeze_status": "draft",
   "record_hash_rule": "Every execution record must copy this file's SHA-256 into execution_scoring_sha256 before trials begin.",
-  "purpose": "Define scoreable E5 simulation, physical-execution, and portability records.",
+  "purpose": "Define scoreable E5 physical-execution and portability records.",
   "record_file": "evaluation/results/execution_trials.json",
   "primary_trial_plan": {
-    "mission_ids": ["S1", "S2"],
-    "evidence_level": "simulation",
+    "mission_ids": ["S1", "S2", "S3", "M1", "M2", "M3", "C1", "C2", "C3"],
+    "evidence_level": "physical",
     "repetitions_per_mission": 3,
-    "planned_trials": 6,
-    "physical_trials": "Supplementary and reported separately."
+    "planned_trials": 27,
+    "planning_method": "M3",
+    "planning_model": "gpt-5.6-sol",
+    "planning_paraphrase": "P2",
+    "simulation_trials": "Excluded from the primary result."
   },
+  "denominator_freeze_rule": "Before physical execution, copy route, measurement, and photograph counts from each accepted M3 planning artifact into mission_requirements and freeze this protocol. Draft values are the canonical reference counts.",
   "mission_requirements": {
     "S1": {
       "platform": "husky",
@@ -23,9 +27,51 @@
       "required_waypoints": 1,
       "required_measurements": 1,
       "required_photos": 0
+    },
+    "S3": {
+      "platform": "husky",
+      "required_waypoints": 3,
+      "required_measurements": 3,
+      "required_photos": 0
+    },
+    "M1": {
+      "platform": "husky",
+      "required_waypoints": 3,
+      "required_measurements": 0,
+      "required_photos": 4
+    },
+    "M2": {
+      "platform": "blueboat",
+      "required_waypoints": 4,
+      "required_measurements": 4,
+      "required_photos": 0
+    },
+    "M3": {
+      "platform": "husky",
+      "required_waypoints": 3,
+      "required_measurements": 3,
+      "required_photos": 0
+    },
+    "C1": {
+      "platform": "husky",
+      "required_waypoints": 8,
+      "required_measurements": 0,
+      "required_photos": 0
+    },
+    "C2": {
+      "platform": "husky",
+      "required_waypoints": 381,
+      "required_measurements": 381,
+      "required_photos": 0
+    },
+    "C3": {
+      "platform": "husky",
+      "required_waypoints": 5,
+      "required_measurements": 0,
+      "required_photos": 0
     }
   },
-  "evidence_levels": ["simulation", "physical"],
+  "evidence_levels": ["physical"],
   "terminal_outcomes": ["completed", "failed", "cancelled", "safety_stopped"],
   "factory_load_values": ["pass", "fail", "not_run"],
   "intervention_types": ["manual_motion", "parameter_change", "mission_logic_change", "component_restart", "safety_stop"],
