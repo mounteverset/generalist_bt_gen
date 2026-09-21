@@ -143,6 +143,7 @@ trees:
       requires_target_area_or_route: true
     context_requirements:
       - GPS_FIX
+      - SATELLITE_MAP
     blackboard_contract:
       gps_waypoints:
         type: "string"
@@ -206,7 +207,7 @@ trees:
     selection_constraints:
       max_range_m: 5000
       requires_target_area_or_route: true
-    context_requirements: [ROBOT_POSE, RGB_IMAGE, GPS_FIX]
+    context_requirements: [ROBOT_POSE, GPS_FIX]
     blackboard_contract:
       waypoints:
         type: "string"
@@ -285,20 +286,16 @@ trees:
         default: "map"
 
   - id: "explore_area.xml"
-    description: "Explore an operator-defined ground area by submitting LLM-generated GPS waypoints from OpenStreetMap and satellite imagery as one Nav2 FollowGPSWaypoints route."
+    description: "Explore an operator-defined ground area by following a precomputed map-frame coverage route."
     mission_intents:
       - "explore_area"
       - "survey_area"
-      - "navigate_gps_waypoints"
-      - "geographic_route"
     required_capabilities:
-      - "localization.gps"
       - "localization.odometry"
       - "locomotion.ground"
       - "navigation.waypoints"
-      - "navigation.gps_waypoints"
       - "mapping.slam"
-      - "payload.parse_gps_waypoints"
+      - "payload.parse_waypoints"
     unsupported_requirements:
       - "locomotion.flight"
       - "sensing.thermal_image"
@@ -306,7 +303,6 @@ trees:
       - "sampling.soil"
     selection_constraints:
       max_radius_m: 50
-      min_battery_percent: 20
       requires_target_area: true
     context_requirements:
       - ROBOT_POSE
@@ -314,44 +310,35 @@ trees:
       - GPS_FIX
       - OSM_CONTEXT
       - SATELLITE_MAP
-      - BATTERY_STATE
     blackboard_contract:
-      gps_waypoints:
+      waypoints:
         type: "string"
         required: true
         schema:
           type: "string"
-          description: "Complete semicolon-separated route submitted in one Nav2 FollowGPSWaypoints goal. Each waypoint is 'latitude,longitude', 'latitude,longitude,yaw', or 'latitude,longitude,altitude,yaw'."
-          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2}(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?(,-?\d+(\.\d+)?){0,2})*$'
+          description: "Semicolon-separated map-frame waypoints, each formatted as 'x,y,yaw' in metres and radians."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
           examples:
-            - "48.2848,11.6077,0.0; 48.2851,11.6074,1.57"
-      area_polygon_geo:
+            - "3.0,3.0,0.0; 27.0,3.0,0.0"
+      area_polygon:
         type: "string"
         required: false
         schema:
           type: "string"
-          description: "Optional operator-defined exploration polygon in WGS84 as 'latitude,longitude' vertices."
+          description: "Optional operator-defined map-frame polygon as 'x,y' vertices."
           pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?){2,}$'
           examples:
-            - "48.2840,11.6070; 48.2840,11.6080; 48.2850,11.6080; 48.2850,11.6070"
-      frontiers_geo:
+            - "0.0,0.0; 30.0,0.0; 30.0,20.0; 0.0,20.0"
+      frontiers:
         type: "string"
         required: false
         schema:
           type: "string"
-          description: "Optional geographic exploration or coverage points as 'latitude,longitude'."
-          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
+          description: "Optional map-frame exploration or coverage points as 'x,y,yaw'."
+          pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?(\s*;\s*-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?)*$'
           examples:
-            - "48.2842,11.6072; 48.2848,11.6077"
+            - "3.0,3.0,0.0; 27.0,3.0,0.0"
       exploration_strategy:
         type: "string"
         required: false
         default: "frontier_coverage"
-      min_battery_percent:
-        type: "double"
-        required: false
-        default: 20.0
-      return_home_on_low_battery:
-        type: "bool"
-        required: false
-        default: true
