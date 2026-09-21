@@ -85,7 +85,7 @@ def test_blueboat_temperature_tree_visits_waypoints_and_cycles_probe():
 
     temperature = root.find('.//LogTemperature')
     assert temperature is not None
-    assert temperature.attrib['service_name'] == '/green/read_temp'
+    assert temperature.attrib['service_name'] == '/green/read_temp_cached'
 
     recovery = root.find('.//Fallback/ForceFailure/SetDepth')
     assert recovery is not None

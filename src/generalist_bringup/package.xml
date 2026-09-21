@@ -11,6 +11,7 @@
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>std_srvs</depend>
+  <exec_depend>rclpy</exec_depend>
   <exec_depend>bt_executor</exec_depend>
   <exec_depend>robot_actions</exec_depend>
   <exec_depend>mission_reasoner</exec_depend>

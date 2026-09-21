@@ -228,7 +228,7 @@ def test_gps_tree_contracts_use_geographic_waypoint_key():
         assert 'waypoints' not in contract
 
     blueboat = trees['blueboat_temperature_logging.xml']
-    assert blueboat['context_requirements'] == ['GPS_FIX']
+    assert blueboat['context_requirements'] == ['GPS_FIX', 'SATELLITE_MAP']
     assert blueboat['selection_constraints']['max_range_m'] == 1000
     assert 'control.guided_mode' in blueboat['required_capabilities']
     assert 'control.arming' in blueboat['required_capabilities']

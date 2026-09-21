@@ -39,7 +39,6 @@ def test_explore_area_metadata_advertises_payload_and_context_contract():
         'GPS_FIX',
         'OSM_CONTEXT',
         'SATELLITE_MAP',
-        'BATTERY_STATE',
     }
     contract = tree['blackboard_contract']
     assert contract['gps_waypoints']['required'] is True

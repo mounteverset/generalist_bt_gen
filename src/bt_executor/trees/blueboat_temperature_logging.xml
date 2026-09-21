@@ -11,7 +11,7 @@ Usage Instructions:
   - The tree verifies a raw GPS fix, switches HOLD -> GUIDED, arms the boat,
     and confirms the resulting state before sending global position setpoints.
   - Each setpoint is published at 5 Hz while navigating, sampling, and holding.
-  - The BlueBoat MAVROS bridge, /green/stepper/set_depth action, and /green/read_temp
+  - The BlueBoat MAVROS bridge, /green/stepper/set_depth action, and /green/read_temp_cached
     service must be active. The configured probe limit defaults to 200 cm.
 -->
 <root BTCPP_format="4" main_tree_to_execute="blueboat_temperature_logging.xml">
@@ -78,7 +78,7 @@ Usage Instructions:
               <Sequence name="LogThenRaiseTemperatureProbe">
                 <LogTemperature
                   name="LogWaterTemperature"
-                  service_name="/green/read_temp"
+                  service_name="/green/read_temp_cached"
                   logfile_path="{logfile_path}" />
                 <SetDepth
                   name="RaiseTemperatureProbe"

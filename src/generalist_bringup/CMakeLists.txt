@@ -27,6 +27,10 @@ install(TARGETS dummy_log_temperature_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
+install(PROGRAMS scripts/blueboat_temperature_service.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME}
 )
