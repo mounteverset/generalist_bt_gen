@@ -8,11 +8,11 @@ llm_interface:
     mission_requirements_provider: 'openrouter'
     payload_provider: 'openrouter'  
     payload_normalizer_provider: 'openrouter'  
-    model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
-    selection_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'
-    mission_requirements_model_name: 'google/gemini-3.8-flash'
-    payload_model_name: 'openai/gpt-5.5'
-    payload_normalizer_model_name: 'nvidia/nemotron-3-ultra-550b-a55b:free'
+    model_name: 'google/gemini-3.8-flash'  # provider-specific model id; examples: gemini-3.1-flash-lite-preview | gpt-4o-mini | openai/gpt-4o-mini | stepfun/step-3.5-flash:free
+    selection_model_name: 'openai/gpt-5.6-sol' 
+    mission_requirements_model_name: 'openai/gpt-5.6-sol'
+    payload_model_name: 'openai/gpt-5.6-sol'
+    payload_normalizer_model_name: 'openai/gpt-5.6-sol'
     openrouter_app_url: ''  # optional OpenRouter attribution URL
     openrouter_app_title: 'generalist_bt_gen'  # optional OpenRouter attribution title
     selection_llm_enabled: true
@@ -22,9 +22,9 @@ llm_interface:
     mission_requirements_temperature: 0.0
     selection_reasoning_effort: 'low'  # empty disables reasoning config
     selection_reasoning_summary: ''  # optional: auto | detailed, when supported
-    mission_requirements_reasoning_effort: 'low'
+    mission_requirements_reasoning_effort: 'high'
     mission_requirements_reasoning_summary: ''
-    payload_reasoning_effort: 'medium'
+    payload_reasoning_effort: 'high'
     payload_reasoning_summary: ''
     payload_normalizer_reasoning_effort: 'low'
     payload_normalizer_reasoning_summary: ''
@@ -215,7 +215,7 @@ llm_interface:
           3. Use OSM_CONTEXT.linear_features and area features as the route geometry. Build a connected coverage route around the requested area; do not draw straight chords between unrelated points.
           4. Use SATELLITE_MAP to validate the geographic area, access, and route shape. Do not invent a path from satellite pixels when OSM_CONTEXT does not provide route geometry.
           5. Prefer suitable compacted, gravel, fine-gravel, pebblestone, paved, path, track, footway, or cycleway features.
-          6. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry. Respect the battery admission constraints in the mission and context.
+          6. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry.
           7. Orient each yaw toward the following GPS waypoint. Use altitude 0.0 when no reliable altitude is available, and return near the starting GPS fix when the mission is a roundtrip.
           8. Keep enough points to represent path bends, remove near-duplicates, and never put map-frame x/y values in "gps_waypoints".
           9. If OSM_CONTEXT does not provide a connected route satisfying the area request, return an empty JSON object instead of fabricating a route.
