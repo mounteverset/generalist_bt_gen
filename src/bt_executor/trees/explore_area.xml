@@ -1,27 +1,28 @@
 <?xml version="1.0"?>
 <!--
 Tree Name: explore_area.xml
-Description: Execute a static geographic exploration route generated from an
-             operator-defined area. The context/LLM pipeline uses OpenStreetMap,
-             satellite imagery, ROBOT_POSE, and GPS_FIX to choose the route;
-             this tree sends the complete ordered route to Nav2's
-             FollowGPSWaypoints action.
+Description: Execute a static map-frame exploration route generated from an
+             operator-defined area.
 Usage Instructions:
-  - Payload must include "gps_waypoints" as semicolon-separated entries
-    formatted as latitude,longitude[,yaw] or latitude,longitude,altitude,yaw.
-  - Payload may also include "area_polygon_geo" and "frontiers_geo" for
-    satellite-map review and UI visualization; those fields are not consumed by
-    this tree.
+  - Payload must include "waypoints" as semicolon-separated x,y,yaw entries.
+  - Payload may also include "area_polygon" and "frontiers" for review and UI
+    visualization; those fields are not consumed by this tree.
 -->
 <root BTCPP_format="4" main_tree_to_execute="explore_area.xml">
   <BehaviorTree ID="explore_area.xml">
     <Sequence name="ExploreAreaMission">
       <PublishWaypointMarkers
-        gps_waypoints="{gps_waypoints}" />
-      <MoveToGPS
-        name="FollowExplorationGpsRoute"
-        gps_poses="{gps_waypoints}"
-        action_name="/follow_gps_waypoints" />
+        waypoints="{waypoints}" />
+      <ParseWaypoints
+        raw_waypoints="{waypoints}"
+        waypoint_queue="{waypoint_queue}"
+        waypoint_count="{waypoint_count}" />
+      <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="FAILURE">
+        <MoveTo
+          name="FollowExplorationRoute"
+          pose="{active_waypoint}"
+          action_name="/navigate_to_pose" />
+      </LoopString>
     </Sequence>
   </BehaviorTree>
 </root>

@@ -448,6 +448,20 @@ def test_coerce_structured_gps_waypoints_to_contract_string():
     )
 
 
+def test_coerce_payload_materializes_contract_defaults():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    contract = {
+        'gps_fix_timeout_sec': {'type': 'double', 'default': 10.0},
+        'station_hold_ms': {'type': 'int', 'default': 10000},
+    }
+
+    coerced = node._coerce_payload_to_contract(
+        {'station_hold_ms': 5000}, contract
+    )
+
+    assert coerced == {'gps_fix_timeout_sec': 10.0, 'station_hold_ms': 5000}
+
+
 def test_gps_payload_validation_accepts_geographic_waypoints():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     contract = {
