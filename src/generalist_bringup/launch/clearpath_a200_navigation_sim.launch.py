@@ -93,7 +93,7 @@ def generate_launch_description():
 
     mock_gps_frame_id_arg = DeclareLaunchArgument(
         'mock_gps_frame_id',
-        default_value='target/gps_link',
+        default_value='base_link',
         description='Frame id for the mock GPS NavSatFix messages'
     )
 
@@ -105,7 +105,7 @@ def generate_launch_description():
 
     gps_navigation_odom_topic_arg = DeclareLaunchArgument(
         'gps_navigation_odom_topic',
-        default_value='/target/odometry/fused',
+        default_value='/a200_0000/platform/odom/filtered',
         description='World-referenced odometry input used for GPS coordinate conversion'
     )
 
@@ -154,6 +154,16 @@ def generate_launch_description():
             TextSubstitution(text='/opt/ros/jazzy/lib:'),
             EnvironmentVariable('LD_LIBRARY_PATH', default_value=''),
         ],
+    )
+
+    # This launch starts more processes than CycloneDDS' default auto-index limit.
+    cyclone_participant_limit = SetEnvironmentVariable(
+        name='CYCLONEDDS_URI',
+        value=(
+            '<CycloneDDS><Domain><Discovery><ParticipantIndex>auto</ParticipantIndex>'
+            '<MaxAutoParticipantIndex>100</MaxAutoParticipantIndex>'
+            '</Discovery></Domain></CycloneDDS>'
+        ),
     )
 
     # 1. Launch Gazebo Simulation
@@ -268,7 +278,7 @@ def generate_launch_description():
         remappings=[
             ('gps/fix', mock_gps_fix_topic),
             ('odometry/filtered', gps_navigation_odom_topic),
-            ('odometry/gps', '/target/odometry/gps'),
+            ('odometry/gps', '/a200_0000/platform/odom/gps'),
             ('gps/filtered', '/gps/filtered'),
         ],
     )
@@ -291,6 +301,7 @@ def generate_launch_description():
         enable_gps_navigation_arg,
         prefer_system_python,
         prefer_ros_libs,
+        cyclone_participant_limit,
         mock_gps_fix_publisher,
         navsat_transform,
         simulation_launch,

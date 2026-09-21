@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, NotSubstitution
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
@@ -71,6 +71,16 @@ def generate_launch_description():
             'Run in demo mode. When true, mission_coordinator skips external calls and '
             'llm_interface is not launched.'
         )
+    )
+    use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation time.'
+    )
+
+    use_sim_time = SetParameter(
+        'use_sim_time',
+        LaunchConfiguration('use_sim_time'),
     )
 
     bt_executor_node = Node(
@@ -188,6 +198,13 @@ def generate_launch_description():
         output='screen',
     )
 
+    blueboat_temperature_service_node = Node(
+        package='generalist_bringup',
+        executable='blueboat_temperature_service.py',
+        name='blueboat_temperature_service',
+        output='screen',
+    )
+
     return LaunchDescription([
         params_file_arg,
         mission_params_arg,
@@ -199,6 +216,8 @@ def generate_launch_description():
         gps_fix_topic_arg,
         use_cli_arg,
         demo_mode_arg,
+        use_sim_time_arg,
+        use_sim_time,
         bt_executor_node,
         llm_interface_node,
         mission_reasoner_node,
@@ -210,4 +229,5 @@ def generate_launch_description():
         cli_chat_node,
         web_ui_node,
         dummy_log_temperature_node,
+        blueboat_temperature_service_node,
     ])
