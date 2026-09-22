@@ -91,6 +91,9 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_waypoint_marker_frame test/test_waypoint_marker_frame.cpp)
   target_link_libraries(test_waypoint_marker_frame ${PROJECT_NAME})
+
+  ament_add_gtest(test_distance_traveled_wait_set test/test_distance_traveled_wait_set.cpp)
+  target_link_libraries(test_distance_traveled_wait_set ${PROJECT_NAME})
 endif()
 
 ament_export_dependencies(${dependencies})

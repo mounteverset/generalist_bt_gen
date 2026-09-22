@@ -35,10 +35,12 @@ private:
   bool read_inputs();
   bool read_next_odom(Pose2D & pose);
   double distance_between(const Pose2D & a, const Pose2D & b) const;
+  rclcpp::Node::SharedPtr make_wait_node() const;
   BT::NodeStatus update_distance();
   void reset_measurement_state();
 
   rclcpp::Node::SharedPtr node_;
+  rclcpp::Node::SharedPtr wait_node_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   bool enable_debug_logging_{false};
 

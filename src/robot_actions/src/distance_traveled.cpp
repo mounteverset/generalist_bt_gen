@@ -59,7 +59,8 @@ BT::NodeStatus DistanceTraveled::onStart()
     return BT::NodeStatus::FAILURE;
   }
 
-  odom_sub_ = node_->create_subscription<nav_msgs::msg::Odometry>(
+  wait_node_ = make_wait_node();
+  odom_sub_ = wait_node_->create_subscription<nav_msgs::msg::Odometry>(
     odom_topic_, rclcpp::SystemDefaultsQoS(), [](nav_msgs::msg::Odometry::SharedPtr) {});
 
   if (enable_debug_logging_) {
@@ -78,6 +79,7 @@ BT::NodeStatus DistanceTraveled::onRunning()
 void DistanceTraveled::onHalted()
 {
   odom_sub_.reset();
+  wait_node_.reset();
   reset_measurement_state();
 }
 
@@ -142,7 +144,7 @@ bool DistanceTraveled::read_next_odom(Pose2D & pose)
   nav_msgs::msg::Odometry odom_msg;
   const auto timeout = std::chrono::milliseconds(odom_timeout_ms_);
   const bool received = rclcpp::wait_for_message<nav_msgs::msg::Odometry>(
-    odom_msg, odom_sub_, node_->get_node_options().context(), timeout);
+    odom_msg, odom_sub_, wait_node_->get_node_options().context(), timeout);
   if (!received) {
     return false;
   }
@@ -150,6 +152,17 @@ bool DistanceTraveled::read_next_odom(Pose2D & pose)
   pose.x = odom_msg.pose.pose.position.x;
   pose.y = odom_msg.pose.pose.position.y;
   return true;
+}
+
+rclcpp::Node::SharedPtr DistanceTraveled::make_wait_node() const
+{
+  rclcpp::NodeOptions options;
+  options.context(node_->get_node_options().context());
+  options.use_global_arguments(false);
+  options.start_parameter_services(false);
+  options.start_parameter_event_publisher(false);
+  return std::make_shared<rclcpp::Node>(
+    "distance_traveled_wait_node", node_->get_namespace(), options);
 }
 
 double DistanceTraveled::distance_between(const Pose2D & a, const Pose2D & b) const
