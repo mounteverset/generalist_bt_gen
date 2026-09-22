@@ -2,7 +2,7 @@ context_gatherer:
   ros__parameters:
     action_name: "/context_gatherer/gather"
     output_directory: "/tmp/context_gatherer"
-    odom_topic: "/target/odometry/fused"
+    odom_topic: /a200_0000/platform/odom/filtered # /target/odometry/fused"
     pose_cov_topic: "/pose"
     gps_fix_topic: "/gps/fix"
     gps_fix_max_age_sec: 5.0

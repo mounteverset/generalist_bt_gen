@@ -18,10 +18,10 @@ bt_action_server:
     waypoint_marker_gps_frame: "target/odom"
     waypoint_marker_from_ll_service: "/fromLL"
     waypoint_marker_conversion_timeout_ms: 2000
-    waypoint_marker_line_width: 0.4
-    waypoint_marker_arrow_scale_x: 0.65
-    waypoint_marker_arrow_scale_y: 0.18
-    waypoint_marker_arrow_scale_z: 0.18
+    waypoint_marker_line_width: 3.0
+    waypoint_marker_arrow_scale_x: 2.5
+    waypoint_marker_arrow_scale_y: 1.2
+    waypoint_marker_arrow_scale_z: 1.2
     waypoint_marker_label_height: 0.35
     log_temperature_service_name: "/log_temperature"
     take_photo_image_topic: "/okvis/rgb2/image_raw"
