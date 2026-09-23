@@ -80,9 +80,9 @@ The coordinator reads metadata to decide:
 | `temperature_logging.xml` | Selectable | `waypoints`: map-frame `x,y,yaw` | `MoveTo`, `LogTemperature` |
 | `gps_waypoint_navigation.xml` | Selectable | `gps_waypoints`: `lat,lon`, `lat,lon,yaw`, or `lat,lon,altitude,yaw` | `MoveToGPS` |
 | `gps_temperature_logging.xml` | Selectable | `gps_waypoints`, plus optional `logfile_path` | `MoveToGPS`, `LogTemperature` |
-| `navigate_and_photograph.xml` | Selectable | `waypoints`: map-frame `x,y,yaw` | `MoveTo`, `DistanceTraveled`, `TakePhoto` |
-| `find_and_drive_to_nearest_object.xml` | Selectable | FindAnything-derived map-frame `waypoints` | `ParseWaypoints`, `MoveTo` |
-| `explore_area.xml` | Selectable | map-frame `waypoints`, plus optional `area_polygon` and `frontiers` | `ParseWaypoints`, `MoveTo` |
+| `navigate_and_photograph.xml` | Selectable | `gps_waypoints`: geographic latitude/longitude | `MoveToGPS`, `DistanceTraveled`, `TakePhoto` |
+| `find_and_drive_to_nearest_object.xml` | Selectable | FindAnything map-frame `waypoints` and optional OSM `gps_waypoints` | `MoveToGPS`, `ParseWaypoints`, `MoveTo` |
+| `explore_area.xml` | Selectable | geographic `gps_waypoints`, plus optional `area_polygon_geo` and `frontiers_geo` | `ParseGpsWaypoints`, `MoveToGPS` |
 | `360_rgb_sweep.xml` | Internal context routine | current pose plus camera/output options | `GetCurrentPose`, `MoveTo`, `TakePhoto` |
 
 Map-frame routes and geographic routes deliberately use different blackboard
@@ -229,14 +229,16 @@ implemented requirements include:
 Unknown requirement strings are logged and skipped. The action result can still
 succeed with whatever context was collected.
 
-`find_and_drive_to_nearest_object.xml` requests `ROBOT_POSE`,
-`ANNOTATED_SLAM_MAP_IMAGE`, and `FIND_ANYTHING`. The gatherer calls the
-object-location service before payload generation, so `llm_interface` can select
-and order returned locations as map-frame waypoints. The plan reviewer projects
-every returned object location onto the SLAM map as a labeled marker so both its
-multimodal review and the operator can compare the planned destination with the
-perception result. The executable tree only parses and navigates those planned
-waypoints; it does not call FindAnything itself.
+`find_and_drive_to_nearest_object.xml` requests `GPS_FIX`, `OSM_CONTEXT`,
+`SATELLITE_MAP`, `RGB360SWEEP`, `ROBOT_POSE`, `ANNOTATED_SLAM_MAP_IMAGE`, and
+`FIND_ANYTHING`. The sweep captures RGB images before pose and object context
+are gathered. When `/toLL` is available, the gatherer also georeferences
+FindAnything map poses so the planner can compare the tree area with OSM paths.
+The planner keeps map poses as tree destinations and can add an OSM-derived GPS
+access leg when that geographic relation supports it. The tree executes the GPS
+leg first when supplied, then navigates to the map-frame object locations. It
+does not call FindAnything itself or convert geographic coordinates into map
+coordinates by guesswork.
 
 For `SATELLITE_MAP`, `context_gatherer` can dynamically choose an overview zoom
 and optional detail maps without an LLM call. It derives mission extent from

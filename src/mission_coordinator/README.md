@@ -48,8 +48,8 @@ Default values live in `config/mission_coordinator_params.yaml` and can be suppl
 | `gps_waypoint_navigation.xml` | geographic `gps_waypoints` | plain GPS/OSM route |
 | `gps_temperature_logging.xml` | geographic `gps_waypoints` | GPS route + temperature |
 | `blueboat_temperature_logging.xml` | geographic `gps_waypoints` | MAVROS route + probe depth + water temperature |
-| `navigate_and_photograph.xml` | map-frame `waypoints` | navigation + photos |
-| `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | object-context planning + navigation |
+| `navigate_and_photograph.xml` | geographic `gps_waypoints` | navigation + photos |
+| `find_and_drive_to_nearest_object.xml` | FindAnything map-frame `waypoints` plus optional OSM `gps_waypoints` | GPS access leg + object navigation |
 | `explore_area.xml` | geographic `gps_waypoints` plus optional area overlays | OSM/satellite-guided area exploration |
 
 The BlueBoat tree verifies raw GPS, switches ArduRover from `HOLD` to `GUIDED`,

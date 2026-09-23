@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping, Sequence
+
+from llm_interface.payload_validation import gps_stairway_errors
 
 
 def point_in_polygon(
@@ -65,6 +68,28 @@ def deterministic_plan_findings(
     if not isinstance(context, Mapping):
         context = {}
     findings: list[dict[str, Any]] = []
+    for error in gps_stairway_errors(review_input.get("payload_json"), context):
+        segment_match = re.search(r"gps_waypoints segment (\d+) approaches", error)
+        waypoint_indices = (
+            [int(segment_match.group(1)), int(segment_match.group(1)) + 1]
+            if segment_match else []
+        )
+        findings.append(
+            {
+                "severity": "critical",
+                "category": "robot_safety",
+                "waypoint_indices": waypoint_indices,
+                "description": error,
+                "recommended_fix": (
+                    "Detour around the mapped steps by changing or adding waypoints "
+                    "near this segment; preserve unaffected route sections and keep "
+                    "at least 5 m clear of the stairs."
+                    if waypoint_indices else
+                    "Regenerate the GPS route using fresh OSM stairway geometry."
+                ),
+                "guard": "osm_steps",
+            }
+        )
     allowed = _context_value(context, "allowed_polygon", "ALLOWED_POLYGON")
     water_geofence = _context_value(
         context, "water_geofence", "WATER_GEOFENCE"

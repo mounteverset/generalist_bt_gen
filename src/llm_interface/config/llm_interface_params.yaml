@@ -94,8 +94,39 @@ llm_interface:
           6. Do NOT include markdown code fences
           7. A contract key named "waypoints" always means executable map-frame x,y,yaw values in meters, meters, radians. Never put latitude/longitude in "waypoints".
           8. OSM_CONTEXT, SATELLITE_MAP, and GPS_FIX are geographic reasoning context only unless CONTEXT explicitly provides a geographic-to-map-frame transform. GPS_FIX plus ROBOT_POSE alone does not establish map-axis orientation.
-          9. For geographic route requests, follow connected OSM linear features and avoid water, steps, access restrictions, and barriers. Do not invent path geometry from an image.
+          9. Treat connected OSM linear features as preferred route evidence, not a mandatory boundary. If USER_COMMAND explicitly requests or permits off-path travel, allow it through operator-defined or OSM areas that are traversable and unrestricted. An explicit operator statement that terrain is traversable is valid unless CONTEXT contradicts it. Never infer off-path safety from satellite imagery alone; avoid water, steps, access restrictions, and barriers.
           10. If executable map-frame waypoints cannot be derived from CONTEXT, return an empty JSON object so the caller reports missing context instead of fabricating a route.
+
+          OUTPUT (JSON only):
+        "navigate_and_photograph.xml": |
+          You are planning a geographic outdoor photography route for a Clearpath Husky A200.
+          Generate the blackboard payload for navigate_and_photograph.xml.
+
+          SUBTREE_ID: {subtree_id}
+          USER_COMMAND: {user_command}
+
+          CONTEXT (sensor/geographic data):
+          {context_json}
+
+          CONTRACT (required blackboard keys with types/defaults):
+          {contract_json}
+
+          ATTACHMENT_URIS: {attachment_uris}
+
+          Required output:
+          - "gps_waypoints": ordered route as "latitude,longitude,altitude,yaw; ...".
+          - "photo_interval_m": preserve the requested distance interval; otherwise use the contract default.
+          - Use contract defaults for camera, output, filename, and timeout fields unless the operator specified them.
+
+          Planning rules:
+          1. GPS waypoints are WGS84 geographic coordinates, not map-frame x/y values.
+          2. Begin at or near GPS_FIX and prefer connected OSM paths toward the requested destination.
+          3. If USER_COMMAND explicitly requests or permits off-path travel, the route may leave OSM linear features inside operator-defined or OSM areas that are traversable and unrestricted. Treat an explicit operator statement that terrain is traversable as valid unless CONTEXT contradicts it.
+          4. Never infer off-path safety from satellite imagery alone. Avoid water, steps, access restrictions, barriers, unsafe road classes, and disconnected geometry.
+          5. Orient yaw toward the following GPS waypoint. Use altitude 0.0 when no reliable altitude is available.
+          6. Keep enough points to represent path bends, but remove near-duplicates.
+          7. Return an empty JSON object only when neither a connected OSM route nor context-supported off-path travel can satisfy the request safely.
+          8. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):
         "gps_waypoint_navigation.xml": |
@@ -119,12 +150,12 @@ llm_interface:
           Planning rules:
           1. GPS waypoints are WGS84 geographic coordinates, not map-frame x/y values.
           2. Begin at or near GPS_FIX and, for a roundtrip, return to that starting location.
-          3. Use OSM_CONTEXT.linear_features as route geometry. Build a connected sequence around the named target; do not merely sample the water boundary or draw straight chords between unrelated points.
-          4. Prefer suitable compacted, gravel, fine-gravel, pebblestone, paved, path, track, footway, or cycleway features.
-          5. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry. Do not invent paths from satellite pixels.
+          3. Prefer OSM_CONTEXT.linear_features as route geometry, but do not treat them as a mandatory boundary. If USER_COMMAND explicitly requests or permits off-path travel, the route may cross operator-defined or OSM areas that are traversable and unrestricted. Treat an explicit operator statement that terrain is traversable as valid unless CONTEXT contradicts it.
+          4. Prefer available gravel, concrete, or asphalt/paved paths when compatible with the command; use other suitable surfaces or context-supported off-path terrain when needed.
+          5. Never infer off-path safety from satellite imagery alone. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry.
           6. Orient yaw toward the following GPS waypoint. Use altitude 0.0 when no reliable altitude is available.
           7. Keep enough points to represent path bends, but remove near-duplicate points.
-          8. If OSM_CONTEXT does not provide a connected route that satisfies the request, return an empty JSON object instead of fabricating a route.
+          8. Return an empty JSON object only when neither a connected OSM route nor context-supported off-path travel can satisfy the request safely.
           9. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):
@@ -150,17 +181,17 @@ llm_interface:
           Planning rules:
           1. GPS waypoints are WGS84 geographic coordinates, not map-frame x/y values.
           2. Begin at or near GPS_FIX and, for a roundtrip, return to that starting location.
-          3. Use OSM_CONTEXT.linear_features as route geometry. Build a connected sequence around the named target; do not merely sample the water boundary or draw straight chords between unrelated points.
-          4. Prefer suitable compacted, gravel, fine-gravel, pebblestone, paved, path, track, footway, or cycleway features.
-          5. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry. Do not invent paths from satellite pixels.
+          3. Prefer OSM_CONTEXT.linear_features as route geometry, but do not treat them as a mandatory boundary. If USER_COMMAND explicitly requests or permits off-path travel, the route may cross operator-defined or OSM areas that are traversable and unrestricted. Treat an explicit operator statement that terrain is traversable as valid unless CONTEXT contradicts it.
+          4. Prefer available gravel, concrete, or asphalt/paved paths when compatible with the command; use other suitable surfaces or context-supported off-path terrain when needed.
+          5. Never infer off-path safety from satellite imagery alone. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry.
           6. Orient yaw toward the following GPS waypoint. Use altitude 0.0 when no reliable altitude is available.
           7. Keep enough points to represent path bends, but remove near-duplicate points.
-          8. If OSM_CONTEXT does not provide a connected route that satisfies the request, return an empty JSON object instead of fabricating a route.
+          8. Return an empty JSON object only when neither a connected OSM route nor context-supported off-path travel can satisfy the request safely.
           9. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):
         "find_and_drive_to_nearest_object.xml": |
-          You are planning an object-targeted map-frame route for a Clearpath Husky A200.
+          You are planning an object-targeted route for a Clearpath Husky A200.
           Generate the blackboard payload for find_and_drive_to_nearest_object.xml.
 
           SUBTREE_ID: {subtree_id}
@@ -175,16 +206,17 @@ llm_interface:
           ATTACHMENT_URIS: {attachment_uris}
 
           Required output:
-          - "waypoints": selected FindAnything locations as "x,y,yaw; ...".
-          - "waypoint_frame_id": the common frame_id reported for the selected locations.
+          - "waypoints": selected FindAnything locations as "x,y,yaw; ...", or "" for OSM-only fallback.
+          - "waypoint_frame_id": the common frame_id for map targets, or "map" for OSM-only fallback.
+          - "gps_waypoints": OSM-derived WGS84 access points for map targets, OSM tree targets for OSM-only fallback, or "" for map-only plans.
 
           Planning rules:
-          1. Use only locations returned in FIND_ANYTHING. Never invent object locations.
-          2. For a singular or nearest-object request, choose one result. Use ROBOT_POSE to select the nearest candidate when distances can be compared in the same frame.
-          3. For an explicit plural or all-matches request, include the relevant returned locations in an efficient order starting near ROBOT_POSE.
-          4. All selected locations must share one frame_id. Map-frame x/y values belong in "waypoints"; do not use geographic latitude/longitude.
-          5. Orient each yaw toward the next waypoint. For a single or final waypoint, preserve a reliable supplied yaw or use 0.0.
-          6. If FIND_ANYTHING has no successful locations, or its locations cannot be expressed safely in one navigation frame, return an empty JSON object.
+          1. If FIND_ANYTHING has locations, use only those as object destinations in "waypoints". For a singular request choose one; for an explicit plural request include the requested matches in an efficient order. All map targets must share one frame_id.
+          2. With FindAnything map targets, use "gps_waypoints" only for an optional OSM access route supported by the targets' "wgs84" coordinates. It must end near the first map target and does not replace any map visit. Otherwise set it to "".
+          3. If FIND_ANYTHING has no locations and the request is for trees, use OSM_CONTEXT.tree_features[].center as geographic tree destinations. Put the requested number of distinct tree coordinates in "gps_waypoints" and set "waypoints" to "". This is an OSM fallback, not a FindAnything detection. For other object classes or no suitable OSM trees, return an empty JSON object.
+          4. Use GPS_FIX, OSM route geometry, access restrictions, barriers, and steps, plus SATELLITE_MAP, to assess the GPS route. Do not infer traversability from satellite imagery alone.
+          5. Use successful RGB360SWEEP images and the annotated SLAM map to assess nearby obstacles. Images do not supply replacement tree coordinates.
+          6. Keep map x/y separate from latitude/longitude. Never convert between them by guessing. Orient map yaw toward the next target; use 0.0 for a final target when no reliable yaw is supplied.
           7. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):
@@ -212,13 +244,13 @@ llm_interface:
           Planning rules:
           1. The operator must define the area in USER_COMMAND or REQUEST_HINTS; do not invent a mission area.
           2. Use GPS_FIX to anchor the route near the robot and ROBOT_POSE to reason about the current navigation state.
-          3. Use OSM_CONTEXT.linear_features and area features as the route geometry. Build a connected coverage route around the requested area; do not draw straight chords between unrelated points.
-          4. Use SATELLITE_MAP to validate the geographic area, access, and route shape. Do not invent a path from satellite pixels when OSM_CONTEXT does not provide route geometry.
-          5. Prefer suitable compacted, gravel, fine-gravel, pebblestone, paved, path, track, footway, or cycleway features.
+          3. Generate connected coverage lanes inside the operator-defined polygon, respecting requested spacing, margins, and exclusions. Coverage lanes may leave OSM linear features; do not require a field-coverage route to coincide with mapped paths.
+          4. Use OSM_CONTEXT area and surface features to establish traversability and exclusions. Prefer OSM paths for access legs when compatible with the command, but do not constrain coverage lanes to them.
+          5. If USER_COMMAND explicitly requests or permits off-path travel, treat an explicit operator statement that terrain is traversable as valid unless CONTEXT contradicts it. Use SATELLITE_MAP to validate the area and route shape, but never infer off-path safety from satellite imagery alone.
           6. Avoid water, steps, restricted-access ways, barriers, unsafe road classes, and disconnected geometry.
           7. Orient each yaw toward the following GPS waypoint. Use altitude 0.0 when no reliable altitude is available, and return near the starting GPS fix when the mission is a roundtrip.
           8. Keep enough points to represent path bends, remove near-duplicates, and never put map-frame x/y values in "gps_waypoints".
-          9. If OSM_CONTEXT does not provide a connected route satisfying the area request, return an empty JSON object instead of fabricating a route.
+          9. Return an empty JSON object only if the area, traversability, or a requested exclusion cannot be determined safely from USER_COMMAND and CONTEXT.
           10. Return ONLY valid JSON matching the contract schema, with no markdown code fences.
 
           OUTPUT (JSON only):

@@ -27,8 +27,8 @@ The current mission-selectable catalogue is:
 | `temperature_logging.xml` | Map-frame `waypoints` (`x,y,yaw`) | Navigate and log temperature |
 | `gps_waypoint_navigation.xml` | Geographic `gps_waypoints` (`lat,lon[,yaw]`) | Follow a GPS/OSM route |
 | `gps_temperature_logging.xml` | Geographic `gps_waypoints` | Follow a GPS route and log temperature |
-| `navigate_and_photograph.xml` | Map-frame `waypoints` | Navigate and photograph by distance |
-| `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | Plan from object-location context and navigate |
+| `navigate_and_photograph.xml` | Geographic `gps_waypoints` | Navigate and photograph by distance |
+| `find_and_drive_to_nearest_object.xml` | FindAnything map-frame `waypoints` plus optional OSM `gps_waypoints` | Follow a GPS access leg, then visit object locations |
 | `explore_area.xml` | Geographic `gps_waypoints` plus optional area overlays | Explore an area using OSM/satellite context and Nav2 GPS waypoint following |
 
 `360_rgb_sweep.xml` is bundled as an internal active-context routine, not a

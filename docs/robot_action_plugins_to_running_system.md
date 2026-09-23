@@ -133,7 +133,7 @@ Current XML bundle:
 | `temperature_logging.xml` | Selectable map-frame navigation + temperature |
 | `gps_waypoint_navigation.xml` | Selectable geographic route |
 | `gps_temperature_logging.xml` | Selectable geographic route + temperature |
-| `navigate_and_photograph.xml` | Selectable map-frame navigation + photos |
+| `navigate_and_photograph.xml` | Selectable GPS navigation + photos |
 | `find_and_drive_to_nearest_object.xml` | Selectable navigation through waypoints planned from FindAnything context |
 | `explore_area.xml` | Selectable OSM/satellite-guided GPS exploration route |
 | `360_rgb_sweep.xml` | Internal context-capture routine |

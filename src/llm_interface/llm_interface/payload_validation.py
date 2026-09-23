@@ -7,6 +7,10 @@ import re
 from typing import Any, Mapping, Optional
 
 
+# ponytail: tune this clearance using measured OSM/GPS error on the robot.
+STAIR_CLEARANCE_M = 5.0
+
+
 def value_matches_type(value: Any, expected_type: str) -> bool:
     normalized = expected_type.strip().lower()
     if normalized in ("bool", "boolean"):
@@ -111,7 +115,7 @@ def _satellite_bounds(context: Mapping[str, Any]) -> Optional[tuple[float, float
 
 
 def _parse_coordinate_pairs(raw: Any) -> list[tuple[float, float]]:
-    if not isinstance(raw, str):
+    if not isinstance(raw, str) or not raw.strip():
         return []
     points: list[tuple[float, float]] = []
     for token in raw.split(";"):
@@ -190,6 +194,199 @@ def _gps_waypoint_payload_errors(payload: Any) -> list[str]:
     return errors
 
 
+def _segment_distance_m(
+    first: tuple[float, float],
+    second: tuple[float, float],
+    third: tuple[float, float],
+    fourth: tuple[float, float],
+) -> float:
+    latitude_scale = 111_195.0
+    longitude_scale = latitude_scale * math.cos(math.radians(first[0]))
+
+    def xy(point: tuple[float, float]) -> tuple[float, float]:
+        return (
+            (point[1] - first[1]) * longitude_scale,
+            (point[0] - first[0]) * latitude_scale,
+        )
+
+    a, b, c, d = (xy(point) for point in (first, second, third, fourth))
+
+    def cross(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+    if cross(a, b, c) * cross(a, b, d) < 0 and cross(c, d, a) * cross(c, d, b) < 0:
+        return 0.0
+
+    def point_to_segment(p, start, end):
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        length_squared = dx * dx + dy * dy
+        fraction = 0.0
+        if length_squared:
+            projection = ((p[0] - start[0]) * dx + (p[1] - start[1]) * dy)
+            fraction = max(0.0, min(1.0, projection / length_squared))
+        return math.hypot(p[0] - start[0] - fraction * dx, p[1] - start[1] - fraction * dy)
+
+    return min(
+        point_to_segment(a, c, d), point_to_segment(b, c, d),
+        point_to_segment(c, a, b), point_to_segment(d, a, b),
+    )
+
+
+def gps_stairway_errors(payload: Any, context: Mapping[str, Any]) -> list[str]:
+    raw = payload.get("gps_waypoints") if isinstance(payload, dict) else None
+    if not isinstance(raw, str):
+        return []
+    osm = _context_value(context, "OSM_CONTEXT", "osm_context")
+    if not isinstance(osm, Mapping):
+        return []
+    if osm.get("status") == "unavailable":
+        return ["OSM_CONTEXT unavailable; cannot verify GPS route against stairways"]
+    steps = osm.get("steps_features")
+    if not isinstance(steps, list):
+        return [
+            "OSM_CONTEXT has no stairway inventory; gather fresh OSM context "
+            "before GPS navigation"
+        ]
+    route = [_parse_gps_waypoint(token.strip()) for token in raw.split(";") if token.strip()]
+    if not route or any(
+        point is None or not all(math.isfinite(value) for value in point)
+        for point in route
+    ):
+        return []
+    center = osm.get("center")
+    try:
+        center_lat = float(center["lat"])
+        center_lon = float(center["lon"])
+        radius_m = float(osm["radius_m"])
+    except (KeyError, TypeError, ValueError):
+        return ["OSM_CONTEXT lacks stairway query coverage; cannot validate GPS route"]
+    if (
+        not all(math.isfinite(value) for value in (center_lat, center_lon, radius_m))
+        or radius_m <= STAIR_CLEARANCE_M
+    ):
+        return ["OSM_CONTEXT has invalid stairway query coverage"]
+    longitude_scale = 111_195.0 * math.cos(math.radians(center_lat))
+    for index, point in enumerate(route, start=1):
+        distance_m = math.hypot(
+            (point[0] - center_lat) * 111_195.0,
+            (point[1] - center_lon) * longitude_scale,
+        )
+        if distance_m > radius_m - STAIR_CLEARANCE_M:
+            return [f"gps_waypoints entry {index} lies outside OSM stairway query coverage"]
+
+    for stair in steps:
+        if not isinstance(stair, Mapping):
+            return ["OSM stairway inventory is malformed; cannot validate GPS route"]
+        coordinates = stair.get("coordinates")
+        stair_points: list[tuple[float, float]] = []
+        try:
+            stair_points = [
+                (float(point["lat"]), float(point["lon"])) for point in coordinates
+            ]
+        except (KeyError, TypeError, ValueError):
+            pass
+        if len(stair_points) < 2 or not all(
+            math.isfinite(value) for point in stair_points for value in point
+        ):
+            return [f"OSM steps way {stair.get('osm_id', 'unknown')} lacks valid geometry"]
+        for index in range(max(1, len(route) - 1)):
+            start = route[index][:2]
+            end = route[min(index + 1, len(route) - 1)][:2]
+            for first, second in zip(stair_points, stair_points[1:]):
+                if _segment_distance_m(start, end, first, second) <= STAIR_CLEARANCE_M:
+                    return [
+                        f"gps_waypoints segment {index + 1} approaches OSM steps way "
+                        f"{stair.get('osm_id', 'unknown')} within {STAIR_CLEARANCE_M:g} m"
+                    ]
+    return []
+
+
+def _object_route_errors(payload: Any, context: Mapping[str, Any]) -> list[str]:
+    if not isinstance(payload, Mapping):
+        return []
+    map_waypoints = payload.get("waypoints")
+    if isinstance(map_waypoints, str) and map_waypoints and not map_waypoints.strip():
+        return ["waypoints must contain map coordinates or be exactly empty"]
+    if map_waypoints:
+        return []
+    raw_gps = payload.get("gps_waypoints")
+    if not raw_gps:
+        return ["object route needs FindAnything map waypoints or OSM tree GPS waypoints"]
+    hints = _context_value(context, "REQUEST_HINTS")
+    mission = hints.get("MISSION_REQUEST") if isinstance(hints, Mapping) else None
+    mission_text = str(mission.get("mission_text", "")) if isinstance(mission, Mapping) else ""
+    if mission_text and not re.search(r"\btrees?\b", mission_text, re.IGNORECASE):
+        return ["OSM tree fallback is only valid for tree requests"]
+
+    find_anything = _context_value(context, "FIND_ANYTHING")
+    if isinstance(find_anything, Mapping):
+        queries = find_anything.get("queries")
+        if find_anything.get("locations") or any(
+            isinstance(query, Mapping) and query.get("locations")
+            for query in (queries if isinstance(queries, list) else [])
+        ):
+            return ["FindAnything locations are available; use them as map-frame targets"]
+
+    osm = _context_value(context, "OSM_CONTEXT", "osm_context")
+    trees = osm.get("tree_features", []) if isinstance(osm, Mapping) else []
+    centers: list[tuple[float, float]] = []
+    for tree in (trees if isinstance(trees, list) else []):
+        center = tree.get("center") if isinstance(tree, Mapping) else None
+        if not isinstance(center, Mapping):
+            continue
+        try:
+            point = float(center["lat"]), float(center["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if all(math.isfinite(value) for value in point):
+            centers.append(point)
+    if not centers:
+        return ["FindAnything unavailable and OSM_CONTEXT has no mapped tree coordinates"]
+
+    used: set[int] = set()
+    for index, token in enumerate(str(raw_gps).split(";"), start=1):
+        point = _parse_gps_waypoint(token.strip())
+        if point is None:
+            continue
+        match = next((number for number, center in enumerate(centers)
+                      if abs(point[0] - center[0]) <= 1e-5
+                      and abs(point[1] - center[1]) <= 1e-5), None)
+        if match is None or match in used:
+            return [f"gps_waypoints entry {index} must be a distinct OSM tree center"]
+        used.add(match)
+    return []
+
+
+def osm_five_tree_route(context: Mapping[str, Any], user_command: str) -> str:
+    """Supply C3's five OSM targets when the model produced no route."""
+    if not (re.search(r"\b(?:five|5)\b", user_command, re.IGNORECASE)
+            and re.search(r"\btrees?\b", user_command, re.IGNORECASE)):
+        return ""
+    osm = _context_value(context, "OSM_CONTEXT", "osm_context")
+    trees = osm.get("tree_features") if isinstance(osm, Mapping) else None
+    if not isinstance(trees, list):
+        return ""
+    points: list[tuple[float, float]] = []
+    for tree in trees:
+        center = tree.get("center") if isinstance(tree, Mapping) else None
+        if not isinstance(center, Mapping):
+            continue
+        try:
+            point = float(center["lat"]), float(center["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if all(math.isfinite(value) for value in point) and point not in points:
+            points.append(point)
+        if len(points) == 5:
+            break
+    if len(points) < 5:
+        return ""
+    route = "; ".join(f"{lat:.8f},{lon:.8f},0.0" for lat, lon in points)
+    return route if not _object_route_errors(
+        {"waypoints": "", "gps_waypoints": route}, context
+    ) else ""
+
+
 def generated_payload_errors(
     payload: Any,
     contract: Mapping[str, Any],
@@ -197,8 +394,14 @@ def generated_payload_errors(
 ) -> list[str]:
     _, errors = payload_matches_contract(payload, contract)
     result = list(errors)
-    if "waypoints" in contract:
+    if "waypoints" in contract and isinstance(payload, Mapping) and payload.get("waypoints"):
         result.extend(_waypoint_payload_errors(payload, context or {}))
-    if "gps_waypoints" in contract:
+    if "gps_waypoints" in contract and (
+        "waypoints" not in contract
+        or (isinstance(payload, Mapping) and payload.get("gps_waypoints"))
+    ):
         result.extend(_gps_waypoint_payload_errors(payload))
+        result.extend(gps_stairway_errors(payload, context or {}))
+    if "waypoints" in contract and "gps_waypoints" in contract:
+        result.extend(_object_route_errors(payload, context or {}))
     return result

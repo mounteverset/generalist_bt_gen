@@ -35,16 +35,17 @@ except ModuleNotFoundError:
 REVIEW_PROMPT_TEMPLATE = """You are a plan safety reviewer for a Clearpath Husky A200 ground robot.
 
 Review the generated waypoint plan using the rendered map image and JSON context.
-OSM and satellite geometry are reasoning context. Current MoveTo behavior trees execute x,y,yaw map-frame waypoints; geographic trees, including explore_area.xml, execute GPS waypoints through FollowGPSWaypoints.
+OSM and satellite geometry are reasoning context. MoveTo executes x,y,yaw map-frame waypoints; MoveToGPS executes geographic waypoints through FollowGPSWaypoints.
 FindAnything results are shown as magenta crosshair rings labeled with the object query; planned waypoints remain blue numbered circles.
 
 Review criteria:
 - Mission fulfillment: requested count/coverage, refinement request honored, obvious omissions.
-- Object-target fidelity: for find_and_drive_to_nearest_object.xml, each planned destination must correspond to a labeled FindAnything object marker; honor singular, nearest, plural, and all-matches wording.
+- Object-target fidelity: for find_and_drive_to_nearest_object.xml, map-frame destinations must match FindAnything object markers. When FindAnything has no locations, GPS destinations must match distinct OSM_CONTEXT.tree_features centers; honor singular, nearest, plural, and all-matches wording.
 - Robot constraints: Husky must not drive through water, barriers, steps, unsafe streets, unknown SLAM space, or non-path terrain where avoidable.
 - Coordinate sanity: waypoint mode matches map mode, waypoints are visible/in-bounds, no impossible jumps, no lat/lon accidentally treated as x,y.
 - Exploration coverage: for explore_area.xml, GPS waypoints should stay inside the geographic area overlay when one is supplied, and frontiers should cover the requested area.
 - Context use: compare the route against OSM_CONTEXT.linear_features, SATELLITE_MAP, ROBOT_POSE, GPS_FIX, and mission reasoner capability constraints.
+- Deterministic findings in review_input are mandatory. For osm_steps, identify the affected waypoint segment and recommend a local detour while preserving safe route sections.
 
 Return strict JSON only, with this shape:
 {{
@@ -195,6 +196,8 @@ class PlanReviewerNode(Node):
         review_input: Dict[str, Any],
         render_info: Dict[str, Any],
     ) -> Dict[str, Any]:
+        deterministic_findings = deterministic_plan_findings(review_input)
+        review_input['deterministic_findings'] = deterministic_findings
         try:
             raw = self._invoke_llm(review_input, str(render_info.get('image_path') or ''))
             parsed = self._parse_review_json(raw)
@@ -214,7 +217,6 @@ class PlanReviewerNode(Node):
                 }
             )
             parsed['recommended_action'] = 'submit_to_operator'
-        deterministic_findings = deterministic_plan_findings(review_input)
         if deterministic_findings:
             parsed['status'] = 'reject'
             parsed['summary'] = (

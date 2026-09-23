@@ -48,10 +48,11 @@ DEFAULT_KNOWN_TREE_ENTRIES = (
         'waypoints using MAVROS global setpoints, lower the temperature probe, '
         'log water temperature, and raise the probe at each station.'
     ),
-    'navigate_and_photograph.xml::Navigate through map-frame waypoints and take RGB photos.',
+    'navigate_and_photograph.xml::Navigate through GPS waypoints and take RGB photos.',
     (
-        'find_and_drive_to_nearest_object.xml::Plan map-frame waypoints from '
-        'FindAnything context and drive to the selected object location.'
+        'find_and_drive_to_nearest_object.xml::Plan with FindAnything poses, '
+        'GPS/OSM, satellite maps, and a 360 RGB sweep; optionally follow an OSM '
+        'GPS access route before map-frame object navigation.'
     ),
     (
         'explore_area.xml::Explore an operator-defined ground area using '
@@ -626,6 +627,14 @@ class MissionCoordinatorNode(Node):
                     payload_response,
                     operator_feedback=feedback_text,
                 )
+
+            if self._route_is_blocked(payload_response, plan_review):
+                goal_handle.succeed()
+                self._set_lifecycle_state(self.STATE_FAILED)
+                result.accepted = False
+                result.outcome_message = 'GPS route remains unsafe after stairway replanning.'
+                self._publish_status(result.outcome_message)
+                return result
 
             while (
                 self._requires_operator_accept(goal)
@@ -1261,6 +1270,11 @@ class MissionCoordinatorNode(Node):
         if response is None:
             self._publish_status('CreatePayload returned no response.')
             return None
+        if response.status_code == response.RETRY and response.payload_json not in ('', '{}'):
+            self._publish_status(
+                'Generated GPS route needs stairway replanning; sending draft to plan reviewer.'
+            )
+            return response
         if response.status_code != response.SUCCESS:
             self.get_logger().warn(
                 f'CreatePayload failed (session={request.session_id}, subtree={tree_id}, '
@@ -1371,6 +1385,16 @@ class MissionCoordinatorNode(Node):
         if not isinstance(plan_review, dict):
             return ''
         return str(plan_review.get('status') or '').lower()
+
+    @staticmethod
+    def _route_is_blocked(
+        payload: CreatePayload.Response,
+        plan_review: Optional[Dict[str, Any]],
+    ) -> bool:
+        return payload.status_code != payload.SUCCESS or any(
+            isinstance(finding, dict) and finding.get('guard') == 'osm_steps'
+            for finding in ((plan_review or {}).get('findings') or [])
+        )
 
     def _plan_review_requires_operator(
         self,

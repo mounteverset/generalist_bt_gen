@@ -38,7 +38,7 @@ The selectable tree IDs in `config/tree_metadata.yaml` must match both
 | `temperature_logging.xml` | `waypoints` | map-frame `x,y,yaw` |
 | `gps_waypoint_navigation.xml` | `gps_waypoints` | geographic latitude/longitude |
 | `gps_temperature_logging.xml` | `gps_waypoints` | geographic latitude/longitude |
-| `navigate_and_photograph.xml` | `waypoints` | map-frame `x,y,yaw` |
+| `navigate_and_photograph.xml` | `gps_waypoints` | geographic latitude/longitude |
 | `explore_area.xml` | `gps_waypoints`, optional `area_polygon_geo`, `frontiers_geo` | geographic latitude/longitude |
 
 `360_rgb_sweep.xml` is an internal context-capture tree, so it has source XML
@@ -102,9 +102,10 @@ routes use `gps_waypoints` and are consumed by
 | `FIND_ANYTHING` | Object-location candidates | configured FindAnything service |
 | `RGB360SWEEP` | Active six-heading RGB context sweep | internal `360_rgb_sweep.xml` execution |
 
-Object-targeted trees request `FIND_ANYTHING` here so the service response is
-available to payload generation. FindAnything is not an executable BT node; the
-tree consumes the map-frame `waypoints` selected from this context.
+The object-targeted tree gathers `FIND_ANYTHING`, `GPS_FIX`, `OSM_CONTEXT`,
+`SATELLITE_MAP`, and `RGB360SWEEP` before payload generation. It consumes
+FindAnything map-frame `waypoints` and, when justified by aligned context, an
+OSM-derived `gps_waypoints` access leg. FindAnything is not an executable BT node.
 
 ## Capability Fields
 

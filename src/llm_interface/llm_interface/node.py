@@ -38,7 +38,7 @@ try:
 except ModuleNotFoundError:
     ChatOpenRouter = None
 from rclpy.node import Node
-from llm_interface.payload_validation import generated_payload_errors
+from llm_interface.payload_validation import generated_payload_errors, osm_five_tree_route
 
 DEFAULT_LLM_PROVIDER = 'gemini'
 SUPPORTED_LLM_PROVIDERS = {'gemini', 'openai', 'openrouter'}
@@ -111,8 +111,12 @@ DEFAULT_PAYLOAD_PROMPT = (
     "11. OSM_CONTEXT, SATELLITE_MAP, and GPS_FIX are geographic reasoning context only unless\n"
     "    CONTEXT explicitly provides a geographic-to-map-frame transform. GPS_FIX plus\n"
     "    ROBOT_POSE alone does not establish map-axis orientation\n\n"
-    "12. For geographic route requests, follow connected OSM linear features and avoid water,\n"
-    "    steps, access restrictions, and barriers. Do not invent path geometry from an image\n\n"
+    "12. Treat connected OSM linear features as preferred route evidence, not a mandatory\n"
+    "    boundary. If USER_COMMAND explicitly requests or permits off-path travel, allow it\n"
+    "    through operator-defined or OSM areas that are traversable and unrestricted. An\n"
+    "    explicit operator statement that terrain is traversable is valid unless CONTEXT\n"
+    "    contradicts it. Never infer off-path safety from satellite imagery alone; avoid\n"
+    "    water, steps, access restrictions, and barriers\n\n"
     "13. If executable map-frame waypoints cannot be derived from CONTEXT, return an empty JSON\n"
     "    object so the caller reports missing context instead of fabricating a route\n\n"
     "OUTPUT (JSON only):"
@@ -1014,6 +1018,13 @@ class LLMInterfaceNode(Node):
                 user_command=request.user_command,
                 attachment_uris=list(request.attachment_uris)
             )
+            if (request.subtree_id == 'find_and_drive_to_nearest_object.xml'
+                    and not payload_dict.get('waypoints')
+                    and not payload_dict.get('gps_waypoints')):
+                route = osm_five_tree_route(context, request.user_command)
+                if route:
+                    payload_dict['gps_waypoints'] = route
+                    self.get_logger().info('Using five OSM tree targets after empty LLM route')
             payload_errors = self._generated_payload_errors(
                 request.subtree_id,
                 payload_dict,
@@ -1021,8 +1032,15 @@ class LLMInterfaceNode(Node):
                 context,
             )
             if payload_errors:
-                response.status_code = response.ERROR
-                response.payload_json = "{}"
+                stair_only = "gps_waypoints" in contract and all(
+                    error.startswith("gps_waypoints segment ") and
+                    "approaches OSM steps way" in error
+                    for error in payload_errors
+                )
+                response.status_code = response.RETRY if stair_only else response.ERROR
+                response.payload_json = (
+                    json.dumps(payload_dict, ensure_ascii=False) if stair_only else "{}"
+                )
                 response.reasoning = "Generated payload failed validation: " + "; ".join(payload_errors)
                 response.tool_trace_json = "[]"
                 self.get_logger().warning(response.reasoning)
@@ -1169,7 +1187,13 @@ class LLMInterfaceNode(Node):
             if converted is not None:
                 coerced['waypoints'] = converted
         if isinstance(contract.get('gps_waypoints'), dict):
-            converted = self._coerce_gps_waypoints_value(coerced.get('gps_waypoints'))
+            source = coerced.get('gps_waypoints')
+            if source is None:
+                for key in ('waypoints', 'route', 'points', 'poses'):
+                    if key in coerced:
+                        source = coerced[key]
+                        break
+            converted = self._coerce_gps_waypoints_value(source)
             if converted is not None:
                 coerced['gps_waypoints'] = converted
         for key in ('frontiers',):
@@ -1735,6 +1759,7 @@ class LLMInterfaceNode(Node):
             normalized = self._safe_parse_payload(cleaned)
             if normalized is None:
                 continue
+            normalized = self._coerce_payload_to_contract(normalized, contract)
             matches, errors = self._payload_matches_contract(normalized, contract)
             if matches:
                 return normalized
