@@ -53,23 +53,23 @@ BT::PortsList GetCurrentPose::providedPorts()
       "Maximum time to wait for one pose sample."),
     BT::InputPort<std::string>(
       "odom_topic", "",
-      "Odometry topic used as fallback when pose_topic is empty."),
+      "Odometry topic used when the pose topic has no sample."),
     BT::InputPort<int>(
       "odom_timeout_ms", 1000,
       "Maximum time to wait for one odometry sample."),
-    BT::OutputPort<double>("current_x", "Current odometry x position."),
-    BT::OutputPort<double>("current_y", "Current odometry y position."),
-    BT::OutputPort<double>("current_yaw", "Current odometry yaw."),
+    BT::OutputPort<double>("current_x", "Current pose x position."),
+    BT::OutputPort<double>("current_y", "Current pose y position."),
+    BT::OutputPort<double>("current_yaw", "Current pose yaw."),
     BT::OutputPort<std::string>("current_pose", "Current pose as 'x,y,yaw'."),
     BT::OutputPort<std::string>(
-      "current_frame_id", "Frame id from the odometry message header."),
-    BT::OutputPort<std::string>("sweep_pose_000", "Current x,y with yaw 0."),
-    BT::OutputPort<std::string>("sweep_pose_060", "Current x,y with yaw 1.046."),
-    BT::OutputPort<std::string>("sweep_pose_120", "Current x,y with yaw 2.093."),
-    BT::OutputPort<std::string>("sweep_pose_180", "Current x,y with yaw 3.14."),
-    BT::OutputPort<std::string>("sweep_pose_240", "Current x,y with yaw 4.186."),
-    BT::OutputPort<std::string>("sweep_pose_300", "Current x,y with yaw 5.233."),
-    BT::OutputPort<std::string>("sweep_pose_360", "Current x,y with yaw 6.283.")
+      "current_frame_id", "Frame id from the received pose or odometry."),
+    BT::OutputPort<std::string>("sweep_pose_000", "Current x,y and starting yaw."),
+    BT::OutputPort<std::string>("sweep_pose_060", "Current x,y with yaw 60 degrees from start."),
+    BT::OutputPort<std::string>("sweep_pose_120", "Current x,y with yaw 120 degrees from start."),
+    BT::OutputPort<std::string>("sweep_pose_180", "Current x,y with yaw 180 degrees from start."),
+    BT::OutputPort<std::string>("sweep_pose_240", "Current x,y with yaw 240 degrees from start."),
+    BT::OutputPort<std::string>("sweep_pose_300", "Current x,y with yaw 300 degrees from start."),
+    BT::OutputPort<std::string>("sweep_pose_360", "Current x,y with starting yaw after a full turn.")
   };
 }
 
@@ -99,23 +99,25 @@ BT::NodeStatus GetCurrentPose::tick()
   double yaw = 0.0;
   std::string frame_id;
 
+  bool have_pose = false;
   if (!pose_topic.empty()) {
     geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
     const bool received = rclcpp::wait_for_message<geometry_msgs::msg::PoseWithCovarianceStamped>(
       pose_msg, wait_node, pose_topic, std::chrono::milliseconds(pose_timeout_ms),
       rclcpp::SystemDefaultsQoS());
-    if (!received) {
-      RCLCPP_ERROR(
-        get_logger(), "GetCurrentPose -> no pose received on '%s' within %d ms.",
+    if (received) {
+      x = pose_msg.pose.pose.position.x;
+      y = pose_msg.pose.pose.position.y;
+      yaw = yaw_from_pose(pose_msg);
+      frame_id = pose_msg.header.frame_id;
+      have_pose = true;
+    } else {
+      RCLCPP_WARN(
+        get_logger(), "GetCurrentPose -> no pose on '%s' within %d ms; trying odometry.",
         pose_topic.c_str(), pose_timeout_ms);
-      return BT::NodeStatus::FAILURE;
     }
-
-    x = pose_msg.pose.pose.position.x;
-    y = pose_msg.pose.pose.position.y;
-    yaw = yaw_from_pose(pose_msg);
-    frame_id = pose_msg.header.frame_id.empty() ? "target/map" : pose_msg.header.frame_id;
-  } else {
+  }
+  if (!have_pose) {
     nav_msgs::msg::Odometry odom_msg;
     const bool received = rclcpp::wait_for_message<nav_msgs::msg::Odometry>(
       odom_msg, wait_node, odom_topic, std::chrono::milliseconds(timeout_ms),
@@ -130,14 +132,12 @@ BT::NodeStatus GetCurrentPose::tick()
     x = odom_msg.pose.pose.position.x;
     y = odom_msg.pose.pose.position.y;
     yaw = yaw_from_odom(odom_msg);
-    frame_id = odom_msg.header.frame_id.empty() ? "target/map" : odom_msg.header.frame_id;
+    frame_id = odom_msg.header.frame_id;
   }
 
-  if (frame_id != "target/map") {
-    RCLCPP_WARN(
-      get_logger(),
-      "GetCurrentPose -> current pose frame is '%s'. MoveTo defaults to target/map-frame goals.",
-      frame_id.c_str());
+  if (frame_id.empty()) {
+    RCLCPP_ERROR(get_logger(), "GetCurrentPose -> received pose without a frame id.");
+    return BT::NodeStatus::FAILURE;
   }
 
   if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(yaw)) {
@@ -151,13 +151,14 @@ BT::NodeStatus GetCurrentPose::tick()
   setOutput("current_yaw", yaw);
   setOutput("current_pose", pose_string(x, y, yaw));
   setOutput("current_frame_id", frame_id);
-  setOutput("sweep_pose_000", pose_string(x, y, 0.0));
-  setOutput("sweep_pose_060", pose_string(x, y, 1.046));
-  setOutput("sweep_pose_120", pose_string(x, y, 2.093));
-  setOutput("sweep_pose_180", pose_string(x, y, 3.14));
-  setOutput("sweep_pose_240", pose_string(x, y, 4.186));
-  setOutput("sweep_pose_300", pose_string(x, y, 5.233));
-  setOutput("sweep_pose_360", pose_string(x, y, 6.283));
+  const double step = std::acos(-1.0) / 3.0;
+  setOutput("sweep_pose_000", pose_string(x, y, yaw));
+  setOutput("sweep_pose_060", pose_string(x, y, yaw + step));
+  setOutput("sweep_pose_120", pose_string(x, y, yaw + 2.0 * step));
+  setOutput("sweep_pose_180", pose_string(x, y, yaw + 3.0 * step));
+  setOutput("sweep_pose_240", pose_string(x, y, yaw + 4.0 * step));
+  setOutput("sweep_pose_300", pose_string(x, y, yaw + 5.0 * step));
+  setOutput("sweep_pose_360", pose_string(x, y, yaw + 6.0 * step));
 
   if (enable_debug_logging_) {
     RCLCPP_INFO(

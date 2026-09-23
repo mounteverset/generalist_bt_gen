@@ -13,7 +13,7 @@ ROS - related nodes will be making use of the boilerplate classes in behaviortre
 | ParseWaypoints | `SyncActionNode` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | Validates and queues semicolon-separated map-frame `x,y,yaw` waypoints |
 | ParseGpsWaypoints | `SyncActionNode` | `raw_waypoints`, `waypoint_queue`, `waypoint_count` | Validates and queues semicolon-separated geographic waypoints |
 | TakePicture / TakePhoto | `SyncActionNode` | `image_topic`, `output_directory`, `filename_prefix`, `timeout_ms`, `filepath` (output) | Saves the latest RGB image from a configurable topic to disk |
-| GetCurrentPose | `SyncActionNode` | `pose_topic`, `pose_timeout_ms`, `odom_topic`, `odom_timeout_ms`, `current_x`/`current_y`/`current_yaw`/`current_pose`, fixed-yaw `sweep_pose_*` outputs | Reads one map pose sample, or odometry as fallback, and exposes the current pose plus fixed-yaw sweep poses |
+| GetCurrentPose | `SyncActionNode` | `pose_topic`, `pose_timeout_ms`, `odom_topic`, `odom_timeout_ms`, `current_x`/`current_y`/`current_yaw`/`current_pose`, relative-yaw `sweep_pose_*` outputs | Reads a pose sample, falls back to odometry when it is unavailable, and exposes the current pose and sweep poses in its reported frame |
 | LogTemperature | `RosServiceNode<std_srvs::srv::Trigger>` | `logfile_path` (input) | Requests a temperature sample and appends a successful response to the configured file |
 | SetMavrosMode | `RosServiceNode<mavros_msgs::srv::SetMode>` | `custom_mode` (input) | Requests an ArduPilot mode through `/mavros/set_mode` |
 | SetMavrosArm | `RosServiceNode<mavros_msgs::srv::CommandBool>` | `arm` (input) | Arms or disarms through `/mavros/cmd/arming` |
