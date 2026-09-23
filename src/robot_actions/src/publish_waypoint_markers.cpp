@@ -205,6 +205,7 @@ BT::NodeStatus PublishWaypointMarkers::onRunning()
     return finish();
   }
 
+  conversion_started_ = std::chrono::steady_clock::now();
   start_next_gps_conversion();
   return BT::NodeStatus::RUNNING;
 }
