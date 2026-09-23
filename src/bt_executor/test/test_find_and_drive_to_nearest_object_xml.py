@@ -20,6 +20,19 @@ def test_find_and_drive_tree_executes_planner_generated_object_waypoints():
     assert behavior_tree.find('.//FindAnything') is None
     assert behavior_tree.find('.//FindObjectLocation') is None
 
+    sequence = behavior_tree.find('Sequence')
+    assert sequence is not None
+    assert [child.tag for child in sequence] == [
+        'PublishWaypointMarkers', 'MoveToGPS', 'ParseWaypoints', 'LoopString'
+    ]
+    markers = sequence.find('PublishWaypointMarkers')
+    assert markers.attrib['waypoints'] == '{waypoints}'
+    assert markers.attrib['gps_waypoints'] == '{gps_waypoints}'
+    gps_leg = sequence.find('MoveToGPS')
+    assert gps_leg.attrib['gps_poses'] == '{gps_waypoints}'
+    assert gps_leg.attrib['action_name'] == '/follow_gps_waypoints'
+    assert gps_leg.attrib['_skipIf'] == "gps_waypoints == ''"
+
     parse_waypoints = behavior_tree.find('.//ParseWaypoints')
     assert parse_waypoints is not None
     assert parse_waypoints.attrib['raw_waypoints'] == '{waypoints}'

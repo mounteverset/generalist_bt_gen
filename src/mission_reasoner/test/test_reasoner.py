@@ -46,15 +46,49 @@ def test_explore_area_metadata_advertises_payload_and_context_contract():
     assert contract['frontiers_geo']['required'] is False
 
 
+def test_accepts_geographic_coverage_mission():
+    result = _reasoner().validate(
+        'Plan a Husky coverage route inside this latitude longitude polygon.',
+        _trees(),
+        extracted_requirements={
+            'required_capabilities': [
+                'localization.gps',
+                'localization.odometry',
+                'locomotion.ground',
+                'mapping.slam',
+                'navigation.gps_waypoints',
+                'navigation.waypoints',
+                'payload.parse_gps_waypoints',
+            ]
+        },
+    )
+
+    assert result.status_code == ACCEPT
+    assert result.candidate_trees == ['explore_area.xml']
+
+
 def test_accepts_ground_navigation_and_photos():
     result = _reasoner().validate(
-        'Drive to these waypoints and take photos.',
+        (
+            'Drive the Husky along the gravel path towards the north end of the lake. '
+            'Take a photograph every 10 metres travelled.'
+        ),
         _trees(),
-        context_json=json.dumps({'waypoints': '0,0,0; 1,0,0'}),
+        extracted_requirements={
+            'required_capabilities': [
+                'localization.gps',
+                'localization.odometry',
+                'locomotion.ground',
+                'navigation.gps_waypoints',
+                'navigation.waypoints',
+                'sensing.rgb_image',
+            ]
+        },
     )
 
     assert result.status_code == ACCEPT
     assert 'navigate_and_photograph.xml' in result.candidate_trees
+    assert 'navigation.gps_waypoints' in result.matched_capabilities
     assert 'sensing.rgb_image' in result.matched_capabilities
 
 

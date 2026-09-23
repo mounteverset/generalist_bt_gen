@@ -1,6 +1,8 @@
 import os
+import json
 import sys
 import types
+from types import SimpleNamespace
 
 
 def _install_ros_stubs() -> None:
@@ -105,6 +107,68 @@ _install_ros_stubs()
 _install_langchain_stubs()
 
 from llm_interface.node import DEFAULT_PAYLOAD_PROMPT, LLMInterfaceNode
+from llm_interface.payload_validation import generated_payload_errors
+
+
+def test_stair_collision_returns_reviewable_but_non_executable_draft():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    payload = {'gps_waypoints': '48.28485,11.60695;48.28475,11.60715'}
+    context = {
+        'OSM_CONTEXT': {
+            'center': {'lat': 48.2848, 'lon': 11.6071},
+            'radius_m': 1200,
+            'steps_features': [{
+                'osm_id': 485792666,
+                'coordinates': [
+                    {'lat': 48.2848323, 'lon': 11.6070147},
+                    {'lat': 48.2848002, 'lon': 11.6070885},
+                ],
+            }],
+        },
+    }
+    contract = {'gps_waypoints': {'type': 'string', 'required': True}}
+    node._generate_payload_via_llm = lambda **_kwargs: payload
+    node._generated_payload_errors = (
+        lambda _tree, candidate, requirements, snapshot:
+        generated_payload_errors(candidate, requirements, snapshot)
+    )
+    node.get_logger = lambda: SimpleNamespace(info=lambda *_: None, warning=lambda *_: None)
+    request = SimpleNamespace(
+        context_snapshot_json=json.dumps(context),
+        subtree_contract_json=json.dumps(contract),
+        subtree_id='gps_temperature_logging.xml',
+        session_id='test',
+        user_command='drive around the lake',
+        attachment_uris=[],
+    )
+    response = SimpleNamespace(SUCCESS=0, RETRY=1, ERROR=2)
+
+    node.handle_create_payload(request, response)
+
+    assert response.status_code == response.RETRY
+    assert json.loads(response.payload_json) == payload
+    assert '485792666' in response.reasoning
+
+    request.context_snapshot_json = json.dumps(
+        {'OSM_CONTEXT': {'status': 'unavailable'}}
+    )
+    node.handle_create_payload(request, response)
+    assert response.status_code == response.ERROR
+    assert response.payload_json == '{}'
+
+
+def test_geographic_payload_prompts_allow_context_supported_off_path_travel():
+    params_path = os.path.join(
+        os.path.dirname(__file__), '..', 'config', 'llm_interface_params.yaml'
+    )
+    with open(params_path, encoding='utf-8') as handle:
+        params = handle.read()
+
+    assert 'not a mandatory' in DEFAULT_PAYLOAD_PROMPT
+    assert 'off-path travel' in DEFAULT_PAYLOAD_PROMPT
+    assert 'explicitly requests or permits off-path travel' in params
+    assert 'Coverage lanes may leave OSM linear features' in params
+    assert 'never infer off-path safety from satellite imagery alone' in params
 
 
 def test_fallback_selection_prefers_gps_tree_for_named_lake_route():
@@ -446,6 +510,47 @@ def test_coerce_structured_gps_waypoints_to_contract_string():
     assert coerced['gps_waypoints'] == (
         '48.2848,11.6077,0.0,1.2; 48.2851,11.6074,473.0,-0.5'
     )
+
+
+def test_coerce_gps_waypoints_from_common_route_key():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    payload = {
+        'waypoints': [
+            {'latitude': 48.2848, 'longitude': 11.6077, 'yaw': 1.2},
+        ]
+    }
+
+    coerced = node._coerce_payload_to_contract(
+        payload, {'gps_waypoints': {'type': 'string'}}
+    )
+
+    assert coerced['gps_waypoints'] == '48.2848,11.6077,0.0,1.2'
+
+
+def test_normalizer_coerces_structured_gps_waypoints_before_validation():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    node._selection_llm_enabled = True
+    node._payload_schema_max_retries = 1
+    node._payload_normalizer_chain = types.SimpleNamespace(
+        invoke=lambda _: types.SimpleNamespace(
+            content=(
+                '{"gps_waypoints": [{"latitude": 48.2848, '
+                '"longitude": 11.6077, "yaw": 1.2}]}'
+            )
+        )
+    )
+    node.get_logger = lambda: types.SimpleNamespace(warning=lambda _: None)
+    contract = {
+        'gps_waypoints': {
+            'type': 'string',
+            'required': True,
+            'schema': {'type': 'string'},
+        }
+    }
+
+    normalized = node._normalize_payload_with_llm('prompt', contract, '{}')
+
+    assert normalized['gps_waypoints'] == '48.2848,11.6077,0.0,1.2'
 
 
 def test_coerce_payload_materializes_contract_defaults():

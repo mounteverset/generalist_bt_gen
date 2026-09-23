@@ -222,6 +222,7 @@ def test_gps_tree_contracts_use_geographic_waypoint_key():
         'gps_waypoint_navigation.xml',
         'gps_temperature_logging.xml',
         'blueboat_temperature_logging.xml',
+        'navigate_and_photograph.xml',
     ):
         contract = trees[tree_id]['blackboard_contract']
         assert 'gps_waypoints' in contract
@@ -528,6 +529,51 @@ def test_review_feedback_for_refinement_includes_findings():
     assert 'Waypoint 2 crosses water.' in feedback
     assert 'PLAN_REVIEW_FINDINGS_JSON:' in feedback
     assert '"robot_safety"' in feedback
+
+
+def test_unresolved_stairway_draft_cannot_reach_execution_even_if_approved():
+    draft = SimpleNamespace(status_code=1, SUCCESS=0)
+    accepted_payload = SimpleNamespace(status_code=0, SUCCESS=0)
+    stair_review = {'findings': [{'guard': 'osm_steps'}]}
+
+    assert MissionCoordinatorNode._route_is_blocked(draft, {'status': 'pass'})
+    assert MissionCoordinatorNode._route_is_blocked(
+        accepted_payload, stair_review
+    )
+    assert not MissionCoordinatorNode._route_is_blocked(
+        accepted_payload, {'status': 'pass', 'findings': []}
+    )
+
+
+def test_stairway_retry_payload_is_forwarded_to_plan_review():
+    node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
+    node.params = SimpleNamespace(create_payload_service='/create_payload')
+    node._create_payload_client = object()
+    node._wait_for_service = lambda *_args: True
+    node._subtree_contract_for_tree = lambda _tree: '{}'
+    node._compose_payload_user_command = lambda *_args, **_kwargs: 'drive around lake'
+    node._publish_status = lambda _message: None
+    node._log_debug = lambda _message: None
+    node.get_logger = lambda: SimpleNamespace(info=lambda *_: None, warn=lambda *_: None)
+    draft = SimpleNamespace(
+        status_code=1,
+        SUCCESS=0,
+        RETRY=1,
+        payload_json='{"gps_waypoints":"48.2848,11.6071"}',
+        reasoning='Generated payload failed validation: gps_waypoints segment 14 approaches OSM steps way 1550307404 within 5 m',
+    )
+
+    async def call_service(_client, _request):
+        return draft
+
+    node._call_service = call_service
+    result = asyncio.run(node._create_payload(
+        'gps_temperature_logging.xml',
+        SimpleNamespace(session_id='test', command='drive around lake'),
+        SimpleNamespace(context_json='{}', attachment_uris=[]),
+    ))
+
+    assert result is draft
 
 
 def test_refine_rejected_plan_reuses_existing_context_without_regather():
