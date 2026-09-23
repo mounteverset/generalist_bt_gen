@@ -1,31 +1,38 @@
 <?xml version="1.0"?>
 <!--
 Tree Name: navigate_and_photograph.xml
-Description: Follow a waypoint mission while a composed distance gate and
+Description: Follow a GPS waypoint mission while a composed distance gate and
              TakePhoto action save an RGB image every configured odometry interval.
 Usage Instructions:
-  - Payload must include "waypoints" as semicolon-separated x,y,yaw entries.
+  - Payload must include "gps_waypoints" as semicolon-separated entries formatted
+    as latitude,longitude[,yaw] or latitude,longitude,altitude,yaw.
+  - Nav2 waypoint_follower and robot_localization navsat_transform_node must be active.
   - "photo_interval_m" controls the traveled-distance interval between captures.
-  - Camera and odometry topics can be supplied through the blackboard payload or
-    fall back to robot_actions parameters.
+  - The camera topic can be supplied through the blackboard payload.
+  - The odometry topic comes from the distance_traveled_odom_topic ROS parameter.
 -->
 <root BTCPP_format="4" main_tree_to_execute="navigate_and_photograph.xml">
   <BehaviorTree ID="navigate_and_photograph.xml">
     <Sequence name="NavigateAndPhotographMission">
       <PublishWaypointMarkers
-        waypoints="{waypoints}" />
-      <ParseWaypoints raw_waypoints="{waypoints}" waypoint_queue="{waypoint_queue}" waypoint_count="{waypoint_count}" />
+        gps_waypoints="{gps_waypoints}" />
+      <ParseGpsWaypoints
+        raw_waypoints="{gps_waypoints}"
+        waypoint_queue="{gps_waypoint_queue}"
+        waypoint_count="{gps_waypoint_count}" />
       <Parallel name="NavigateWhilePhotographing" success_count="1" failure_count="1">
-        <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="SUCCESS">
-          <Sequence name="VisitWaypoint">
-            <MoveTo name="DriveToWaypoint" pose="{active_waypoint}" action_name="/navigate_to_pose"/>
+        <LoopString queue="{gps_waypoint_queue}" value="{active_gps_waypoint}" if_empty="SUCCESS">
+          <Sequence name="VisitGpsWaypoint">
+            <MoveToGPS
+              name="DriveToGpsWaypoint"
+              gps_pose="{active_gps_waypoint}"
+              action_name="/follow_gps_waypoints" />
           </Sequence>
         </LoopString>
         <KeepRunningUntilFailure>
           <Sequence name="PhotographAtDistanceInterval">
             <DistanceTraveled
               interval_m="{photo_interval_m}"
-              odom_topic="{odom_topic}"
               odom_timeout_ms="{odom_timeout_ms}"
               distance_accumulated_m="{photo_distance_accumulated_m}" />
             <TakePhoto
