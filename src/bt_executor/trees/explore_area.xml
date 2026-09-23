@@ -1,28 +1,22 @@
 <?xml version="1.0"?>
 <!--
 Tree Name: explore_area.xml
-Description: Execute a static map-frame exploration route generated from an
+Description: Execute a static geographic exploration route generated from an
              operator-defined area.
 Usage Instructions:
-  - Payload must include "waypoints" as semicolon-separated x,y,yaw entries.
-  - Payload may also include "area_polygon" and "frontiers" for review and UI
-    visualization; those fields are not consumed by this tree.
+  - Payload must include "gps_waypoints" as semicolon-separated WGS84 entries.
+  - Payload may also include "area_polygon_geo" and "frontiers_geo" for review
+    and UI visualization; those fields are not consumed by this tree.
 -->
 <root BTCPP_format="4" main_tree_to_execute="explore_area.xml">
   <BehaviorTree ID="explore_area.xml">
     <Sequence name="ExploreAreaMission">
       <PublishWaypointMarkers
-        waypoints="{waypoints}" />
-      <ParseWaypoints
-        raw_waypoints="{waypoints}"
-        waypoint_queue="{waypoint_queue}"
-        waypoint_count="{waypoint_count}" />
-      <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="FAILURE">
-        <MoveTo
-          name="FollowExplorationRoute"
-          pose="{active_waypoint}"
-          action_name="/navigate_to_pose" />
-      </LoopString>
+        gps_waypoints="{gps_waypoints}" />
+      <MoveToGPS
+        name="FollowExplorationRoute"
+        gps_poses="{gps_waypoints}"
+        action_name="/follow_gps_waypoints" />
     </Sequence>
   </BehaviorTree>
 </root>
