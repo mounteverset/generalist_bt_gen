@@ -20,16 +20,16 @@ bt_action_server:
     waypoint_marker_gps_frame: "target/odom"
     waypoint_marker_from_ll_service: "/fromLL"
     waypoint_marker_conversion_timeout_ms: 2000
-    waypoint_marker_line_width: 0.08
-    waypoint_marker_arrow_scale_x: 0.65
-    waypoint_marker_arrow_scale_y: 0.18
-    waypoint_marker_arrow_scale_z: 0.18
+    waypoint_marker_line_width: 3.0
+    waypoint_marker_arrow_scale_x: 2.5
+    waypoint_marker_arrow_scale_y: 1.2
+    waypoint_marker_arrow_scale_z: 1.2
     waypoint_marker_label_height: 0.35
     log_temperature_service_name: "/log_temperature"
-    take_photo_image_topic: "/okvis/rgb2/image_raw"
+    take_photo_image_topic: /a200_0000/sensors/camera_0/color/image # "/okvis/rgb2/image_raw"
     get_current_pose_pose_topic: "/pose"
-    distance_traveled_odom_topic: "/target/odometry/fused"
-    get_current_pose_odom_topic: "/target/odometry/fused"
+    distance_traveled_odom_topic: /a200_0000/platform/odom/filtered # "/target/odometry/fused"
+    get_current_pose_odom_topic: /a200_0000/platform/odom/filtered # "/target/odometry/fused"
 
     status_topic: "/mission_coordinator/status_text"
     active_node_topic: "/mission_coordinator/active_subtree"

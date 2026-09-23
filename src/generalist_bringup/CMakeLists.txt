@@ -22,7 +22,16 @@ ament_target_dependencies(mock_gps_fix_publisher_node
   sensor_msgs
 )
 
+add_executable(gps_covariance_node
+  src/gps_covariance_node.cpp
+)
+ament_target_dependencies(gps_covariance_node
+  rclcpp
+  sensor_msgs
+)
+
 install(TARGETS dummy_log_temperature_node
+  gps_covariance_node
   mock_gps_fix_publisher_node
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
