@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <!--
 Tree Name: find_and_drive_to_nearest_object.xml
-Description: Follow an optional OSM GPS access route, then drive through
-             FindAnything object-location waypoints selected before BT execution.
+Description: Follow an OSM GPS route and/or FindAnything map-frame object waypoints.
 Usage Instructions:
-  - Payload must include "waypoints" derived from FIND_ANYTHING context.
-  - Payload must include "gps_waypoints" derived from OSM_CONTEXT, or an empty string.
+  - "waypoints" contains FindAnything map-frame targets, or is empty when unavailable.
+  - "gps_waypoints" contains OSM access points for map targets, or OSM tree
+    targets when FindAnything is unavailable. It may be empty for map-only plans.
   - Payload may include "waypoint_frame_id"; it defaults to "map".
 -->
 <root BTCPP_format="4" main_tree_to_execute="find_and_drive_to_nearest_object.xml">
@@ -15,16 +15,19 @@ Usage Instructions:
         waypoints="{waypoints}"
         gps_waypoints="{gps_waypoints}"
         waypoint_frame_id="{waypoint_frame_id}" />
+      <ScriptCondition code="waypoints != '' || gps_waypoints != ''" />
       <MoveToGPS
-        name="FollowOsmAccessRoute"
+        name="FollowOsmGpsRoute"
         gps_poses="{gps_waypoints}"
         action_name="/follow_gps_waypoints"
         _skipIf="gps_waypoints == ''" />
       <ParseWaypoints
         raw_waypoints="{waypoints}"
         waypoint_queue="{waypoint_queue}"
-        waypoint_count="{waypoint_count}" />
-      <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="FAILURE">
+        waypoint_count="{waypoint_count}"
+        _skipIf="waypoints == ''" />
+      <LoopString queue="{waypoint_queue}" value="{active_waypoint}" if_empty="FAILURE"
+        _skipIf="waypoints == ''">
         <MoveTo
           name="DriveToObjectMatch"
           pose="{active_waypoint}"
