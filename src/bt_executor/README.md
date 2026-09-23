@@ -70,8 +70,8 @@ This loads `config/bt_executor_params.yaml`, which points the server at the tree
 | `temperature_logging.xml` | map-frame `waypoints` | Selectable route + temperature |
 | `gps_waypoint_navigation.xml` | geographic `gps_waypoints` | Selectable GPS route |
 | `gps_temperature_logging.xml` | geographic `gps_waypoints` | Selectable GPS route + temperature |
-| `navigate_and_photograph.xml` | map-frame `waypoints` | Selectable route + RGB capture |
-| `find_and_drive_to_nearest_object.xml` | FindAnything-derived map-frame `waypoints` | Selectable object-context route + navigation |
+| `navigate_and_photograph.xml` | geographic `gps_waypoints` | Selectable route + RGB capture |
+| `find_and_drive_to_nearest_object.xml` | FindAnything map-frame `waypoints` plus optional OSM `gps_waypoints` | GPS access leg followed by object navigation |
 | `explore_area.xml` | geographic `gps_waypoints` plus optional area overlays | Selectable OSM/satellite-guided GPS exploration route |
 | `360_rgb_sweep.xml` | pose/camera options | Internal context routine |
 
@@ -115,12 +115,10 @@ GPS fix alone is not enough to execute geographic navigation safely.
 
 ## Context sweep tree (`trees/360_rgb_sweep.xml`)
 
-`360_rgb_sweep.xml` is a bounded active-context routine for future
-`context_gatherer` integration. It reads the current map-frame pose with
-`GetCurrentPose`, rotates in place with `MoveTo` using map-frame goals,
-captures RGB images with `TakePhoto` at fixed yaws 0, 1.046, 2.093, 3.14, and
-4.186 radians, then rotates through 5.233 and 6.283 radians without capturing
-duplicate images.
+`360_rgb_sweep.xml` reads the current pose with `GetCurrentPose`, falling back
+to odometry when the pose topic is silent. It captures an RGB image at the
+starting heading, rotates in place in 60-degree steps using that pose's frame,
+captures five more images, and returns to the starting heading.
 
 Optional payload keys are `pose_topic`, `pose_timeout_ms`, `odom_topic`,
 `odom_timeout_ms`, `camera_topic`, `photo_output_directory`, and
