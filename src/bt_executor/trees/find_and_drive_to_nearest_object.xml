@@ -1,10 +1,11 @@
 <?xml version="1.0"?>
 <!--
 Tree Name: find_and_drive_to_nearest_object.xml
-Description: Drive through object-location waypoints selected by the planner
-             from FindAnything context gathered before BT execution.
+Description: Follow an optional OSM GPS access route, then drive through
+             FindAnything object-location waypoints selected before BT execution.
 Usage Instructions:
   - Payload must include "waypoints" derived from FIND_ANYTHING context.
+  - Payload must include "gps_waypoints" derived from OSM_CONTEXT, or an empty string.
   - Payload may include "waypoint_frame_id"; it defaults to "map".
 -->
 <root BTCPP_format="4" main_tree_to_execute="find_and_drive_to_nearest_object.xml">
@@ -12,7 +13,13 @@ Usage Instructions:
     <Sequence name="FindAndDriveToNearestObjectMission">
       <PublishWaypointMarkers
         waypoints="{waypoints}"
+        gps_waypoints="{gps_waypoints}"
         waypoint_frame_id="{waypoint_frame_id}" />
+      <MoveToGPS
+        name="FollowOsmAccessRoute"
+        gps_poses="{gps_waypoints}"
+        action_name="/follow_gps_waypoints"
+        _skipIf="gps_waypoints == ''" />
       <ParseWaypoints
         raw_waypoints="{waypoints}"
         waypoint_queue="{waypoint_queue}"
