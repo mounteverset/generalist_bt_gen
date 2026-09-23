@@ -14,12 +14,14 @@ context_gatherer:
     find_anything_service_name: "/language_processor/find_object_locations"
     find_anything_service_timeout_sec: 10.0
     find_anything_default_max_results: 5
+    to_ll_service_name: "/toLL"
+    to_ll_service_timeout_sec: 2.0
     bt_executor_action_name: "/bt_executor/execute_tree"
     rgb360_sweep_tree_id: "360_rgb_sweep.xml"
     rgb360_sweep_timeout_sec: 45.0
-    rgb360_sweep_camera_topic: "/okvis/rgb2/image_raw"
+    rgb360_sweep_camera_topic: "auto"
     rgb360_sweep_pose_topic: "/pose"
-    rgb360_sweep_odom_topic: "/target/odometry/fused"
+    rgb360_sweep_odom_topic: /a200_0000/platform/odom/filtered
     rgb360_sweep_image_timeout_ms: 1000
     rgb360_sweep_pose_timeout_ms: 1000
     rgb360_sweep_odom_timeout_ms: 1000

@@ -17,6 +17,7 @@
 #include <string>
 #include <thread>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <curl/curl.h>
@@ -34,6 +35,7 @@
 #include "opencv2/opencv.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "robot_localization/srv/to_ll.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
@@ -50,6 +52,7 @@ public:
   using SaveMap = nav2_msgs::srv::SaveMap;
   using AnnotateSatelliteMap = gen_bt_interfaces::srv::AnnotateSatelliteMap;
   using FindObjectLocations = language_feature_msgs::srv::FindObjectLocations;
+  using ToLL = robot_localization::srv::ToLL;
   using ExecuteTree = btcpp_ros2_interfaces::action::ExecuteTree;
   using RequirementHandler = std::function<void(json&, std::vector<std::string>&)>;
 
@@ -80,6 +83,10 @@ public:
       "find_anything_service_timeout_sec", 10.0);
     find_anything_default_max_results_ = this->declare_parameter<int>(
       "find_anything_default_max_results", 5);
+    to_ll_service_name_ = this->declare_parameter<std::string>(
+      "to_ll_service_name", "/toLL");
+    to_ll_service_timeout_sec_ = this->declare_parameter<double>(
+      "to_ll_service_timeout_sec", 2.0);
     bt_executor_action_name_ = this->declare_parameter<std::string>(
       "bt_executor_action_name", "/bt_executor/execute_tree");
     rgb360_sweep_tree_id_ = this->declare_parameter<std::string>(
@@ -87,7 +94,7 @@ public:
     rgb360_sweep_timeout_sec_ = this->declare_parameter<double>(
       "rgb360_sweep_timeout_sec", 45.0);
     rgb360_sweep_camera_topic_ = this->declare_parameter<std::string>(
-      "rgb360_sweep_camera_topic", "/okvis/rgb2/image_raw");
+      "rgb360_sweep_camera_topic", "auto");
     rgb360_sweep_pose_topic_ = this->declare_parameter<std::string>(
       "rgb360_sweep_pose_topic", "/pose");
     rgb360_sweep_odom_topic_ = this->declare_parameter<std::string>(
@@ -224,6 +231,7 @@ public:
     satellite_map_annotator_client_ = create_client<AnnotateSatelliteMap>(
       satellite_map_annotator_service_name_);
     find_anything_client_ = create_client<FindObjectLocations>(find_anything_service_name_);
+    to_ll_client_ = create_client<ToLL>(to_ll_service_name_);
     bt_executor_client_ = rclcpp_action::create_client<ExecuteTree>(
       this, bt_executor_action_name_);
 
@@ -363,6 +371,7 @@ private:
   rclcpp::Client<SaveMap>::SharedPtr annotated_map_client_;
   rclcpp::Client<AnnotateSatelliteMap>::SharedPtr satellite_map_annotator_client_;
   rclcpp::Client<FindObjectLocations>::SharedPtr find_anything_client_;
+  rclcpp::Client<ToLL>::SharedPtr to_ll_client_;
   rclcpp_action::Client<ExecuteTree>::SharedPtr bt_executor_client_;
 
   std::string action_name_;
@@ -379,6 +388,8 @@ private:
   std::string find_anything_service_name_;
   double find_anything_service_timeout_sec_;
   int find_anything_default_max_results_;
+  std::string to_ll_service_name_;
+  double to_ll_service_timeout_sec_;
   std::string bt_executor_action_name_;
   std::string rgb360_sweep_tree_id_;
   double rgb360_sweep_timeout_sec_;
@@ -782,13 +793,17 @@ private:
     double center_lon = 0.0;
     if (!resolve_satellite_center(context_json, request, center_lat, center_lon)) {
       RCLCPP_WARN(get_logger(), "OSM_CONTEXT requested but no GPS/geo center is available");
+      context_json["OSM_CONTEXT"] = {{"status", "unavailable"}};
       return;
     }
 
     const std::string mission_text = extract_mission_text(context_json);
     const double radius_m = std::max(mission_radius_m(mission_text, request), overpass_radius_m_);
     const json overpass = get_or_fetch_overpass_context(context_json, center_lat, center_lon, radius_m);
-    if (overpass.empty()) {
+    if (overpass.empty() || !overpass.contains("elements") ||
+        !overpass["elements"].is_array())
+    {
+      context_json["OSM_CONTEXT"] = {{"status", "unavailable"}};
       return;
     }
 
@@ -800,10 +815,16 @@ private:
       const auto& osm_context = context_json["OSM_CONTEXT"];
       RCLCPP_INFO(
         get_logger(),
-        "Captured OSM_CONTEXT: linear=%zu point=%zu area=%zu",
+        "Captured OSM_CONTEXT: linear=%zu point=%zu steps=%zu area=%zu tree=%zu "
+        "waste_basket=%zu mission_target=%zu environmental=%zu",
         osm_context.value("linear_features", json::array()).size(),
         osm_context.value("point_features", json::array()).size(),
-        osm_context.value("area_features", json::array()).size());
+        osm_context.value("steps_features", json::array()).size(),
+        osm_context.value("area_features", json::array()).size(),
+        osm_context.value("tree_features", json::array()).size(),
+        osm_context.value("waste_basket_features", json::array()).size(),
+        osm_context.value("mission_target_features", json::array()).size(),
+        osm_context.value("environmental_features", json::array()).size());
     }
   }
 
@@ -957,6 +978,14 @@ private:
       1,
       std::min(50, extract_int_from_json(
         request_json, "max_results", find_anything_default_max_results_))));
+    const auto geo_timeout = std::chrono::duration<double>(to_ll_service_timeout_sec_);
+    const bool can_georeference = to_ll_client_->wait_for_service(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(geo_timeout));
+    if (!can_georeference) {
+      RCLCPP_WARN(
+        get_logger(), "ToLL service %s is unavailable; FindAnything locations remain map-only",
+        to_ll_service_name_.c_str());
+    }
 
     json query_results = json::array();
     for (const auto& query : queries) {
@@ -985,7 +1014,7 @@ private:
       json locations = json::array();
       if (response) {
         for (const auto& location : response->locations) {
-          locations.push_back({
+          json mapped_location = {
             {"frame_id", location.header.frame_id},
             {"timestamp", {
               {"sec", location.header.stamp.sec},
@@ -996,7 +1025,27 @@ private:
               {"y", location.point.y},
               {"z", location.point.z}
             }}
-          });
+          };
+          if (can_georeference && location.header.frame_id == "map") {
+            auto geo_request = std::make_shared<ToLL::Request>();
+            geo_request->map_point = location.point;
+            auto geo_future = to_ll_client_->async_send_request(geo_request);
+            if (geo_future.wait_for(geo_timeout) == std::future_status::ready) {
+              const auto geo_response = geo_future.get();
+              if (geo_response &&
+                  std::isfinite(geo_response->ll_point.latitude) &&
+                  std::isfinite(geo_response->ll_point.longitude) &&
+                  std::abs(geo_response->ll_point.latitude) <= 90.0 &&
+                  std::abs(geo_response->ll_point.longitude) <= 180.0)
+              {
+                mapped_location["wgs84"] = {
+                  {"latitude", geo_response->ll_point.latitude},
+                  {"longitude", geo_response->ll_point.longitude}
+                };
+              }
+            }
+          }
+          locations.push_back(std::move(mapped_location));
         }
       }
 
@@ -1030,6 +1079,25 @@ private:
 
   void handle_rgb360_sweep(json& context_json, std::vector<std::string>& uris)
   {
+    std::string camera_topic = rgb360_sweep_camera_topic_;
+    if (camera_topic == "auto") {
+      const std::string sim_topic = "/a200_0000/sensors/camera_0/color/image";
+      const std::string okvis_topic = "/okvis/rgb2/image_raw";
+      const bool sim_available = count_publishers(sim_topic) > 0;
+      const bool okvis_available = count_publishers(okvis_topic) > 0;
+      if (!sim_available && !okvis_available) {
+        const std::string message = "No RGB camera publisher on " + sim_topic + " or " + okvis_topic;
+        context_json["RGB360SWEEP"] = {
+          {"success", false}, {"image_count", 0}, {"images", json::array()}, {"message", message}
+        };
+        RCLCPP_WARN(get_logger(), "RGB360SWEEP failed: %s", message.c_str());
+        return;
+      }
+      camera_topic = sim_available &&
+        (!okvis_available || this->get_parameter_or<bool>("use_sim_time", false)) ?
+        sim_topic : okvis_topic;
+    }
+
     const std::string session_id = extract_mission_session_id(context_json);
     const std::string safe_session = sanitize_path_token(
       session_id.empty() ? "unknown" : session_id);
@@ -1039,7 +1107,7 @@ private:
 
     json payload = {
       {"photo_output_directory", sweep_dir},
-      {"camera_topic", rgb360_sweep_camera_topic_},
+      {"camera_topic", camera_topic},
       {"pose_topic", rgb360_sweep_pose_topic_},
       {"odom_topic", rgb360_sweep_odom_topic_},
       {"image_timeout_ms", rgb360_sweep_image_timeout_ms_},
@@ -1051,14 +1119,19 @@ private:
     std::string message;
     const bool success = execute_sweep_tree(payload.dump(), bt_result, message);
     json images = collect_rgb360_sweep_images(sweep_dir, uris);
+    const auto image_count = std::count_if(images.begin(), images.end(), [](const json& image) {
+      return image.value("available", false);
+    });
 
     context_json["RGB360SWEEP"] = {
       {"success", success},
       {"tree_id", rgb360_sweep_tree_id_},
+      {"camera_topic", camera_topic},
       {"bt_executor_action", bt_executor_action_name_},
       {"output_directory", sweep_dir},
       {"output_directory_uri", to_file_uri(sweep_dir)},
-      {"image_count", images.size()},
+      {"image_count", image_count},
+      {"yaw_reference", "relative_to_start_heading"},
       {"images", images},
       {"message", message}
     };
@@ -1076,7 +1149,7 @@ private:
     if (debug_logging_) {
       RCLCPP_INFO(
         get_logger(), "Captured RGB360SWEEP with %zu images in %s",
-        images.size(), sweep_dir.c_str());
+        static_cast<size_t>(image_count), sweep_dir.c_str());
     }
   }
 
@@ -1139,10 +1212,11 @@ private:
     json images = json::array();
     const std::vector<std::pair<std::string, double>> expected = {
       {"sweep_000", 0.0},
-      {"sweep_060", 1.046},
-      {"sweep_120", 2.093},
-      {"sweep_180", 3.14},
-      {"sweep_240", 4.186}
+      {"sweep_060", 1.047},
+      {"sweep_120", 2.094},
+      {"sweep_180", 3.142},
+      {"sweep_240", 4.189},
+      {"sweep_300", 5.236}
     };
 
     for (const auto& [prefix, yaw] : expected) {
@@ -1953,7 +2027,7 @@ private:
     return true;
   }
 
-  json fetch_overpass_context(double lat, double lon, double radius_m)
+  json fetch_overpass_context(double lat, double lon, double radius_m, bool reduced_query = false)
   {
     if (!overpass_enabled_ || overpass_endpoint_.empty()) {
       return json::object();
@@ -1963,17 +2037,36 @@ private:
     query << "[out:json][timeout:" << std::max(1, static_cast<int>(std::round(overpass_timeout_sec_))) << "];";
     query << "(";
     query << "way(around:" << radius_m << "," << lat << "," << lon
-          << ")[\"highway\"~\"^(path|track|service|footway|cycleway|steps|pedestrian|living_street|residential|unclassified|tertiary)$\"];";
+          << ")[\"highway\"~\"^(path|track|service|footway|cycleway|pedestrian|living_street|residential|unclassified|tertiary)$\"];";
+    query << "way(around:" << radius_m << "," << lat << "," << lon << ")[\"highway\"=\"steps\"];";
     query << "way(around:" << radius_m << "," << lat << "," << lon << ")[\"barrier\"];";
     query << "node(around:" << radius_m << "," << lat << "," << lon << ")[\"barrier\"];";
     query << "way(around:" << radius_m << "," << lat << "," << lon
-          << ")[\"natural\"~\"^(water|wood|scrub)$\"];";
-    query << "relation(around:" << radius_m << "," << lat << "," << lon << ")[\"natural\"=\"water\"];";
-    query << "way(around:" << radius_m << "," << lat << "," << lon
-          << ")[\"landuse\"~\"^(meadow|grass|recreation_ground)$\"];";
-    query << "way(around:" << radius_m << "," << lat << "," << lon << ")[\"leisure\"=\"park\"];";
-    query << "node(around:" << radius_m << "," << lat << "," << lon << ")[\"amenity\"];";
-    query << "node(around:" << radius_m << "," << lat << "," << lon << ")[\"emergency\"];";
+          << (reduced_query ? ")[\"natural\"=\"water\"];" :
+            ")[\"natural\"~\"^(water|wood|scrub|tree_row|tree_group|wetland|coastline)$\"];");
+    query << "relation(around:" << radius_m << "," << lat << "," << lon
+          << (reduced_query ? ")[\"natural\"=\"water\"];" :
+            ")[\"natural\"~\"^(water|tree_group|wetland)$\"];");
+    query << "way(around:" << radius_m << "," << lat << "," << lon << ")[\"waterway\"=\"stream\"];";
+    if (!reduced_query) {
+      query << "node(around:" << radius_m << "," << lat << "," << lon << ")[\"natural\"=\"tree\"];";
+      query << "way(around:" << radius_m << "," << lat << "," << lon
+            << ")[\"landuse\"~\"^(meadow|grass|recreation_ground)$\"];";
+      query << "way(around:" << radius_m << "," << lat << "," << lon << ")[\"leisure\"=\"park\"];";
+      query << "wr(around:" << radius_m << "," << lat << "," << lon << ")[\"landuse\"];";
+      query << "wr(around:" << radius_m << "," << lat << "," << lon << ")[\"leisure\"];";
+      query << "wr(around:" << radius_m << "," << lat << "," << lon << ")[\"natural\"];";
+      query << "wr(around:" << radius_m << "," << lat << "," << lon << ")[\"amenity\"];";
+      query << "wr(around:" << radius_m << "," << lat << "," << lon << ")[\"tourism\"];";
+      query << "way(around:" << radius_m << "," << lat << "," << lon
+            << ")[\"surface\"][!\"highway\"];";
+      query << "nwr(around:" << radius_m << "," << lat << "," << lon
+            << ")[\"amenity\"~\"^(bench|toilets|shelter|drinking_water|bicycle_parking|recycling|shower|bbq)$\"];";
+      query << "nwr(around:" << radius_m << "," << lat << "," << lon
+            << ")[\"leisure\"=\"picnic_table\"];";
+      query << "node(around:" << radius_m << "," << lat << "," << lon << ")[\"amenity\"];";
+      query << "node(around:" << radius_m << "," << lat << "," << lon << ")[\"emergency\"];";
+    }
     query << ");out geom;";
 
     CURL* escape_curl = curl_easy_init();
@@ -1992,6 +2085,7 @@ private:
     endpoints.insert(
       endpoints.end(), overpass_fallback_endpoints_.begin(), overpass_fallback_endpoints_.end());
     std::unordered_set<std::string> attempted;
+    bool server_timed_out = false;
     for (const auto& endpoint : endpoints) {
       if (endpoint.empty() || !attempted.insert(endpoint).second) {
         continue;
@@ -2005,6 +2099,7 @@ private:
             endpoint, post_body, overpass_timeout_sec_ + 20.0,
             response_text, error_message, http_code))
         {
+          server_timed_out = server_timed_out || http_code == 504;
           RCLCPP_WARN(
             get_logger(), "Overpass context request to %s failed: %s",
             endpoint.c_str(), error_message.c_str());
@@ -2023,6 +2118,7 @@ private:
             break;
           }
           response["__source_endpoint"] = endpoint;
+          response["__query_scope"] = reduced_query ? "safety_critical" : "full";
           return response;
         } catch (const std::exception& exc) {
           RCLCPP_WARN(
@@ -2031,6 +2127,10 @@ private:
           break;
         }
       }
+    }
+    if (server_timed_out && !reduced_query) {
+      RCLCPP_WARN(get_logger(), "Overpass timed out; retrying with safety-critical features only");
+      return fetch_overpass_context(lat, lon, radius_m, true);
     }
     return json::object();
   }
@@ -2180,6 +2280,35 @@ private:
     }
   }
 
+  static bool is_area_element(const json& element)
+  {
+    const std::string type = element.value("type", std::string());
+    if (type == "relation") {
+      return element.contains("tags") && element["tags"].is_object() &&
+             element["tags"].value("type", std::string()) == "multipolygon";
+    }
+    if (type != "way") {
+      return false;
+    }
+    if (element.contains("nodes") && element["nodes"].is_array() &&
+        element["nodes"].size() >= 4)
+    {
+      return element["nodes"].front() == element["nodes"].back();
+    }
+    if (!element.contains("geometry") || !element["geometry"].is_array() ||
+        element["geometry"].size() < 4)
+    {
+      return false;
+    }
+    double first_lat = 0.0;
+    double first_lon = 0.0;
+    double last_lat = 0.0;
+    double last_lon = 0.0;
+    return extract_lat_lon_from_entry(element["geometry"].front(), first_lat, first_lon) &&
+           extract_lat_lon_from_entry(element["geometry"].back(), last_lat, last_lon) &&
+           first_lat == last_lat && first_lon == last_lon;
+  }
+
   static std::string classify_overpass_element(const json& element)
   {
     if (!element.is_object() || !element.contains("tags") || !element["tags"].is_object()) {
@@ -2198,10 +2327,22 @@ private:
     if (tags.value("natural", std::string()) == "water") {
       return "water";
     }
+    if (tags.value("natural", std::string()) == "tree") {
+      return "tree";
+    }
+    if (tags.value("natural", std::string()) == "tree_row" ||
+        tags.value("natural", std::string()) == "coastline" ||
+        tags.value("waterway", std::string()) == "stream")
+    {
+      return "environmental_line";
+    }
     if (tags.contains("natural")) {
       return "avoid_natural";
     }
-    if (tags.contains("landuse") || tags.contains("leisure")) {
+    if (is_area_element(element) &&
+        (tags.contains("landuse") || tags.contains("leisure") ||
+         tags.contains("tourism") || tags.contains("amenity") ||
+         tags.contains("surface"))) {
       return "area";
     }
     if (tags.contains("amenity") || tags.contains("emergency")) {
@@ -2374,7 +2515,8 @@ private:
     const json& geometry,
     int max_coordinates,
     bool& truncated,
-    int& original_count)
+    int& original_count,
+    const json* node_ids = nullptr)
   {
     json coordinates = json::array();
     truncated = false;
@@ -2383,12 +2525,19 @@ private:
       return coordinates;
     }
 
-    std::vector<GeoPoint> points;
-    for (const auto& point : geometry) {
+    std::vector<json> points;
+    for (size_t point_index = 0; point_index < geometry.size(); ++point_index) {
+      const auto& point = geometry[point_index];
       double lat = 0.0;
       double lon = 0.0;
       if (extract_lat_lon_from_entry(point, lat, lon)) {
-        points.push_back(GeoPoint{lat, lon, "", "", ""});
+        json coordinate = {{"lat", lat}, {"lon", lon}};
+        if (node_ids && node_ids->is_array() && point_index < node_ids->size() &&
+            (*node_ids)[point_index].is_number_integer())
+        {
+          coordinate["osm_node_id"] = (*node_ids)[point_index];
+        }
+        points.push_back(coordinate);
       }
     }
     original_count = static_cast<int>(points.size());
@@ -2411,7 +2560,7 @@ private:
         continue;
       }
       last_index = index;
-      coordinates.push_back({{"lat", points[index].lat}, {"lon", points[index].lon}});
+      coordinates.push_back(points[index]);
     }
     return coordinates;
   }
@@ -2441,8 +2590,10 @@ private:
     if (element.contains("geometry") && element["geometry"].is_array()) {
       bool ring_truncated = false;
       int original_count = 0;
+      const json* node_ids = element.contains("nodes") && element["nodes"].is_array() ?
+        &element["nodes"] : nullptr;
       json coordinates = sampled_coordinate_array(
-        element["geometry"], max_coordinates, ring_truncated, original_count);
+        element["geometry"], max_coordinates, ring_truncated, original_count, node_ids);
       if (!coordinates.empty()) {
         rings.push_back({
           {"role", "outer"},
@@ -2464,8 +2615,10 @@ private:
         }
         bool ring_truncated = false;
         int original_count = 0;
+        const json* node_ids = member.contains("nodes") && member["nodes"].is_array() ?
+          &member["nodes"] : nullptr;
         json coordinates = sampled_coordinate_array(
-          member["geometry"], max_coordinates, ring_truncated, original_count);
+          member["geometry"], max_coordinates, ring_truncated, original_count, node_ids);
         if (coordinates.empty()) {
           continue;
         }
@@ -2533,6 +2686,39 @@ private:
     return feature;
   }
 
+  static void add_osm_feature_geometry(
+    json& feature, const json& element, int max_coordinates, bool& truncated)
+  {
+    if (element.value("type", std::string()) == "node") {
+      return;
+    }
+    const json bounds = bounds_json_from_element(element);
+    if (!bounds.empty()) {
+      feature["bounds"] = bounds;
+    }
+    if (element.value("type", std::string()) == "relation") {
+      bool rings_truncated = false;
+      json rings = sampled_area_rings(element, max_coordinates, rings_truncated);
+      if (!rings.empty()) {
+        feature["rings"] = rings;
+      }
+      truncated = truncated || rings_truncated;
+      return;
+    }
+    bool coordinates_truncated = false;
+    int original_count = 0;
+    json coordinates = sampled_geometry_coordinates(
+      element, max_coordinates, coordinates_truncated, original_count);
+    if (!coordinates.empty()) {
+      feature["coordinates"] = coordinates;
+      feature["original_coordinate_count"] = original_count;
+    }
+    if (coordinates_truncated) {
+      feature["coordinates_truncated"] = true;
+      truncated = true;
+    }
+  }
+
   json build_osm_context_json(
     const json& overpass,
     double center_lat,
@@ -2542,7 +2728,12 @@ private:
   {
     json linear_features = json::array();
     json point_features = json::array();
+    json steps_features = json::array();
     std::vector<json> area_features;
+    std::vector<json> tree_features;
+    std::vector<json> waste_basket_features;
+    std::vector<json> mission_target_features;
+    std::vector<json> environmental_features;
     int path_id = 1;
     int street_id = 1;
     int point_id = 1;
@@ -2555,6 +2746,13 @@ private:
     const int max_linear = std::max(0, overpass_max_linear_features_);
     const int max_other_features = max_linear;
     const int max_coordinates = std::max(2, overpass_max_coordinates_per_feature_);
+    constexpr size_t max_tree_features = 100;
+    constexpr size_t max_waste_basket_features = 20;
+    const size_t max_mission_target_features = static_cast<size_t>(max_other_features);
+    const size_t max_environmental_features = static_cast<size_t>(max_other_features);
+    static const std::unordered_set<std::string> mission_target_amenities = {
+      "bench", "toilets", "shelter", "drinking_water", "bicycle_parking",
+      "recycling", "shower", "bbq"};
     std::unordered_set<long long> selected_linear_ids;
     std::string linear_selection_strategy = "source_order";
 
@@ -2618,6 +2816,21 @@ private:
         const auto& tags = element["tags"];
         const std::string osm_type = element.value("type", std::string());
         const std::string kind = classify_overpass_element(element);
+        if (osm_type == "way" && kind == "steps") {
+          json feature = base_osm_feature_json(
+            element, "ST" + std::to_string(steps_features.size() + 1), "steps",
+            "OSM stairs; not traversable by the Husky.");
+          feature["recommended_use"] = "avoid";
+          bool coordinates_truncated = false;
+          int original_count = 0;
+          const json* node_ids = element.contains("nodes") && element["nodes"].is_array() ?
+            &element["nodes"] : nullptr;
+          feature["coordinates"] = sampled_coordinate_array(
+            element.value("geometry", json::array()), std::numeric_limits<int>::max(),
+            coordinates_truncated, original_count, node_ids);
+          feature["original_coordinate_count"] = original_count;
+          steps_features.push_back(feature);
+        }
         if (osm_type == "way" && tags.contains("highway") &&
             tags["highway"].is_string() && element.contains("geometry"))
         {
@@ -2657,6 +2870,61 @@ private:
           continue;
         }
 
+        const bool is_mission_target =
+          mission_target_amenities.count(tags.value("amenity", std::string())) > 0 ||
+          tags.value("leisure", std::string()) == "picnic_table";
+        if (is_mission_target) {
+          const auto center = element_center_point(element);
+          if (center.has_value()) {
+            json feature = base_osm_feature_json(
+              element, "MT", "mission_target",
+              "OSM mission target; geographic target/reference.");
+            feature["distance_m"] = haversine_distance_m(
+              center_lat, center_lon, center->lat, center->lon);
+            feature["recommended_use"] = "reference_or_target";
+            add_osm_feature_geometry(feature, element, max_coordinates, truncated);
+            mission_target_features.push_back(feature);
+          }
+        }
+
+        const bool is_tree = kind == "tree";
+        const bool is_waste_basket =
+          tags.value("amenity", std::string()) == "waste_basket";
+        if (is_tree || is_waste_basket) {
+          const auto center = element_center_point(element);
+          if (center.has_value()) {
+            json feature = base_osm_feature_json(
+              element,
+              is_tree ? "T" : "B",
+              is_tree ? "tree" : "waste_basket",
+              is_tree ? "OSM individual tree; geographic target/reference." :
+              "OSM waste basket; geographic target/reference.");
+            feature["distance_m"] = haversine_distance_m(
+              center_lat, center_lon, center->lat, center->lon);
+            feature["recommended_use"] = "reference_or_target";
+            (is_tree ? tree_features : waste_basket_features).push_back(feature);
+          }
+          if (is_tree) {
+            continue;
+          }
+        }
+
+        if (kind == "environmental_line") {
+          const auto center = element_center_point(element);
+          if (center.has_value()) {
+            json feature = base_osm_feature_json(
+              element, "E", kind,
+              "OSM environmental line; geographic context, not an executable route.");
+            feature["distance_m"] = haversine_distance_m(
+              center_lat, center_lon, center->lat, center->lon);
+            feature["recommended_use"] =
+              tags.contains("waterway") ? "avoid_or_confirm" : "context";
+            add_osm_feature_geometry(feature, element, max_coordinates, truncated);
+            environmental_features.push_back(feature);
+          }
+          continue;
+        }
+
         if (kind == "barrier" || kind == "landmark") {
           if (static_cast<int>(point_features.size()) >= max_other_features) {
             truncated = true;
@@ -2677,11 +2945,14 @@ private:
           } else {
             feature["recommended_use"] = "reference";
           }
+          add_osm_feature_geometry(feature, element, max_coordinates, truncated);
           point_features.push_back(feature);
           continue;
         }
 
-        if (kind == "water" || kind == "avoid_natural" || kind == "area") {
+        if ((kind == "water" || kind == "avoid_natural" || kind == "area") &&
+            is_area_element(element))
+        {
           json feature = base_osm_feature_json(
             element,
             "A" + std::to_string(area_id++),
@@ -2692,11 +2963,15 @@ private:
           if (!bounds.empty()) {
             feature["bounds"] = bounds;
           }
+          feature["distance_m"] = minimum_geometry_distance_m(
+            element, {GeoPoint{center_lat, center_lon, "", "", ""}});
           bool rings_truncated = false;
-          json rings = sampled_area_rings(element, max_coordinates, rings_truncated);
-          if (!rings.empty()) {
-            feature["rings"] = rings;
+          json rings = sampled_area_rings(
+            element, std::numeric_limits<int>::max(), rings_truncated);
+          if (rings.empty()) {
+            continue;
           }
+          feature["rings"] = rings;
           if (rings_truncated) {
             truncated = true;
           }
@@ -2706,24 +2981,57 @@ private:
       }
     }
 
+    auto retain_nearest = [](std::vector<json>& features, size_t limit, const std::string& prefix) {
+        std::stable_sort(
+          features.begin(), features.end(),
+          [](const json& left, const json& right) {
+            return left.value("distance_m", std::numeric_limits<double>::infinity()) <
+                   right.value("distance_m", std::numeric_limits<double>::infinity());
+          });
+        if (features.size() > limit) {
+          features.resize(limit);
+        }
+        for (size_t index = 0; index < features.size(); ++index) {
+          features[index]["label"] = prefix + std::to_string(index + 1);
+        }
+      };
+    const int skipped_tree = std::max(
+      0, static_cast<int>(tree_features.size()) - static_cast<int>(max_tree_features));
+    const int skipped_waste_basket = std::max(
+      0, static_cast<int>(waste_basket_features.size()) -
+      static_cast<int>(max_waste_basket_features));
+    const int skipped_mission_target = std::max(
+      0, static_cast<int>(mission_target_features.size()) -
+      static_cast<int>(max_mission_target_features));
+    const int skipped_environmental = std::max(
+      0, static_cast<int>(environmental_features.size()) -
+      static_cast<int>(max_environmental_features));
+    retain_nearest(tree_features, max_tree_features, "T");
+    retain_nearest(waste_basket_features, max_waste_basket_features, "B");
+    retain_nearest(mission_target_features, max_mission_target_features, "MT");
+    retain_nearest(environmental_features, max_environmental_features, "E");
+    if (skipped_tree > 0 || skipped_waste_basket > 0 ||
+        skipped_mission_target > 0 || skipped_environmental > 0)
+    {
+      truncated = true;
+    }
+
     auto area_priority = [](const json& feature) {
         const bool named = feature.contains("name") && feature["name"].is_string();
         const std::string kind = feature.value("kind", std::string());
         if (kind == "water" && named) {
           return 0;
         }
-        if (kind == "water") {
-          return 1;
-        }
-        if (named) {
-          return 2;
-        }
-        return 3;
+        return 1;
       };
     std::stable_sort(
       area_features.begin(), area_features.end(),
       [&](const json& left, const json& right) {
-        return area_priority(left) < area_priority(right);
+        if (area_priority(left) != area_priority(right)) {
+          return area_priority(left) < area_priority(right);
+        }
+        return left.value("distance_m", std::numeric_limits<double>::infinity()) <
+               right.value("distance_m", std::numeric_limits<double>::infinity());
       });
     if (static_cast<int>(area_features.size()) > max_other_features) {
       skipped_area = static_cast<int>(area_features.size()) - max_other_features;
@@ -2734,25 +3042,44 @@ private:
     return {
       {"provider", "overpass"},
       {"source_endpoint", overpass.value("__source_endpoint", overpass_endpoint_)},
+      {"query_scope", overpass.value("__query_scope", "full")},
       {"center", {{"lat", center_lat}, {"lon", center_lon}}},
       {"radius_m", radius_m},
       {"linear_features", linear_features},
       {"point_features", point_features},
+      {"steps_features", steps_features},
       {"area_features", area_features},
+      {"tree_features", tree_features},
+      {"waste_basket_features", waste_basket_features},
+      {"mission_target_features", mission_target_features},
+      {"environmental_features", environmental_features},
       {"feature_counts", {
         {"linear", linear_features.size()},
         {"point", point_features.size()},
+        {"steps", steps_features.size()},
         {"area", area_features.size()},
+        {"tree", tree_features.size()},
+        {"waste_basket", waste_basket_features.size()},
+        {"mission_target", mission_target_features.size()},
+        {"environmental", environmental_features.size()},
         {"overpass_elements", overpass.value("elements", json::array()).size()}
       }},
       {"limits", {
         {"max_linear_features", max_linear},
         {"max_point_features", max_other_features},
         {"max_area_features", max_other_features},
+        {"max_tree_features", max_tree_features},
+        {"max_waste_basket_features", max_waste_basket_features},
+        {"max_mission_target_features", max_mission_target_features},
+        {"max_environmental_features", max_environmental_features},
         {"max_coordinates_per_feature", max_coordinates},
         {"skipped_linear_features", skipped_linear},
         {"skipped_point_features", skipped_point},
         {"skipped_area_features", skipped_area},
+        {"skipped_tree_features", skipped_tree},
+        {"skipped_waste_basket_features", skipped_waste_basket},
+        {"skipped_mission_target_features", skipped_mission_target},
+        {"skipped_environmental_features", skipped_environmental},
         {"truncated", truncated}
       }},
       {"linear_selection_strategy", linear_selection_strategy},
