@@ -900,7 +900,7 @@ def test_gps_subscription_uses_sensor_data_qos():
     ) in source
 
 
-def test_rgb_context_uses_d455_color_camera_topic():
+def test_rgb_context_auto_selects_sweep_camera():
     source = CONTEXT_GATHERER_NODE.read_text()
     params = yaml.safe_load(
         (
@@ -911,9 +911,8 @@ def test_rgb_context_uses_d455_color_camera_topic():
             / 'context_gatherer_params.yaml'
         ).read_text()
     )['context_gatherer']['ros__parameters']
-
     assert '"/okvis/rgb2/image_raw", 10' in source
-    assert params['rgb360_sweep_camera_topic'] == '/okvis/rgb2/image_raw'
+    assert params['rgb360_sweep_camera_topic'] == 'auto'
 
 
 def test_required_gps_fix_is_validated_and_aborts_with_reason():

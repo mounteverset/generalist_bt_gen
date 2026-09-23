@@ -23,11 +23,12 @@ def test_find_and_drive_tree_executes_planner_generated_object_waypoints():
     sequence = behavior_tree.find('Sequence')
     assert sequence is not None
     assert [child.tag for child in sequence] == [
-        'PublishWaypointMarkers', 'MoveToGPS', 'ParseWaypoints', 'LoopString'
+        'PublishWaypointMarkers', 'ScriptCondition', 'MoveToGPS', 'ParseWaypoints', 'LoopString'
     ]
     markers = sequence.find('PublishWaypointMarkers')
     assert markers.attrib['waypoints'] == '{waypoints}'
     assert markers.attrib['gps_waypoints'] == '{gps_waypoints}'
+    assert sequence.find('ScriptCondition').attrib['code'] == "waypoints != '' || gps_waypoints != ''"
     gps_leg = sequence.find('MoveToGPS')
     assert gps_leg.attrib['gps_poses'] == '{gps_waypoints}'
     assert gps_leg.attrib['action_name'] == '/follow_gps_waypoints'
@@ -37,12 +38,14 @@ def test_find_and_drive_tree_executes_planner_generated_object_waypoints():
     assert parse_waypoints is not None
     assert parse_waypoints.attrib['raw_waypoints'] == '{waypoints}'
     assert parse_waypoints.attrib['waypoint_queue'] == '{waypoint_queue}'
+    assert parse_waypoints.attrib['_skipIf'] == "waypoints == ''"
 
     loop = behavior_tree.find('.//LoopString')
     assert loop is not None
     assert loop.attrib['queue'] == '{waypoint_queue}'
     assert loop.attrib['value'] == '{active_waypoint}'
     assert loop.attrib['if_empty'] == 'FAILURE'
+    assert loop.attrib['_skipIf'] == "waypoints == ''"
 
     move_to = behavior_tree.find('.//MoveTo')
     assert move_to is not None
