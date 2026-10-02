@@ -39,7 +39,7 @@ sensors:
     capability: "sensing.temperature"
     type: "temperature"
     modality: "water_temperature"
-    ros_interface: "/read_temp"
+    ros_interface: "/green/read_temp_cached"
     ros_type: "service"
 
 actions:
@@ -75,7 +75,7 @@ actions:
   - id: "set_probe_depth"
     capability: "actuation.probe_depth"
     type: "payload"
-    ros_interface: "/stepper/set_depth"
+    ros_interface: "/green/stepper/set_depth"
     ros_type: "action"
     limits:
       min_depth_cm: 0
@@ -84,7 +84,7 @@ actions:
   - id: "read_temperature"
     capability: "sensing.temperature"
     type: "sensing"
-    ros_interface: "/read_temp"
+    ros_interface: "/green/read_temp_cached"
     ros_type: "service"
   - id: "parse_gps_waypoints"
     capability: "payload.parse_gps_waypoints"
