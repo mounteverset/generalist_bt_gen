@@ -8,7 +8,7 @@ from typing import Any, Mapping, Optional
 
 
 # ponytail: tune this clearance using measured OSM/GPS error on the robot.
-STAIR_CLEARANCE_M = 5.0
+STAIR_CLEARANCE_M = 1.5
 
 
 def value_matches_type(value: Any, expected_type: str) -> bool:

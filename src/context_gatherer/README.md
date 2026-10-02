@@ -55,7 +55,7 @@ without invented IDs.
 
 All queried `highway=steps` ways are retained separately in `steps_features`,
 regardless of the linear route limit. Their tags and complete, node-ID-labelled
-geometry let GPS payload validation reject route segments within 5 m of stairs.
+geometry let GPS payload validation reject route segments within 1.5 m of stairs.
 An older OSM context without `steps_features` is rejected for GPS payloads;
 an unavailable context or a route outside the queried radius is rejected too.
 Gather fresh context before retrying or refining a route.

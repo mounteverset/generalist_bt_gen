@@ -47,7 +47,15 @@ def test_waypoint_near_stairway_is_rejected_with_clearance():
 
     errors = generated_payload_errors(payload, CONTRACT, {'OSM_CONTEXT': OSM_CONTEXT})
 
-    assert any('within 5 m' in error for error in errors)
+    assert any('within 1.5 m' in error for error in errors)
+
+
+def test_waypoint_between_new_and_old_stair_clearance_is_accepted():
+    payload = {'gps_waypoints': '48.28483885,11.6070738,0.0,0.0'}
+
+    assert generated_payload_errors(
+        payload, CONTRACT, {'OSM_CONTEXT': OSM_CONTEXT}
+    ) == []
 
 
 def test_old_or_malformed_stair_inventory_fails_closed():

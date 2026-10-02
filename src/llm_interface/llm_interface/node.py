@@ -7,9 +7,11 @@ import math
 import mimetypes
 import os
 import re
+import time
 from pathlib import Path
-from typing import List, Optional, Tuple
-from urllib.parse import urlparse
+from typing import Any, List, Optional, Tuple
+from urllib.parse import urlencode, urlparse
+from urllib.request import Request, urlopen
 
 import rclpy
 from gen_bt_interfaces.srv import (
@@ -38,7 +40,76 @@ try:
 except ModuleNotFoundError:
     ChatOpenRouter = None
 from rclpy.node import Node
+from rclpy.parameter import Parameter
+from llm_interface.gemini_direct import direct_gemini_runnable
 from llm_interface.payload_validation import generated_payload_errors, osm_five_tree_route
+
+
+def _openrouter_generation_metadata(generation_id: str) -> dict[str, Any]:
+    api_key = os.environ.get('OPENROUTER_API_KEY')
+    if not generation_id or not api_key:
+        return {}
+    request = Request(
+        'https://openrouter.ai/api/v1/generation?'
+        + urlencode({'id': generation_id}),
+        headers={'Authorization': f'Bearer {api_key}'},
+    )
+    for attempt in range(15):
+        try:
+            with urlopen(request, timeout=10) as response:
+                data = json.load(response).get('data', {})
+            if data.get('provider_name'):
+                return data
+        except (OSError, ValueError):
+            pass
+        if attempt < 14:
+            time.sleep(1)
+    return {}
+
+
+def _provider_recording_openrouter(**kwargs):
+    class ProviderRecordingChatOpenRouter(ChatOpenRouter):
+        def _create_chat_result(self, response):
+            raw = (
+                response
+                if isinstance(response, dict)
+                else response.model_dump(by_alias=True)
+            )
+            result = super()._create_chat_result(response)
+            usage = raw.get('usage') if isinstance(raw.get('usage'), dict) else {}
+            cost = raw.get('cost')
+            if cost is None:
+                cost = usage.get('cost')
+            metadata = (
+                _openrouter_generation_metadata(str(raw.get('id') or ''))
+                if not raw.get('provider') or cost is None else {}
+            )
+            provider = raw.get('provider') or metadata.get('provider_name')
+            if cost is None:
+                cost = metadata.get('total_cost')
+            for generation in result.generations:
+                if provider:
+                    generation.message.response_metadata[
+                        'openrouter_provider'
+                    ] = provider
+                if model := raw.get('model'):
+                    generation.message.response_metadata['openrouter_model'] = model
+                if service_tier := raw.get('service_tier'):
+                    generation.message.response_metadata[
+                        'openrouter_service_tier'
+                    ] = service_tier
+                if cost is not None:
+                    generation.message.response_metadata[
+                        'openrouter_cost_usd'
+                    ] = cost
+            return result
+
+    llm = ProviderRecordingChatOpenRouter(**kwargs)
+    from openrouter import UNSET
+    if 'temperature' not in kwargs:
+        llm.temperature = UNSET
+    llm.top_p = UNSET
+    return llm
 
 DEFAULT_LLM_PROVIDER = 'gemini'
 SUPPORTED_LLM_PROVIDERS = {'gemini', 'openai', 'openrouter'}
@@ -202,6 +273,22 @@ class LLMInterfaceNode(Node):
             self.declare_parameter('openrouter_app_url', '')
         if not self.has_parameter('openrouter_app_title'):
             self.declare_parameter('openrouter_app_title', 'generalist_bt_gen')
+        if not self.has_parameter('openrouter_max_retries'):
+            self.declare_parameter('openrouter_max_retries', 0)
+        if not self.has_parameter('openrouter_provider_only'):
+            self.declare_parameter(
+                'openrouter_provider_only', Parameter.Type.STRING_ARRAY
+            )
+        if not self.has_parameter('openrouter_allow_fallbacks'):
+            self.declare_parameter('openrouter_allow_fallbacks', False)
+        if not self.has_parameter('openrouter_seed'):
+            self.declare_parameter('openrouter_seed', -1)
+        if not self.has_parameter('openrouter_service_tier'):
+            self.declare_parameter('openrouter_service_tier', '')
+        if not self.has_parameter('max_output_tokens'):
+            self.declare_parameter('max_output_tokens', 4096)
+        if not self.has_parameter('omit_temperature'):
+            self.declare_parameter('omit_temperature', False)
         if not self.has_parameter('selection_model_name'):
             self.declare_parameter(
                 'selection_model_name', self.get_parameter('model_name').value
@@ -226,6 +313,8 @@ class LLMInterfaceNode(Node):
             self.declare_parameter('selection_temperature', 0.0)
         if not self.has_parameter('selection_timeout_sec'):
             self.declare_parameter('selection_timeout_sec', 10.0)
+        if not self.has_parameter('payload_timeout_sec'):
+            self.declare_parameter('payload_timeout_sec', 120.0)
         if not self.has_parameter('mission_requirements_temperature'):
             self.declare_parameter('mission_requirements_temperature', 0.0)
         if not self.has_parameter('selection_reasoning_effort'):
@@ -316,6 +405,9 @@ class LLMInterfaceNode(Node):
         self._selection_timeout_sec = float(
             self.get_parameter('selection_timeout_sec').value
         )
+        self._payload_timeout_sec = float(
+            self.get_parameter('payload_timeout_sec').value
+        )
         self._mission_requirements_temperature = float(
             self.get_parameter('mission_requirements_temperature').value
         )
@@ -379,6 +471,29 @@ class LLMInterfaceNode(Node):
         self._openrouter_app_title = str(
             self.get_parameter('openrouter_app_title').value or ''
         ).strip()
+        self._openrouter_max_retries = int(
+            self.get_parameter('openrouter_max_retries').value
+        )
+        self._openrouter_provider_only = list(
+            self.get_parameter('openrouter_provider_only').value
+        )
+        self._openrouter_allow_fallbacks = bool(
+            self.get_parameter('openrouter_allow_fallbacks').value
+        )
+        self._openrouter_seed = int(self.get_parameter('openrouter_seed').value)
+        self._openrouter_service_tier = str(
+            self.get_parameter('openrouter_service_tier').value or ''
+        ).strip()
+        self._max_output_tokens = int(
+            self.get_parameter('max_output_tokens').value
+        )
+        self._omit_temperature = bool(
+            self.get_parameter('omit_temperature').value
+        )
+        evidence_root = os.environ.get('GENERALIST_BT_EVIDENCE_ROOT', '').strip()
+        self._evaluation_evidence_root = (
+            Path(evidence_root).expanduser().resolve() if evidence_root else None
+        )
         payload_prompts = self.get_parameters_by_prefix('prompts.payload')
         self._payload_prompts = {
             name: param.value
@@ -447,6 +562,188 @@ class LLMInterfaceNode(Node):
     def _provider_display_name(self, provider_name: str, model_name: str) -> str:
         return f"{provider_name}:{model_name}"
 
+    @staticmethod
+    def _provider_key(provider: Any) -> str:
+        return str(provider or '').strip().lower().replace(' ', '-')
+
+    def _audit_request(
+        self,
+        session_id: str,
+        stage: str,
+        provider: str,
+        model: str,
+        prompt: str,
+        attachments: Optional[list] = None,
+    ) -> Optional[Tuple[Path, float]]:
+        root = getattr(self, '_evaluation_evidence_root', None)
+        if root is None or not session_id:
+            return None
+        safe_session = re.sub(r'[^A-Za-z0-9._-]', '_', session_id)
+        safe_stage = re.sub(r'[^A-Za-z0-9._-]', '_', stage)
+        directory = root / safe_session / 'llm_calls'
+        directory.mkdir(parents=True, exist_ok=True)
+        call_id = f'{time.time_ns()}_{safe_stage}'
+        path = directory / f'{call_id}_request.json'
+        path.write_text(
+            json.dumps(
+                {
+                    'session_id': session_id,
+                    'stage': stage,
+                    'provider': provider,
+                    'model': model,
+                    'requested_provider_only': (
+                        list(getattr(self, '_openrouter_provider_only', []))
+                        if provider == 'openrouter'
+                        else ['google-gemini-api'] if provider == 'gemini' else []
+                    ),
+                    'allow_fallbacks_requested': (
+                        bool(getattr(self, '_openrouter_allow_fallbacks', False))
+                        if provider == 'openrouter' else None
+                    ),
+                    'seed': (
+                        getattr(self, '_openrouter_seed', -1)
+                        if provider in {'openrouter', 'gemini'}
+                        and getattr(self, '_openrouter_seed', -1) >= 0
+                        else None
+                    ),
+                    'cache_disabled_requested': bool(
+                        provider == 'openrouter'
+                        and getattr(self, '_openrouter_provider_only', [])
+                    ),
+                    'max_output_tokens': getattr(self, '_max_output_tokens', 4096),
+                    'requested_service_tier': (
+                        getattr(self, '_openrouter_service_tier', '') or None
+                        if provider == 'openrouter' else None
+                    ),
+                    'max_transport_retries': (
+                        getattr(self, '_openrouter_max_retries', 0)
+                        if provider == 'openrouter' else 0
+                    ),
+                    'prompt': prompt,
+                    'attachment_uris': list(attachments or []),
+                    'started_unix_s': time.time(),
+                },
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+        return path, time.monotonic()
+
+    def _audit_response(
+        self,
+        audit: Optional[Tuple[Path, float]],
+        result=None,
+        error: Any = '',
+    ) -> None:
+        if audit is None:
+            return
+        request_path, started = audit
+        response_path = request_path.with_name(
+            request_path.name.replace('_request.json', '_response.json')
+        )
+        response_metadata = getattr(result, 'response_metadata', None)
+        returned_provider = (
+            response_metadata.get('openrouter_provider')
+            or response_metadata.get('provider')
+            if isinstance(response_metadata, dict) else None
+        )
+        request = json.loads(request_path.read_text(encoding='utf-8'))
+        requested_providers = list(request.get('requested_provider_only') or [])
+        provider_verified = (
+            self._provider_key(returned_provider)
+            in {self._provider_key(provider) for provider in requested_providers}
+            if requested_providers
+            else None
+        )
+        returned_service_tier = (
+            response_metadata.get('openrouter_service_tier')
+            if isinstance(response_metadata, dict) else None
+        )
+        requested_service_tier = request.get('requested_service_tier')
+        response_path.write_text(
+            json.dumps(
+                {
+                    'status': 'error' if error else 'ok',
+                    'error': error,
+                    'raw_content': (
+                        '' if result is None else self._llm_content_to_text(
+                            getattr(result, 'content', result)
+                        )
+                    ),
+                    'response_metadata': response_metadata,
+                    'returned_provider': returned_provider,
+                    'provider_verified': provider_verified,
+                    'returned_service_tier': returned_service_tier,
+                    'service_tier_verified': (
+                        returned_service_tier == requested_service_tier
+                        if requested_service_tier else None
+                    ),
+                    'usage_metadata': getattr(result, 'usage_metadata', None),
+                    'cost_usd': (
+                        response_metadata.get('openrouter_cost_usd')
+                        if isinstance(response_metadata, dict)
+                        and response_metadata.get('openrouter_cost_usd') is not None
+                        else response_metadata.get('cost_usd')
+                        if isinstance(response_metadata, dict)
+                        else None
+                    ),
+                    'elapsed_s': time.monotonic() - started,
+                    'finished_unix_s': time.time(),
+                },
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+
+    @staticmethod
+    def _exception_details(exc: Exception) -> dict:
+        def safe_attr(value, name):
+            try:
+                return getattr(value, name, None)
+            except Exception as nested:
+                return f'<unavailable: {type(nested).__name__}: {nested}>'
+
+        details = {
+            'type': f'{type(exc).__module__}.{type(exc).__name__}',
+            'message': str(exc),
+            'repr': repr(exc),
+            'args': list(exc.args),
+        }
+        for name in ('status_code', 'body', 'request_id', 'code'):
+            value = safe_attr(exc, name)
+            if value is not None:
+                details[name] = value
+
+        response = safe_attr(exc, 'raw_response')
+        if response is None:
+            response = safe_attr(exc, 'response')
+        if response is not None and not isinstance(response, str):
+            details.setdefault('status_code', safe_attr(response, 'status_code'))
+            details.setdefault('body', safe_attr(response, 'text'))
+            headers = safe_attr(response, 'headers')
+            if headers:
+                details['response_headers'] = {
+                    name: headers[name]
+                    for name in ('content-type', 'x-request-id', 'cf-ray')
+                    if name in headers
+                }
+
+        for name in ('__cause__', '__context__'):
+            nested = safe_attr(exc, name)
+            if nested is not None and nested is not exc:
+                details[name.strip('_')] = {
+                    'type': f'{type(nested).__module__}.{type(nested).__name__}',
+                    'message': str(nested),
+                    'repr': repr(nested),
+                }
+        return details
+
     def _reasoning_config(
         self, reasoning_effort: str = '', reasoning_summary: str = ''
     ) -> Optional[dict]:
@@ -489,21 +786,24 @@ class LLMInterfaceNode(Node):
     ):
         provider_name = self._normalize_provider_name(provider_name)
         reasoning = self._reasoning_config(reasoning_effort, reasoning_summary)
+        max_tokens = max(1, int(getattr(self, '_max_output_tokens', 4096)))
 
         if provider_name == 'gemini':
-            if ChatGoogleGenerativeAI is None:
-                raise RuntimeError(
-                    "langchain-google-genai not found. Install it to use the gemini provider."
-                )
-            api_key = os.environ.get('GEMINI_API_KEY')
-            if not api_key:
-                raise RuntimeError(
-                    f"GEMINI_API_KEY not set; export it to use the {purpose} gemini model."
-                )
-            return ChatGoogleGenerativeAI(
+            timeout = (
+                self._selection_timeout_sec
+                if purpose == 'selection'
+                else float(getattr(self, '_payload_timeout_sec', 300.0))
+            )
+            return direct_gemini_runnable(
                 model=model_name,
-                temperature=temperature,
-                api_key=api_key,
+                max_output_tokens=max_tokens,
+                seed=max(0, int(getattr(self, '_openrouter_seed', 42))),
+                thinking_level=reasoning_effort or 'medium',
+                temperature=(
+                    None if getattr(self, '_omit_temperature', False)
+                    else temperature
+                ),
+                timeout_s=max(1.0, timeout),
             )
 
         if provider_name == 'openai':
@@ -517,8 +817,10 @@ class LLMInterfaceNode(Node):
                 )
             kwargs = {
                 'model': model_name,
-                'temperature': temperature,
+                'max_tokens': max_tokens,
             }
+            if not getattr(self, '_omit_temperature', False):
+                kwargs['temperature'] = temperature
             if reasoning:
                 kwargs['reasoning'] = reasoning
             return ChatOpenAI(**kwargs)
@@ -533,17 +835,44 @@ class LLMInterfaceNode(Node):
             )
         kwargs = {
             'model': model_name,
-            'temperature': temperature,
+            'max_tokens': max_tokens,
+            'max_retries': max(0, int(getattr(self, '_openrouter_max_retries', 0))),
         }
+        if not getattr(self, '_omit_temperature', False):
+            kwargs['temperature'] = temperature
+        providers = list(getattr(self, '_openrouter_provider_only', []))
+        if providers:
+            kwargs['openrouter_provider'] = {
+                'only': providers,
+                'allow_fallbacks': bool(
+                    getattr(self, '_openrouter_allow_fallbacks', False)
+                ),
+                'require_parameters': True,
+                'data_collection': 'deny',
+            }
+        seed = int(getattr(self, '_openrouter_seed', -1))
+        if seed >= 0:
+            kwargs['seed'] = seed
         if reasoning:
             kwargs['reasoning'] = reasoning
+        service_tier = str(
+            getattr(self, '_openrouter_service_tier', '') or ''
+        ).strip()
+        if service_tier:
+            kwargs['model_kwargs'] = {'service_tier': service_tier}
         if self._openrouter_app_url:
             kwargs['app_url'] = self._openrouter_app_url
         if self._openrouter_app_title:
             kwargs['app_title'] = self._openrouter_app_title
         if purpose == 'selection':
-            kwargs['timeout'] = max(1, int(math.ceil(self._selection_timeout_sec)))
-        return ChatOpenRouter(**kwargs)
+            kwargs['timeout'] = max(
+                1, int(math.ceil(self._selection_timeout_sec * 1000.0))
+            )
+        else:
+            timeout_sec = float(getattr(self, '_payload_timeout_sec', 0.0))
+            if timeout_sec > 0:
+                kwargs['timeout'] = max(1, int(math.ceil(timeout_sec * 1000.0)))
+        return _provider_recording_openrouter(**kwargs)
 
     # region Selection
     def handle_selection_request(
@@ -564,7 +893,10 @@ class LLMInterfaceNode(Node):
             return response
 
         selection = self._select_tree_via_llm(
-            request.user_command, list(request.available_trees), list(request.tree_descriptions)
+            request.user_command,
+            list(request.available_trees),
+            list(request.tree_descriptions),
+            session_id=request.session_id,
         )
         if selection is None:
             response.status_code = self.SELECT_NO_MATCH
@@ -593,7 +925,11 @@ class LLMInterfaceNode(Node):
         return response
 
     def _select_tree_via_llm(
-        self, user_command: str, tree_ids: List[str], descriptions: List[str]
+        self,
+        user_command: str,
+        tree_ids: List[str],
+        descriptions: List[str],
+        session_id: str = '',
     ) -> Optional[Tuple[int, float, str]]:
         if not tree_ids:
             return None
@@ -614,6 +950,20 @@ class LLMInterfaceNode(Node):
             {"id": tree_id, "description": desc}
             for tree_id, desc in zip(tree_ids, descriptions)
         ]
+        variables = {
+            'user_command': user_command,
+            'trees_json': json.dumps(payload, ensure_ascii=False),
+        }
+        prompt = PromptTemplate.from_template(self._selection_prompt_template).format(
+            **variables
+        )
+        audit = self._audit_request(
+            session_id,
+            'selection',
+            self._selection_provider,
+            self._selection_model_name,
+            prompt,
+        )
 
         self.get_logger().info(
             'Invoking behavior tree selection LLM '
@@ -623,24 +973,26 @@ class LLMInterfaceNode(Node):
         try:
             llm_result = self._invoke_chain_with_timeout(
                 chain,
-                {
-                    "user_command": user_command,
-                    "trees_json": json.dumps(payload, ensure_ascii=False),
-                },
+                variables,
                 self._selection_timeout_sec,
                 'behavior tree selection LLM',
             )
         except Exception as exc:
+            self._audit_response(audit, error=self._exception_details(exc))
             self.get_logger().error(
                 f"{self._provider_display_name(self._selection_provider, self._selection_model_name)} "
                 f"selection failed: {exc}"
             )
             return self._fallback_selection(tree_ids, descriptions, user_command)
 
+        self._audit_response(audit, result=llm_result)
+
         raw_content = getattr(llm_result, 'content', llm_result)
         cleaned_content = self._prepare_llm_json_text(raw_content)
         try:
             parsed = json.loads(cleaned_content)
+            if not isinstance(parsed, dict):
+                raise ValueError('selection response is not a JSON object')
         except Exception as exc:
             self.get_logger().warning(
                 "Unable to parse "
@@ -714,6 +1066,8 @@ class LLMInterfaceNode(Node):
             parts = [self._llm_content_to_text(item) for item in raw_content]
             return '\n'.join(part for part in parts if part).strip()
         if isinstance(raw_content, dict):
+            if raw_content.get('type') == 'reasoning':
+                return ''
             for key in ('text', 'output_text'):
                 value = raw_content.get(key)
                 if isinstance(value, str) and value.strip():
@@ -851,6 +1205,7 @@ class LLMInterfaceNode(Node):
             context_json=request.context_json,
             capability_catalog_json=request.capability_catalog_json,
             tree_catalog_json=request.tree_catalog_json,
+            session_id=request.session_id,
         )
         if requirements is None:
             response.status_code = response.ERROR
@@ -881,6 +1236,7 @@ class LLMInterfaceNode(Node):
         context_json: str,
         capability_catalog_json: str,
         tree_catalog_json: str,
+        session_id: str = '',
     ) -> Tuple[Optional[dict], str]:
         if not self._mission_requirements_llm_enabled:
             self.get_logger().info('Mission requirement LLM extraction is disabled.')
@@ -904,21 +1260,33 @@ class LLMInterfaceNode(Node):
             f"capability_catalog_bytes={len(capability_catalog_json or '')}, "
             f"tree_catalog_bytes={len(tree_catalog_json or '')})"
         )
+        variables = {
+            'user_command': user_command or '',
+            'context_json': context_json or '{}',
+            'capability_catalog_json': capability_catalog_json or '{}',
+            'tree_catalog_json': tree_catalog_json or '{}',
+        }
+        prompt = PromptTemplate.from_template(
+            self._mission_requirements_prompt_template
+        ).format(**variables)
+        audit = self._audit_request(
+            session_id,
+            'requirements',
+            self._mission_requirements_provider,
+            self._mission_requirements_model_name,
+            prompt,
+        )
         try:
-            llm_result = chain.invoke(
-                {
-                    'user_command': user_command or '',
-                    'context_json': context_json or '{}',
-                    'capability_catalog_json': capability_catalog_json or '{}',
-                    'tree_catalog_json': tree_catalog_json or '{}',
-                }
-            )
+            llm_result = chain.invoke(variables)
         except Exception as exc:
+            self._audit_response(audit, error=self._exception_details(exc))
             message = (
                 f"{provider_display} mission requirement extraction failed: {exc}"
             )
             self.get_logger().warning(message)
             return None, message
+
+        self._audit_response(audit, result=llm_result)
 
         raw_content = getattr(llm_result, 'content', llm_result)
         cleaned = self._prepare_llm_json_text(raw_content)
@@ -1016,7 +1384,8 @@ class LLMInterfaceNode(Node):
                 contract=contract,
                 subtree_id=request.subtree_id,
                 user_command=request.user_command,
-                attachment_uris=list(request.attachment_uris)
+                attachment_uris=list(request.attachment_uris),
+                session_id=request.session_id,
             )
             if (request.subtree_id == 'find_and_drive_to_nearest_object.xml'
                     and not payload_dict.get('waypoints')
@@ -1087,6 +1456,7 @@ class LLMInterfaceNode(Node):
         subtree_id: str,
         user_command: str,
         attachment_uris: list,
+        session_id: str = '',
     ) -> dict:
         """Use LangChain to map context to blackboard entries."""
         
@@ -1102,20 +1472,35 @@ class LLMInterfaceNode(Node):
                 contract=contract,
                 attachment_uris=attachment_uris,
             )
-
-            if self._payload_multimodal_enabled and attachment_uris:
-                raw_content = self._invoke_multimodal_payload(prompt_text, attachment_uris)
-            else:
-                chain = self._get_payload_chain()
-                llm_result = chain.invoke({"prompt": prompt_text})
-                raw_content = getattr(llm_result, 'content', llm_result)
+            audit = self._audit_request(
+                session_id,
+                'payload',
+                self._payload_provider,
+                self._payload_model_name,
+                prompt_text,
+                attachment_uris,
+            )
+            try:
+                if self._payload_multimodal_enabled and attachment_uris:
+                    llm_result = self._invoke_multimodal_payload(
+                        prompt_text, attachment_uris
+                    )
+                    raw_content = getattr(llm_result, 'content', llm_result)
+                else:
+                    chain = self._get_payload_chain()
+                    llm_result = chain.invoke({"prompt": prompt_text})
+                    raw_content = getattr(llm_result, 'content', llm_result)
+            except Exception as exc:
+                self._audit_response(audit, error=self._exception_details(exc))
+                raise
+            self._audit_response(audit, result=llm_result)
 
             cleaned = self._prepare_llm_json_text(raw_content)
             payload = self._safe_parse_payload(cleaned)
             if payload is None:
                 if self._payload_schema_enforced:
                     payload = self._normalize_payload_with_llm(
-                        prompt_text, contract, cleaned
+                        prompt_text, contract, cleaned, session_id=session_id
                     )
                 if payload is None:
                     raise ValueError("Payload was not valid JSON.")
@@ -1129,7 +1514,7 @@ class LLMInterfaceNode(Node):
                         f"Payload failed schema check ({schema_errors}). Running normalizer."
                     )
                     normalized = self._normalize_payload_with_llm(
-                        prompt_text, contract, cleaned
+                        prompt_text, contract, cleaned, session_id=session_id
                     )
                     if normalized is None:
                         self.get_logger().warning(
@@ -1735,7 +2120,11 @@ class LLMInterfaceNode(Node):
         return True
 
     def _normalize_payload_with_llm(
-        self, prompt_text: str, contract: dict, raw_payload: str
+        self,
+        prompt_text: str,
+        contract: dict,
+        raw_payload: str,
+        session_id: str = '',
     ) -> Optional[dict]:
         if not self._selection_llm_enabled:
             return None
@@ -1744,17 +2133,32 @@ class LLMInterfaceNode(Node):
         chain = self._get_payload_normalizer_chain()
         contract_json = json.dumps(contract, indent=2)
         for attempt in range(max(1, self._payload_schema_max_retries)):
-            try:
-                llm_result = chain.invoke(
-                    {
-                        "payload_prompt": prompt_text,
-                        "contract_json": contract_json,
-                        "raw_payload": raw_payload,
-                    }
+            variables = {
+                'payload_prompt': prompt_text,
+                'contract_json': contract_json,
+                'raw_payload': raw_payload,
+            }
+            prompt = PromptTemplate.from_template(
+                getattr(
+                    self,
+                    '_payload_normalizer_prompt',
+                    DEFAULT_PAYLOAD_NORMALIZER_PROMPT,
                 )
+            ).format(**variables)
+            audit = self._audit_request(
+                session_id,
+                f'payload_normalizer_{attempt + 1}',
+                getattr(self, '_payload_normalizer_provider', ''),
+                getattr(self, '_payload_normalizer_model_name', ''),
+                prompt,
+            )
+            try:
+                llm_result = chain.invoke(variables)
             except Exception as exc:
+                self._audit_response(audit, error=self._exception_details(exc))
                 self.get_logger().warning(f"Payload normalizer failed: {exc}")
                 continue
+            self._audit_response(audit, result=llm_result)
             cleaned = self._prepare_llm_json_text(getattr(llm_result, 'content', llm_result))
             normalized = self._safe_parse_payload(cleaned)
             if normalized is None:
@@ -1942,7 +2346,7 @@ class LLMInterfaceNode(Node):
             deduped.append(normalized)
         return "\n\n".join(deduped)
 
-    def _invoke_multimodal_payload(self, prompt_text: str, attachment_uris: list) -> str:
+    def _invoke_multimodal_payload(self, prompt_text: str, attachment_uris: list):
         llm = self._get_payload_llm()
         parts = [{"type": "text", "text": prompt_text}]
 
@@ -1961,11 +2365,10 @@ class LLMInterfaceNode(Node):
             used += 1
 
         if used == 0:
-            return llm.invoke(prompt_text).content
+            return llm.invoke(prompt_text)
 
         message = HumanMessage(content=parts)
-        result = llm.invoke([message])
-        return getattr(result, 'content', result)
+        return llm.invoke([message])
 
     def _attachment_to_image_part(self, uri: str) -> Optional[dict]:
         path = self._resolve_attachment_path(uri)

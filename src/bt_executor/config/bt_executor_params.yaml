@@ -25,6 +25,7 @@ bt_action_server:
     waypoint_marker_label_height: 0.35
     log_temperature_service_name: "/log_temperature"
     take_photo_image_topic: "/okvis/rgb2/image_raw"
+    stepper_set_depth_action_name: "/green/stepper/set_depth"
     get_current_pose_pose_topic: "/pose"
     distance_traveled_odom_topic: "/target/odometry/fused"
     get_current_pose_odom_topic: "/target/odometry/fused"

@@ -15,10 +15,16 @@ llm_interface:
     payload_normalizer_model_name: 'openai/gpt-5.6-sol'
     openrouter_app_url: ''  # optional OpenRouter attribution URL
     openrouter_app_title: 'generalist_bt_gen'  # optional OpenRouter attribution title
+    openrouter_max_retries: 0  # evaluation retries are explicit trial attempts
+    openrouter_provider_only: []  # scored Gemma runs: ['makora']
+    openrouter_seed: -1  # scored runs set the protocol seed
+    max_output_tokens: 8192
+    omit_temperature: false  # true for reasoning endpoints that reject temperature
     selection_llm_enabled: true
     mission_requirements_llm_enabled: true
     selection_temperature: 0.0
     selection_timeout_sec: 10.0
+    payload_timeout_sec: 120.0
     mission_requirements_temperature: 0.0
     selection_reasoning_effort: 'low'  # empty disables reasoning config
     selection_reasoning_summary: ''  # optional: auto | detailed, when supported
@@ -287,4 +293,11 @@ plan_reviewer:
     provider: 'openrouter'  # options: gemini | openai | openrouter
     model_name: 'google/gemini-3.8-flash'  # must be vision-capable for map review
     temperature: 0.0
+    max_output_tokens: 8192
+    omit_temperature: false  # true for reasoning endpoints that reject temperature
+    reasoning_effort: 'high'
+    openrouter_provider_only: []  # scored Gemma runs: ['makora']
+    openrouter_seed: -1  # scored runs set the protocol seed
+    openrouter_max_retries: 0
+    openrouter_timeout_sec: 60.0
     max_image_bytes: 5000000
