@@ -138,10 +138,10 @@ def test_scoring_pipeline_counts_effort_reviews_and_execution():
                 ).hexdigest(),
                 "trials": [
                     {
-                        "trial_id": "S1-sim-1",
+                        "trial_id": "S1-physical-1",
                         "mission_id": "S1",
                         "platform": "husky",
-                        "evidence_level": "simulation",
+                        "evidence_level": "physical",
                         "repetition": 1,
                         "planning_condition_id": "planning-S1",
                         "planning_passed": True,
@@ -173,8 +173,8 @@ def test_scoring_pipeline_counts_effort_reviews_and_execution():
         )
         assert trials[0]["mission_completion"] is True
         assert trials[0]["autonomous_success"] is True
-        assert summaries[-1]["missing_planned_trials"] == 5
-        assert summaries[-1]["unaccounted_planned_trials"] == 5
+        assert summaries[-1]["missing_planned_trials"] == 26
+        assert summaries[-1]["unaccounted_planned_trials"] == 26
         assert not not_started
         assert portability_summary[0]["shared_proportion"] == 1.0
 
@@ -219,3 +219,54 @@ def test_corrected_repair_requires_saved_artifact_and_two_passes():
             pass
         else:
             raise AssertionError("Missing repaired artifact was accepted")
+
+
+def test_e1_rows_are_reused_as_e2_complete_and_e3_cs2():
+    from score_results import paired_comparisons, reused_e1_rows
+
+    def row(experiment, condition_id, variant, success, **extra):
+        values = {
+            "condition_id": condition_id,
+            "experiment": experiment,
+            "method": "M3",
+            "model_key": "gpt-5.6-sol",
+            "mission_id": "M3",
+            "paraphrase_id": "M3-P2",
+            "repetition": 1,
+            "variant_id": variant,
+            "base_condition": "M3:gpt-5.6-sol",
+            "condition": f"M3:gpt-5.6-sol:{variant}" if variant else "M3:gpt-5.6-sol",
+            "primary_success": success,
+            "context_condition": None,
+            "scale_value": None,
+        }
+        values.update(extra)
+        return values
+
+    gemma_e1 = row("E1", "gemma-e1", "", False)
+    gemma_e1["model_key"] = "gemma-4-26b"
+    gemma_e1["base_condition"] = "M3:gemma-4-26b"
+    gemma_e1["condition"] = "M3:gemma-4-26b"
+    gemma_e3 = row("E3", "gemma-e3", "CS1", True, scale_value=2)
+    gemma_e3["model_key"] = "gemma-4-26b"
+    gemma_e3["base_condition"] = "M3:gemma-4-26b"
+    gemma_e3["condition"] = "M3:gemma-4-26b:CS1"
+    rows = [
+        row("E1", "e1", "", True),
+        row("E2", "e2", "M3-CV2", False, context_condition="missing_one_source"),
+        row("E3", "e3", "CS1", True, scale_value=2),
+        gemma_e1,
+        gemma_e3,
+    ]
+    clones = reused_e1_rows(rows)
+    e2 = next(clone for clone in clones if clone["experiment"] == "E2")
+    e3 = [clone for clone in clones if clone["experiment"] == "E3"]
+    assert e2["variant_id"] == "M3-CV0"
+    assert e2["context_condition"] == "complete"
+    assert e2["reused_from"] == "e1"
+    assert {clone["model_key"] for clone in e3} == {"gpt-5.6-sol", "gemma-4-26b"}
+    assert {clone["scale_value"] for clone in e3} == {7}
+    comparisons = paired_comparisons(rows + clones)
+    assert {item["experiment"] for item in comparisons} == {"E2", "E3"}
+    e2 = next(item for item in comparisons if item["experiment"] == "E2")
+    assert e2["paired_artifact_n"] == 1

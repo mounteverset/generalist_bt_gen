@@ -18,6 +18,16 @@ def _install_ros_stubs() -> None:
         node_module.Node = DummyNode
         sys.modules['rclpy.node'] = node_module
 
+    if 'rclpy.parameter' not in sys.modules:
+        parameter_module = types.ModuleType('rclpy.parameter')
+
+        class DummyParameter:
+            class Type:
+                STRING_ARRAY = object()
+
+        parameter_module.Parameter = DummyParameter
+        sys.modules['rclpy.parameter'] = parameter_module
+
     if 'gen_bt_interfaces.srv' not in sys.modules:
         gen_srv_module = types.ModuleType('gen_bt_interfaces.srv')
         sys.modules['gen_bt_interfaces.srv'] = gen_srv_module
@@ -63,8 +73,22 @@ def _install_langchain_stubs() -> None:
             def __init__(self, content):
                 self.content = content
 
+        class DummyAIMessage(DummyHumanMessage):
+            pass
+
         messages_module.HumanMessage = DummyHumanMessage
+        messages_module.AIMessage = DummyAIMessage
         sys.modules['langchain_core.messages'] = messages_module
+
+    if 'langchain_core.runnables' not in sys.modules:
+        runnables_module = types.ModuleType('langchain_core.runnables')
+
+        class DummyRunnableLambda:
+            def __init__(self, function):
+                self.function = function
+
+        runnables_module.RunnableLambda = DummyRunnableLambda
+        sys.modules['langchain_core.runnables'] = runnables_module
 
     if 'langchain_google_genai' not in sys.modules:
         llm_module = types.ModuleType('langchain_google_genai')
@@ -99,6 +123,15 @@ def _install_langchain_stubs() -> None:
             def __init__(self, *args, **kwargs):
                 type(self).init_calls.append(kwargs)
 
+            def _create_chat_result(self, response):
+                return SimpleNamespace(
+                    generations=[
+                        SimpleNamespace(
+                            message=SimpleNamespace(response_metadata={})
+                        )
+                    ]
+                )
+
         openrouter_module.ChatOpenRouter = DummyOpenRouterLLM
         sys.modules['langchain_openrouter'] = openrouter_module
 
@@ -106,8 +139,106 @@ def _install_langchain_stubs() -> None:
 _install_ros_stubs()
 _install_langchain_stubs()
 
+import llm_interface.node as node_module
 from llm_interface.node import DEFAULT_PAYLOAD_PROMPT, LLMInterfaceNode
 from llm_interface.payload_validation import generated_payload_errors
+
+
+def test_evaluation_audit_preserves_prompt_raw_response_and_usage(tmp_path):
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    node._evaluation_evidence_root = tmp_path
+    node._openrouter_provider_only = ['darkbloom']
+    node._openrouter_allow_fallbacks = True
+    node._openrouter_seed = 42
+    node._openrouter_service_tier = 'flex'
+
+    audit = node._audit_request(
+        'E1-M1-P2-method3-gemma-r1',
+        'payload',
+        'openrouter',
+        'google/gemma',
+        'exact prompt',
+        ['file:///tmp/map.png'],
+    )
+    node._audit_response(
+        audit,
+        result=SimpleNamespace(
+            content='{"gps_waypoints":"48.0,11.0"}',
+            response_metadata={
+                'model': 'google/gemma',
+                'openrouter_provider': 'Darkbloom',
+                'openrouter_service_tier': 'flex',
+                'openrouter_cost_usd': 0.0123,
+            },
+            usage_metadata={'input_tokens': 10, 'output_tokens': 4},
+        ),
+    )
+
+    files = sorted(
+        (tmp_path / 'E1-M1-P2-method3-gemma-r1' / 'llm_calls').glob('*.json')
+    )
+    assert len(files) == 2
+    request = json.loads(files[0].read_text())
+    response = json.loads(files[1].read_text())
+    assert request['prompt'] == 'exact prompt'
+    assert request['requested_provider_only'] == ['darkbloom']
+    assert request['seed'] == 42
+    assert request['cache_disabled_requested'] is True
+    assert request['max_output_tokens'] == 4096
+    assert request['requested_service_tier'] == 'flex'
+    assert response['raw_content'] == '{"gps_waypoints":"48.0,11.0"}'
+    assert response['usage_metadata']['input_tokens'] == 10
+    assert response['returned_provider'] == 'Darkbloom'
+    assert response['provider_verified'] is True
+    assert response['returned_service_tier'] == 'flex'
+    assert response['service_tier_verified'] is True
+    assert response['cost_usd'] == 0.0123
+
+
+def test_evaluation_audit_preserves_provider_error_details(tmp_path):
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    node._evaluation_evidence_root = tmp_path
+    class ErrorResponse(SimpleNamespace):
+        def __bool__(self):
+            return False
+
+    response = ErrorResponse(
+        status_code=502,
+        text='{"error":{"message":"upstream failed"}}',
+        headers={'content-type': 'application/json', 'x-request-id': 'req-123'},
+    )
+
+    class ProviderError(Exception):
+        status_code = 502
+        body = response.text
+        raw_response = response
+
+    audit = node._audit_request('pilot-r2', 'payload', 'openrouter', 'gemma', 'prompt')
+    node._audit_response(audit, error=node._exception_details(ProviderError('failed')))
+
+    path = next((tmp_path / 'pilot-r2' / 'llm_calls').glob('*_response.json'))
+    saved = json.loads(path.read_text())
+    assert saved['error']['type'].endswith('.ProviderError')
+    assert saved['error']['status_code'] == 502
+    assert saved['error']['body'] == response.text
+    assert saved['error']['response_headers']['x-request-id'] == 'req-123'
+
+
+def test_exception_details_handles_unread_streaming_response():
+    class StreamingResponse:
+        status_code = 502
+        headers = {'content-type': 'application/json'}
+
+        @property
+        def text(self):
+            raise RuntimeError('response not read')
+
+    error = RuntimeError('provider failed')
+    error.response = StreamingResponse()
+    details = LLMInterfaceNode._exception_details(error)
+
+    assert details['status_code'] == 502
+    assert details['body'].startswith('<unavailable: RuntimeError:')
 
 
 def test_stair_collision_returns_reviewable_but_non_executable_draft():
@@ -316,6 +447,12 @@ def test_create_chat_llm_supports_openrouter_provider():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     node._openrouter_app_url = 'https://generalist.example'
     node._openrouter_app_title = 'Generalist BT'
+    node._payload_timeout_sec = 120.0
+    node._max_output_tokens = 4096
+    node._openrouter_provider_only = ['darkbloom']
+    node._openrouter_allow_fallbacks = True
+    node._openrouter_seed = 42
+    node._openrouter_service_tier = 'flex'
     openrouter_cls = sys.modules['langchain_openrouter'].ChatOpenRouter
     openrouter_cls.init_calls.clear()
     original_key = os.environ.get('OPENROUTER_API_KEY')
@@ -339,16 +476,54 @@ def test_create_chat_llm_supports_openrouter_provider():
         {
             'model': 'openai/gpt-4o-mini',
             'temperature': 0.0,
+            'max_tokens': 4096,
+            'max_retries': 0,
+            'timeout': 120000,
+            'seed': 42,
+            'model_kwargs': {'service_tier': 'flex'},
+            'openrouter_provider': {
+                'only': ['darkbloom'],
+                'allow_fallbacks': True,
+                'require_parameters': True,
+                'data_collection': 'deny',
+            },
             'app_url': 'https://generalist.example',
             'app_title': 'Generalist BT',
         }
     ]
+    result = llm._create_chat_result(
+        {'provider': 'Darkbloom', 'service_tier': 'flex'}
+    )
+    assert result.generations[0].message.response_metadata == {
+        'openrouter_provider': 'Darkbloom',
+        'openrouter_service_tier': 'flex',
+    }
+
+
+def test_openrouter_provider_falls_back_to_generation_metadata(monkeypatch):
+    monkeypatch.setattr(
+        node_module,
+        '_openrouter_generation_metadata',
+        lambda generation_id: {
+            'provider_name': 'Makora',
+            'total_cost': 0.0123,
+        },
+    )
+    llm = node_module._provider_recording_openrouter(model='google/gemma')
+
+    result = llm._create_chat_result({'id': 'gen-1'})
+
+    assert result.generations[0].message.response_metadata == {
+        'openrouter_provider': 'Makora',
+        'openrouter_cost_usd': 0.0123,
+    }
 
 
 def test_create_chat_llm_passes_openrouter_reasoning_config():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     node._openrouter_app_url = ''
     node._openrouter_app_title = ''
+    node._max_output_tokens = 4096
     openrouter_cls = sys.modules['langchain_openrouter'].ChatOpenRouter
     openrouter_cls.init_calls.clear()
     original_key = os.environ.get('OPENROUTER_API_KEY')
@@ -374,6 +549,8 @@ def test_create_chat_llm_passes_openrouter_reasoning_config():
         {
             'model': 'openai/gpt-5.5',
             'temperature': 0.0,
+            'max_tokens': 4096,
+            'max_retries': 0,
             'reasoning': {'effort': 'medium', 'summary': 'auto'},
         }
     ]
@@ -383,6 +560,7 @@ def test_create_chat_llm_supports_openai_provider():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     node._openrouter_app_url = ''
     node._openrouter_app_title = ''
+    node._max_output_tokens = 4096
     openai_cls = sys.modules['langchain_openai'].ChatOpenAI
     openai_cls.init_calls.clear()
     original_key = os.environ.get('OPENAI_API_KEY')
@@ -406,6 +584,42 @@ def test_create_chat_llm_supports_openai_provider():
         {
             'model': 'gpt-4o-mini',
             'temperature': 0.0,
+            'max_tokens': 4096,
+        }
+    ]
+
+
+def test_create_chat_llm_can_omit_temperature():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    node._openrouter_app_url = ''
+    node._openrouter_app_title = ''
+    node._max_output_tokens = 8192
+    node._omit_temperature = True
+    openrouter_cls = sys.modules['langchain_openrouter'].ChatOpenRouter
+    openrouter_cls.init_calls.clear()
+    original_key = os.environ.get('OPENROUTER_API_KEY')
+    os.environ['OPENROUTER_API_KEY'] = 'test-openrouter-key'
+
+    try:
+        node._create_chat_llm(
+            provider_name='openrouter',
+            model_name='openai/gpt-5.6-sol',
+            temperature=0.0,
+            purpose='payload',
+            reasoning_effort='xhigh',
+        )
+    finally:
+        if original_key is None:
+            os.environ.pop('OPENROUTER_API_KEY', None)
+        else:
+            os.environ['OPENROUTER_API_KEY'] = original_key
+
+    assert openrouter_cls.init_calls == [
+        {
+            'model': 'openai/gpt-5.6-sol',
+            'max_tokens': 8192,
+            'max_retries': 0,
+            'reasoning': {'effort': 'xhigh'},
         }
     ]
 
@@ -414,6 +628,7 @@ def test_create_chat_llm_passes_openai_reasoning_config():
     node = LLMInterfaceNode.__new__(LLMInterfaceNode)
     node._openrouter_app_url = ''
     node._openrouter_app_title = ''
+    node._max_output_tokens = 4096
     openai_cls = sys.modules['langchain_openai'].ChatOpenAI
     openai_cls.init_calls.clear()
     original_key = os.environ.get('OPENAI_API_KEY')
@@ -438,6 +653,7 @@ def test_create_chat_llm_passes_openai_reasoning_config():
         {
             'model': 'gpt-5.5',
             'temperature': 0.0,
+            'max_tokens': 4096,
             'reasoning': {'effort': 'high'},
         }
     ]
@@ -749,3 +965,21 @@ def test_temperature_payload_validation_rejects_satellite_without_map_anchor():
     )
 
     assert any('GPS_FIX and ROBOT_POSE' in error for error in errors)
+
+
+def test_multimodal_payload_preserves_response_metadata():
+    node = LLMInterfaceNode.__new__(LLMInterfaceNode)
+    response = object()
+
+    class FakeLLM:
+        def invoke(self, _message):
+            return response
+
+    node._get_payload_llm = lambda: FakeLLM()
+    node._payload_max_attachments = 1
+    node._attachment_to_image_part = lambda _uri: {
+        'type': 'image_url',
+        'image_url': {'url': 'data:image/png;base64,AA=='},
+    }
+
+    assert node._invoke_multimodal_payload('prompt', ['image.png']) is response

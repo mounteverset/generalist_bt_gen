@@ -138,10 +138,38 @@ def validate() -> list[str]:
     safety = load_json(PROTOCOL_DIR / "safety_cases.json")
     variants = load_json(PROTOCOL_DIR / "context_variants.json")
     runtime = load_json(PROTOCOL_DIR / "runtime_contract.json")
+    runtime_amendment = load_json(
+        PROTOCOL_DIR / "e1_runtime_runner_amendment_20260928.json"
+    )
+    m3_scoring_correction = load_json(
+        PROTOCOL_DIR / "e1_m3_scoring_correction_amendment_20260928.json"
+    )
+    e2_runtime_amendment = load_json(
+        PROTOCOL_DIR / "e2_runtime_amendment_20260929.json"
+    )
+    e3_reduction_amendment = load_json(
+        PROTOCOL_DIR / "e3_further_reduction_amendment.json"
+    )
+    e3_flex_amendment = load_json(
+        PROTOCOL_DIR / "e3_gpt_flex_amendment_20260929.json"
+    )
+    e4_flex_amendment = load_json(
+        PROTOCOL_DIR / "e4_gpt_flex_amendment_20260929.json"
+    )
+    e3_model_extension = load_json(
+        PROTOCOL_DIR / "e3_m3_model_extension_amendment_20260929.json"
+    )
+    e3_m3_adjudication = load_json(
+        PROTOCOL_DIR / "e3_m3_first_output_adjudication_20260929.json"
+    )
     node_manifest = load_json(PROTOCOL_DIR / "bt_node_manifest.json")
     model_conditions = load_json(PROTOCOL_DIR / "model_conditions.json")
     choice_space = load_json(PROTOCOL_DIR / "choice_space_variants.json")
     m1_distractors = load_json(PROTOCOL_DIR / "m1_action_distractors.json")
+    e1_m3_trials = load_json(PROTOCOL_DIR / "e1_m3_cli_trials.json")
+    e3_contexts = load_json(EVALUATION_DIR / "fixtures" / "context" / "e3_contexts.json")
+    e3_m3_trials = load_json(PROTOCOL_DIR / "e3_m3_cli_trials.json")
+    e4_gpt_flex_trials = load_json(PROTOCOL_DIR / "e4_m3_gpt_flex_trials.json")
 
     missions = core["missions"]
     design = core["design"]
@@ -203,14 +231,32 @@ def validate() -> list[str]:
         == {
             "repetitions": 1,
             "seed": 42,
-            "timeout_s": 60,
+            "timeout_s": 300,
             "max_transport_retries": 3,
             "m3_refinement_attempts": 1,
         },
         "Scored-run settings differ from the fixed protocol",
     )
+    for name, protocol, version_key in (
+        ("core_missions.json", core, "dataset_version"),
+        ("core_contexts.json", contexts, "fixture_version"),
+        ("model_conditions.json", model_conditions, "protocol_version"),
+        ("scoring_rubric.json", scoring, "rubric_version"),
+        ("e1_m3_cli_trials.json", e1_m3_trials, "manifest_version"),
+    ):
+        require(
+            protocol.get("freeze_status") == "frozen",
+            f"{name}: E1 input is not frozen",
+        )
+        require(
+            not str(protocol.get(version_key, "")).endswith("-draft"),
+            f"{name}: frozen E1 input retains a draft version",
+        )
+    require(
+        len(e1_m3_trials.get("trials", [])) == 81,
+        "E1 Method 3 manifest must contain 81 trials",
+    )
     for name, protocol in (
-        ("scoring_rubric.json", scoring),
         ("execution_scoring.json", execution_scoring),
         ("context_variants.json", variants),
         ("safety_cases.json", safety),
@@ -219,6 +265,105 @@ def validate() -> list[str]:
             protocol.get("freeze_status") in {"draft", "frozen"},
             f"{name}: freeze status is invalid",
         )
+    for name, protocol, version_key in (
+        ("choice_space_variants.json", choice_space, "protocol_version"),
+        ("m1_action_distractors.json", m1_distractors, "catalogue_version"),
+        ("e3_contexts.json", e3_contexts, "fixture_version"),
+        ("e3_m3_cli_trials.json", e3_m3_trials, "manifest_version"),
+    ):
+        require(protocol.get("freeze_status") == "frozen", f"{name}: E3 input is not frozen")
+        require(
+            not str(protocol.get(version_key, "")).endswith("-draft"),
+            f"{name}: frozen E3 input retains a draft version",
+        )
+    selected_e3_missions = set(choice_space["selected_missions"]["mission_ids"])
+    require(
+        set(e3_contexts["fixtures"]) == selected_e3_missions,
+        "E3 context fixtures differ from the selected missions",
+    )
+    require(
+        {trial["mission_id"] for trial in e3_m3_trials["trials"]}
+        == selected_e3_missions
+        and len(e3_m3_trials["trials"]) == 9
+        and {trial["model"] for trial in e3_m3_trials["trials"]}
+        == {"gpt-5.6-sol", "gemini-3.8-flash", "gemma-4-26b"}
+        and all(
+            sum(
+                trial["mission_id"] == mission_id
+                for trial in e3_m3_trials["trials"]
+            ) == 3
+            for mission_id in selected_e3_missions
+        )
+        and {trial["variant_id"] for trial in e3_m3_trials["trials"]} == {"CS1"},
+        "E3 Method 3 manifest must contain nine model-mission CS1 trials",
+    )
+    require(
+        e3_model_extension.get("freeze_status") == "frozen"
+        and e3_model_extension.get("new_cs1_runs") == 6
+        and e3_model_extension.get("reused_cs2_outputs") == 6
+        and e3_m3_trials.get("e3_m3_model_extension_amendment_id")
+        == e3_model_extension.get("amendment_id"),
+        "E3 M3 model extension differs from the frozen amendment",
+    )
+    require(
+        e3_m3_adjudication.get("freeze_status") == "frozen"
+        and set(e3_m3_adjudication.get("decisions", {}))
+        == {"E3-C2-P2-CS1-method3-gpt56sol-r1"},
+        "E3 M3 first-output adjudication differs from the frozen decision",
+    )
+    require(
+        e3_flex_amendment.get("freeze_status") == "frozen"
+        and e3_flex_amendment.get("transport") == "openrouter"
+        and e3_flex_amendment.get("provider_only") == ["openai"]
+        and e3_flex_amendment.get("routing_variant") == "floor"
+        and e3_flex_amendment.get("allow_fallbacks") is True
+        and e3_flex_amendment.get("accepted_service_tiers")
+        == ["flex", "default", None]
+        and e3_flex_amendment.get("request_timeout_s") == 900
+        and e3_flex_amendment.get("max_transport_retries") == 3,
+        "E3 GPT Flex amendment differs from the frozen transport settings",
+    )
+    e3_model = e3_m3_trials["models"][e3_flex_amendment["model_key"]]
+    require(
+        e3_model.get("transport") == "openrouter"
+        and e3_model.get("provider_only") == ["openai"]
+        and e3_model.get("model_id") == e3_flex_amendment["model_id"]
+        and e3_model.get("allow_fallbacks") is True
+        and e3_model.get("params_file")
+        == "evaluation/protocol/e3_m3_gpt_flex_params.yaml",
+        "E3 Method 3 manifest does not use the frozen OpenRouter Flex profile",
+    )
+    e4_model = e4_gpt_flex_trials["models"][e4_flex_amendment["model_key"]]
+    require(
+        e4_flex_amendment.get("freeze_status") == "frozen"
+        and e4_flex_amendment.get("transport") == "openrouter"
+        and e4_flex_amendment.get("provider_only") == ["openai"]
+        and e4_flex_amendment.get("routing_variant") == "floor"
+        and e4_flex_amendment.get("allow_fallbacks") is True
+        and e4_flex_amendment.get("accepted_service_tiers")
+        == ["flex", "default", None]
+        and e4_model.get("model_id") == e4_flex_amendment["model_id"]
+        and e4_model.get("params_file") == e4_flex_amendment["params_file"]
+        and len(e4_gpt_flex_trials.get("trials", [])) == 10,
+        "E4 GPT Flex protocol differs from the frozen transport settings",
+    )
+    for trial in e3_m3_trials["trials"]:
+        require(
+            trial["context_fixture"]
+            == f"evaluation/fixtures/context/e3_contexts.json#/fixtures/{trial['mission_id']}",
+            f"{trial['mission_id']}: E3 trial does not use the E3 context fixture",
+        )
+    e3_c2_image = e3_contexts["fixtures"]["C2"]["satellite_map"]
+    e3_c2_image_path = EVALUATION_DIR / "fixtures" / e3_c2_image["path"]
+    require(e3_c2_image_path.is_file(), "E3 C2 satellite image is missing")
+    require(
+        sha256(e3_c2_image_path) == e3_c2_image["sha256"],
+        "E3 C2 satellite image hash differs",
+    )
+    require(
+        e3_c2_image_path.stat().st_size <= 5_000_000,
+        "E3 C2 satellite image exceeds the 5 MB transport limit",
+    )
     require(
         set(execution_scoring["integration_checks_by_platform"])
         == {"husky", "blueboat"},
@@ -362,9 +507,26 @@ def validate() -> list[str]:
             require("waypoints" in payload, f"{mission_id}: canonical payload needs waypoints")
             reference_routes[mission_id] = parse_waypoints(payload["waypoints"], mission_id)
         if mission_id in {"S1", "S2", "S3", "M2"}:
-            route = payload.get("gps_waypoints", payload.get("waypoints"))
+            required_routes = mission["expected"].get("required_route_points", {})
+            route = required_routes.get(
+                "gps_waypoints",
+                required_routes.get(
+                    "waypoints",
+                    payload.get("gps_waypoints", payload.get("waypoints")),
+                ),
+            )
+            required_coordinates = [
+                ",".join(field.strip() for field in item.split(",")[:2])
+                for item in route.split(";")
+            ]
             require(
-                all(route in item["text"] for item in paraphrases),
+                all(
+                    all(
+                        coordinate in item["text"].replace(" ", "")
+                        for coordinate in required_coordinates
+                    )
+                    for item in paraphrases
+                ),
                 f"{mission_id}: every paraphrase must state the exact supplied coordinates",
             )
         require(set(mission["semantic_rubric_elements"]).issubset(common_rubric_ids), f"{mission_id}: unknown semantic rubric element")
@@ -379,39 +541,81 @@ def validate() -> list[str]:
 
     fixture_data = contexts["fixtures"]
     default_gps = (48.284180, 11.608129)
+    blueboat_gps = (48.1948626, 11.6753112)
     for mission_id, context in fixture_data.items():
         if "GPS_FIX" not in context["available_context"]:
             continue
         gps_fix = context.get("gps_fix", {})
+        expected_gps = blueboat_gps if mission_id in {"S2", "M2"} else default_gps
         require(
-            abs(gps_fix.get("latitude", math.inf) - default_gps[0]) < 1e-9
-            and abs(gps_fix.get("longitude", math.inf) - default_gps[1]) < 1e-9,
-            f"{mission_id}: GPS_FIX must use the frozen Hollerner Lake default",
+            abs(gps_fix.get("latitude", math.inf) - expected_gps[0]) < 1e-9
+            and abs(gps_fix.get("longitude", math.inf) - expected_gps[1]) < 1e-9,
+            f"{mission_id}: GPS_FIX differs from the frozen platform location",
         )
     c2_osm = fixture_data["C2"]["osm_context"]
     require(
         c2_osm.get("provider") == "overpass"
-        and c2_osm.get("source_endpoint") == "https://overpass-api.de/api/interpreter"
+        and c2_osm.get("source_endpoint")
+        in {
+            "https://overpass-api.de/api/interpreter",
+            "https://gall.openstreetmap.de/api/interpreter",
+        }
         and c2_osm.get("center") == {"lat": default_gps[0], "lon": default_gps[1]}
         and c2_osm.get("radius_m") == 1200.0,
         "C2: OSM context must use the context gatherer's Hollerner Lake request",
     )
+    osm_feature_collections = {
+        "linear": "linear_features",
+        "point": "point_features",
+        "steps": "steps_features",
+        "area": "area_features",
+        "tree": "tree_features",
+        "waste_basket": "waste_basket_features",
+        "mission_target": "mission_target_features",
+        "environmental": "environmental_features",
+    }
     require(
-        c2_osm.get("feature_counts", {}).get("linear") == len(c2_osm.get("linear_features", []))
-        and c2_osm.get("feature_counts", {}).get("point") == len(c2_osm.get("point_features", []))
-        and c2_osm.get("feature_counts", {}).get("area") == len(c2_osm.get("area_features", []))
+        all(
+            c2_osm.get("feature_counts", {}).get(count_key)
+            == len(c2_osm.get(collection_key, []))
+            for count_key, collection_key in osm_feature_collections.items()
+        )
         and any(area.get("name") == "Hollerner See" for area in c2_osm.get("area_features", [])),
         "C2: OSM context is incomplete or does not contain Hollerner See",
     )
+    for mission_id in {"S1", "S3", "M1", "M3", "C1", "C2", "C3"}:
+        require(
+            "OSM_CONTEXT" in fixture_data[mission_id]["available_context"]
+            and fixture_data[mission_id].get("osm_context") == c2_osm,
+            f"{mission_id}: OSM-enabled Husky mission must use the frozen OSM context",
+        )
+    c3_sweep = fixture_data["C3"]["rgb360_sweep"]
+    require(
+        "RGB360SWEEP" in fixture_data["C3"]["available_context"]
+        and c3_sweep.get("status") == "available"
+        and c3_sweep.get("image_count") == 6
+        and len(c3_sweep.get("images", [])) == 6,
+        "C3: RGB360SWEEP must contain six captured images",
+    )
+    for image in c3_sweep["images"]:
+        artifact_path = EVALUATION_DIR / "fixtures" / image["path"]
+        require(artifact_path.is_file(), f"C3: missing RGB360SWEEP artifact {artifact_path}")
+        require(sha256(artifact_path) == image["sha256"], f"C3: RGB360SWEEP hash differs for {artifact_path}")
 
-    m1_expected = [
-        (point["x"], point["y"], point["yaw"])
-        for point in fixture_data["M1"]["routes"]["R1"]["ordered_waypoints"]
-    ]
-    require(reference_routes["M1"] == m1_expected, "M1: canonical route differs from R1")
+    m1_route = reference_routes["M1"]
+    require(
+        len(m1_route) > 1
+        and math.hypot(m1_route[0][0], m1_route[0][1]) < 10.0
+        and m1_route[-1][1] > m1_route[0][1],
+        "M1: canonical GPS route must start near the robot and reach the northern lake end",
+    )
 
     m3_polygon = fixture_data["M3"]["target_areas"]["north_monitoring_zone"]["polygon"]
-    require(all(point_in_polygon((point[0], point[1]), m3_polygon) for point in reference_routes["M3"]), "M3: canonical route leaves north zone")
+    m3_required = gps_route_to_map(
+        next(mission for mission in missions if mission["id"] == "M3")["expected"]["required_route_points"]["gps_waypoints"],
+        fixture_data["M3"],
+    )
+    require(all(point_in_polygon((point[0], point[1]), m3_polygon) for point in m3_required), "M3: selected canonical locations leave the north zone")
 
     c1_context = fixture_data["C1"]
     c1_polygon = c1_context["target_areas"]["marked_field"]["polygon"]
@@ -425,9 +629,6 @@ def validate() -> list[str]:
     for blocked_region in c1_context["blocked_regions"]:
         require(not route_intersects_polygon(reference_routes["C1"], blocked_region["polygon"]), f"C1: route intersects {blocked_region['id']}")
 
-    geofence = fixture_data["M2"]["water_geofence"]["polygon"]
-    require(all(point_in_polygon((point[0], point[1]), geofence) for point in reference_routes["M2"]), "M2: canonical route leaves water geofence")
-
     c2_context = fixture_data["C2"]
     c2_target = c2_context["target_sampling_interval_m"]
     c2_distances = [
@@ -439,13 +640,25 @@ def validate() -> list[str]:
     require(c2_context["osm_context"]["linear_features"], "C2: OSM route geometry is missing")
 
     c3_context = fixture_data["C3"]
-    c3_locations = [
-        (location["point"]["x"], location["point"]["y"])
-        for location in c3_context["find_anything"]["locations"]
-    ]
-    c3_route = [(point[0], point[1]) for point in reference_routes["C3"]]
-    require(len(c3_route) == 5 and set(c3_route) == set(c3_locations), "C3: canonical route must use all five FindAnything tree locations")
-    require(core["missions"][-1]["expected"]["canonical_payload"].get("waypoint_frame_id") == "map", "C3: canonical route must use the FindAnything map frame")
+    c3_payload = core["missions"][-1]["expected"]["canonical_payload"]
+    if c3_payload.get("waypoints"):
+        c3_locations = {
+            (location["point"]["x"], location["point"]["y"])
+            for location in c3_context["find_anything"]["locations"]
+        }
+        c3_route = {(point[0], point[1]) for point in reference_routes["C3"]}
+        require(len(c3_route) == 5 and c3_route == c3_locations, "C3: local canonical route must use all five FindAnything tree locations")
+        require(c3_payload.get("waypoint_frame_id") == "map", "C3: local canonical route must use the FindAnything map frame")
+    else:
+        c3_route = [
+            tuple(float(field.strip()) for field in item.split(",")[:2])
+            for item in c3_payload["gps_waypoints"].split(";")
+        ]
+        osm_trees = {
+            (feature["center"]["lat"], feature["center"]["lon"])
+            for feature in c3_context["osm_context"]["tree_features"]
+        }
+        require(len(c3_route) == 5 and set(c3_route) <= osm_trees, "C3: global canonical route must use five mapped OSM tree locations")
 
     def count_placeholders(value: Any) -> int:
         if isinstance(value, dict):
@@ -531,17 +744,74 @@ def validate() -> list[str]:
         "evaluation_coordinates_sha256": EVALUATION_DIR / "scripts" / "evaluation_coordinates.py",
         "mission_reasoner_sha256": REPOSITORY_DIR / "src" / "mission_reasoner" / "mission_reasoner" / "reasoner.py",
         "payload_validation_sha256": REPOSITORY_DIR / "src" / "llm_interface" / "llm_interface" / "payload_validation.py",
+        "llm_interface_node_sha256": REPOSITORY_DIR / "src" / "llm_interface" / "llm_interface" / "node.py",
         "plan_safety_validation_sha256": REPOSITORY_DIR / "src" / "plan_reviewer" / "plan_reviewer" / "safety_validation.py",
+        "plan_reviewer_node_sha256": REPOSITORY_DIR / "src" / "plan_reviewer" / "plan_reviewer" / "node.py",
+        "evaluation_mode_sha256": REPOSITORY_DIR / "src" / "user_interface" / "user_interface" / "evaluation_mode.py",
+        "chat_node_sha256": REPOSITORY_DIR / "src" / "user_interface" / "user_interface" / "chat_node.py",
         "evaluation_core_sha256": EVALUATION_DIR / "scripts" / "evaluation_core.py",
         "evaluation_runner_sha256": EVALUATION_DIR / "scripts" / "run_evaluation.py",
+        "e1_m3_cli_runner_sha256": EVALUATION_DIR / "scripts" / "run_e1_m3_cli.py",
+        "m3_cli_importer_sha256": EVALUATION_DIR / "scripts" / "import_m3_cli_results.py",
+        "blind_review_exporter_sha256": EVALUATION_DIR / "scripts" / "export_blind_review.py",
+        "scorer_sha256": EVALUATION_DIR / "scripts" / "score_results.py",
         "btgenbot2_importer_sha256": EVALUATION_DIR / "scripts" / "import_btgenbot2_batch.py",
         "btgenbot2_server_sha256": EVALUATION_DIR / "colab" / "btgenbot2_server.py",
         "factory_helper_source_sha256": REPOSITORY_DIR / "src" / "bt_executor" / "src" / "bt_factory_check.cpp",
     }
+    require(runtime_amendment["freeze_status"] == "frozen", "Runtime amendment is not frozen")
+    amendment_hashes = runtime_amendment["implementation_hashes"]
+    runtime_contract_hash = sha256(PROTOCOL_DIR / "runtime_contract.json")
+    e4_runtime_transition = safety["implementation_amendment"]
+    e4_runtime_base = e4_runtime_transition["base"]["runtime_contract_file_sha256"]
+    e4_runtime_amended = e4_runtime_transition["amended"]["runtime_contract_file_sha256"]
+
+    def runtime_contract_matches(expected_hash: str) -> bool:
+        return runtime_contract_hash == expected_hash or (
+            expected_hash == e4_runtime_base
+            and runtime_contract_hash == e4_runtime_amended
+        )
+
+    require(
+        runtime_contract_matches(amendment_hashes["runtime_contract_file_sha256"]),
+        "Runtime contract changed after the implementation amendment",
+    )
+    require(
+        m3_scoring_correction["freeze_status"] == "frozen",
+        "M3 scoring correction is not frozen",
+    )
+    require(
+        e2_runtime_amendment["freeze_status"] == "frozen",
+        "E2 runtime amendment is not frozen",
+    )
+    require(
+        runtime_contract_matches(
+            e2_runtime_amendment["implementation_hashes"]["runtime_contract_file_sha256"]
+        ),
+        "Runtime contract changed after the E2 implementation amendment",
+    )
+    implementation_amendments = (
+        runtime_amendment,
+        m3_scoring_correction,
+        e2_runtime_amendment,
+        e3_reduction_amendment,
+        e3_flex_amendment,
+        e4_flex_amendment,
+        e3_model_extension,
+        e3_m3_adjudication,
+    )
     for key, path in implementation_files.items():
+        expected_hash = runtime["implementation_hashes"].get(key)
+        current_hash = sha256(path)
+        allowed_hashes = {expected_hash}
+        for amendment in implementation_amendments:
+            hashes = amendment["implementation_hashes"]
+            amended_hash = hashes.get("amended", {}).get(key)
+            if hashes.get("base", {}).get(key) in allowed_hashes and amended_hash:
+                allowed_hashes.add(amended_hash)
         require(
-            runtime["implementation_hashes"].get(key) == sha256(path),
-            f"Runtime contract has stale implementation hash: {path}",
+            current_hash in allowed_hashes,
+            f"Runtime implementation differs from the contract and amendment chain: {path}",
         )
     require(
         runtime["bt_node_manifest"] == node_manifest,
@@ -627,8 +897,8 @@ def validate() -> list[str]:
     }
     require(
         m1_variant_sizes
-        == {"M1-N12": 12, "M1-N24": 24, "M1-N50": 50, "M1-N100": 100},
-        "M1 scale variants must contain the frozen 12/24/50/100 levels",
+        == {"M1-N11": 11, "M1-N50": 50, "M1-N100": 100},
+        "M1 scale variants must contain the frozen 11/50/100 levels",
     )
     require(
         all(

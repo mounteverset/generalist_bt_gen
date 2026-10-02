@@ -49,6 +49,9 @@ def test_render_satellite_waypoints_to_pixels(tmp_path):
     assert result['waypoint_pixels'][1]['pixel_x'] == 50.0
     assert result['waypoint_pixels'][1]['pixel_y'] == 50.0
     assert all(item['in_bounds'] for item in result['waypoint_pixels'])
+    with Image.open(result['image_path']) as rendered:
+        assert rendered.size == (100, 100)
+        assert rendered.mode == 'P'
 
 
 def test_out_of_bounds_waypoint_is_reported(tmp_path):
@@ -192,4 +195,4 @@ def test_render_find_anything_locations_as_query_labeled_markers(tmp_path):
     assert result['object_location_pixels'][0]['pixel_y'] == 60.0
     assert result['object_location_pixels'][0]['frame_matches'] is True
     with Image.open(result['image_path']) as rendered:
-        assert rendered.getpixel((25, 60)) == (217, 70, 239)
+        assert rendered.convert('RGB').getpixel((25, 60)) == (217, 70, 239)

@@ -166,6 +166,47 @@ def _tree_ids(entries):
     return [entry.split('::', 1)[0] for entry in entries]
 
 
+def test_evaluation_context_is_passed_to_reasoner_and_replayed_for_payload():
+    goal = SimpleNamespace(
+        session_id='E1-M1-P2-method3-gemma-r1',
+        command='Drive to the bench',
+        context_json=json.dumps(
+            {
+                'evaluation_mode': True,
+                'evaluation_attachment_uris': ['file:///tmp/map.png'],
+                'evaluation_context': {
+                    'platform_id': 'a200_0000',
+                    'available_context': ['GPS_FIX', 'OSM_CONTEXT'],
+                    'GPS_FIX': {'latitude': 48.28418, 'longitude': 11.608129},
+                    'OSM_CONTEXT': {'linear_features': [{'id': 'large'}]},
+                },
+            }
+        )
+    )
+
+    replay = MissionCoordinatorNode._evaluation_context(goal)
+    reasoner = json.loads(MissionCoordinatorNode._mission_reasoner_context_json(goal))
+
+    assert replay['OSM_CONTEXT']['linear_features'][0]['id'] == 'large'
+    assert reasoner == replay
+    node = MissionCoordinatorNode.__new__(MissionCoordinatorNode)
+    node.params = SimpleNamespace(require_operator_accept=False)
+    assert node._requires_operator_accept(goal)
+    node.get_logger = lambda: SimpleNamespace(info=lambda _: None)
+    gathered = asyncio.run(node._gather_context('navigate.xml', goal))
+    assert gathered.success
+    assert gathered.attachment_uris == ['file:///tmp/map.png']
+    gathered_context = json.loads(gathered.context_json)
+    assert gathered_context.pop('REQUEST_HINTS') == {
+        'MISSION_REQUEST': {
+            'session_id': 'E1-M1-P2-method3-gemma-r1',
+            'subtree_id': 'navigate.xml',
+            'mission_text': 'Drive to the bench',
+        }
+    }
+    assert gathered_context == replay
+
+
 def test_default_tree_metadata_file_uses_package_share_directory(monkeypatch):
     package_share = Path('/opt/ros/share/mission_coordinator')
 
@@ -560,7 +601,7 @@ def test_stairway_retry_payload_is_forwarded_to_plan_review():
         SUCCESS=0,
         RETRY=1,
         payload_json='{"gps_waypoints":"48.2848,11.6071"}',
-        reasoning='Generated payload failed validation: gps_waypoints segment 14 approaches OSM steps way 1550307404 within 5 m',
+        reasoning='Generated payload failed validation: gps_waypoints segment 14 approaches OSM steps way 1550307404 within 1.5 m',
     )
 
     async def call_service(_client, _request):

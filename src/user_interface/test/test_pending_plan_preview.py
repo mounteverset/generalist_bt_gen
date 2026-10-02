@@ -81,6 +81,42 @@ def test_normalize_pending_plan_builds_map_preview():
     assert normalized['map_previews'][0]['frame_id'] == 'target/map'
 
 
+def test_map_waypoints_prefer_slam_map_over_satellite_map():
+    plan = {
+        'payload_json': json.dumps(
+            {'gps_waypoints': '', 'waypoints': '1.0,2.0,0.0; 3.0,4.0,0.0'}
+        ),
+        'context_snapshot_json': json.dumps(
+            {
+                'SATELLITE_MAP': {
+                    'uri': 'file:///tmp/context_gatherer/satellite_map.png',
+                    'map_metadata': {
+                        'bounds': {
+                            'north': 48.3,
+                            'south': 48.2,
+                            'east': 11.7,
+                            'west': 11.6,
+                        }
+                    },
+                },
+                'ANNOTATED_SLAM_MAP_IMAGE': {
+                    'uri': 'file:///tmp/context_gatherer/annotated_slam_map.png',
+                    'map_metadata': {
+                        'resolution_m_per_px': 0.05,
+                        'origin': {'x': 0.0, 'y': 0.0, 'yaw_rad': 0.0},
+                    },
+                },
+            }
+        ),
+        'attachment_uris': [],
+    }
+
+    normalized = normalize_pending_plan(plan, lambda uri: uri)
+
+    assert normalized['map_preview']['source_key'] == 'ANNOTATED_SLAM_MAP_IMAGE'
+    assert normalized['map_preview']['coordinate_mode'] == 'planar'
+
+
 def test_extract_waypoints_from_lat_lon_dicts():
     payload = {
         'waypoints': [

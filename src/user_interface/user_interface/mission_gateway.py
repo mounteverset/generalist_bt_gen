@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import json
-from typing import Optional
+from typing import Any, Optional
 
 from gen_bt_interfaces.action import MissionCommand
 from gen_bt_interfaces.srv import GetMissionState, MissionControl, OperatorDecision
@@ -52,17 +52,21 @@ class MissionGateway:
         auto_execute: bool = False,
         feedback_callback=None,
         session_prefix: str = 'chatui',
+        session_id: str = '',
+        context: Optional[dict[str, Any]] = None,
     ) -> tuple[Optional[object], str]:
         available = await self._wait_for_action_server(self._mission_action_client)
         if not available:
             return None, ''
 
-        session_id = self._next_session_id(session_prefix)
+        session_id = session_id or self._next_session_id(session_prefix)
         goal_msg = MissionCommand.Goal()
         goal_msg.command = command_text
         goal_msg.session_id = session_id
-        context = {'auto_execute': bool(auto_execute)} if auto_execute else {}
-        goal_msg.context_json = json.dumps(context, ensure_ascii=False)
+        goal_context = dict(context or {})
+        if auto_execute:
+            goal_context['auto_execute'] = True
+        goal_msg.context_json = json.dumps(goal_context, ensure_ascii=False)
         send_future = self._mission_action_client.send_goal_async(
             goal_msg, feedback_callback=feedback_callback
         )

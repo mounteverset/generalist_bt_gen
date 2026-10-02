@@ -111,6 +111,10 @@ def test_find_and_drive_metadata_routes_find_anything_through_planning_context()
     )
 
     assert tree['context_requirements'] == [
+        'GPS_FIX',
+        'OSM_CONTEXT',
+        'SATELLITE_MAP',
+        'RGB360SWEEP',
         'ROBOT_POSE',
         'ANNOTATED_SLAM_MAP_IMAGE',
         'FIND_ANYTHING',
@@ -324,6 +328,71 @@ def test_clarifies_cross_source_checkpoint_conflict():
 
     assert result.status_code == CLARIFY
     assert result.reasoning['guard'] == 'context.cross_source_consistency'
+
+
+def test_clarifies_frozen_e2_raw_evidence_failures():
+    cases = [
+        (
+            'Choose points in the supplied context.',
+            {'available_context': ['ROBOT_POSE', 'GPS_FIX']},
+            'context.area_definition',
+        ),
+        (
+            'Drive the supplied route and log temperature.',
+            {
+                'target_areas': {
+                    'zone': {'frame': 'map', 'polygon': [[0, 0], [20, 0], [20, 20], [0, 20]]}
+                },
+                'osm_context': {
+                    'area_polygon_frame': 'map',
+                    'area_polygon': [[100, 0], [120, 0], [120, 20], [100, 20]],
+                },
+                'cross_source_tolerance_m': 5.0,
+            },
+            'context.cross_source_consistency',
+        ),
+        (
+            'Drive the supplied route and log temperature.',
+            {
+                'robot_pose': {'x': 0.0, 'y': 0.0},
+                'gps_fix': {'latitude': 48.35, 'longitude': 11.7},
+                'map_origin_wgs84': {
+                    'latitude': 48.28418,
+                    'longitude': 11.608129,
+                    'map_x': 0.0,
+                    'map_y': 0.0,
+                    'projection': 'local_equirectangular_east_north',
+                },
+                'allowed_robot_position_disagreement_m': 50.0,
+            },
+            'context.cross_source_consistency',
+        ),
+        (
+            'Drive the supplied route and log temperature.',
+            {'osm_context': {'status': 'stale'}, 'satellite_map': {'status': 'stale'}},
+            'context.stale_evidence',
+        ),
+        (
+            'Drive the supplied route and log temperature.',
+            {
+                'context_reference_time': '2026-09-14T08:10:00Z',
+                'max_position_age_s': 300,
+                'robot_pose': {'timestamp': '2026-09-14T07:00:00Z'},
+                'gps_fix': {'timestamp': '2026-09-14T07:00:00Z'},
+            },
+            'context.stale_evidence',
+        ),
+    ]
+    for command, context, guard in cases:
+        result = _reasoner().validate(
+            command,
+            _trees(),
+            context_json=json.dumps(context),
+        )
+
+        assert result.status_code == CLARIFY
+        assert result.clarification_question
+        assert result.reasoning['guard'] == guard
 
 
 def test_refuses_named_target_outside_allowed_polygon():
