@@ -230,7 +230,9 @@ def render_plan_review_image(
     output_directory.mkdir(parents=True, exist_ok=True)
     safe_session = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '_' for ch in session_id or 'unknown')
     output_path = output_directory / f'plan_review_{safe_session}_{int(time.time() * 1000)}.png'
-    image.convert('RGB').save(output_path, format='PNG')
+    image.convert('RGB').quantize(colors=256).save(
+        output_path, format='PNG', optimize=True
+    )
 
     render_info.update(
         {

@@ -52,7 +52,10 @@ def build_map_preview(
 ) -> Optional[Dict[str, Any]]:
     context = load_json_value(context_value)
     if isinstance(context, dict):
-        for key in MAP_CONTEXT_KEYS:
+        keys = MAP_CONTEXT_KEYS
+        if waypoints and not any(_has_lat_lon(waypoint) for waypoint in waypoints):
+            keys = tuple(reversed(MAP_CONTEXT_KEYS))
+        for key in keys:
             candidate = _map_preview_from_context_entry(
                 context.get(key),
                 key,

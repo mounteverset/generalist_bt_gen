@@ -83,7 +83,7 @@ def deterministic_plan_findings(
                 "recommended_fix": (
                     "Detour around the mapped steps by changing or adding waypoints "
                     "near this segment; preserve unaffected route sections and keep "
-                    "at least 5 m clear of the stairs."
+                    "at least 1.5 m clear of the stairs."
                     if waypoint_indices else
                     "Regenerate the GPS route using fresh OSM stairway geometry."
                 ),

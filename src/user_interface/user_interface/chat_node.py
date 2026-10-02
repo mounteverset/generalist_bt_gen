@@ -2,10 +2,14 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 from functools import partial
+import hashlib
 import json
+import os
 from pathlib import Path
+import shutil
 import sys
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from gen_bt_interfaces.srv import MissionControl
 import rclpy
@@ -15,6 +19,7 @@ from rich.console import Console
 from std_msgs.msg import String
 
 from .command_router import CommandRouter, parse_session_and_note
+from .evaluation_mode import load_context_fixture, validate_trial_id
 from .mission_gateway import MissionGateway
 
 try:
@@ -29,7 +34,11 @@ console = Console()
 class ChatInterfaceNode(Node):
     """CLI chat UI that proxies user commands to the mission coordinator layer."""
 
-    def __init__(self, json_output: bool = False) -> None:
+    def __init__(
+        self,
+        json_output: bool = False,
+        evaluation: Optional[Dict[str, Any]] = None,
+    ) -> None:
         super().__init__('chat_interface')
 
         self.declare_parameter('ui_title', 'Generalist BT Chat')
@@ -56,9 +65,11 @@ class ChatInterfaceNode(Node):
         self.subtree_topic = self.get_parameter('subtree_topic').value
         self.pending_plan_topic = self.get_parameter('pending_plan_topic').value
         self.operator_decision_service = self.get_parameter('operator_decision_service').value
-        self.transcript_directory = Path(
-            self.get_parameter('transcript_directory').value
-        ).expanduser()
+        self._evaluation = dict(evaluation or {})
+        transcript_directory = self._evaluation.get(
+            'trial_directory', self.get_parameter('transcript_directory').value
+        )
+        self.transcript_directory = Path(transcript_directory).expanduser()
         self.refresh_period = float(self.get_parameter('refresh_period').value)
         self.demo_mode = bool(self.get_parameter('demo_mode').value)
         self.json_output = bool(json_output)
@@ -161,6 +172,17 @@ class ChatInterfaceNode(Node):
             self._log_handle.write(json.dumps(entry) + '\n')
             self._log_handle.flush()
 
+    def _write_evidence(self, name: str, payload: Dict[str, Any]) -> None:
+        if not self._evaluation:
+            return
+        path = Path(self._evaluation['trial_directory']) / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, default=str)
+            + '\n',
+            encoding='utf-8',
+        )
+
     async def handle_user_input(self, text: str, auto_execute: bool = False) -> None:
         stripped = text.strip()
         if not stripped:
@@ -198,6 +220,17 @@ class ChatInterfaceNode(Node):
             await self._emit_demo_response(message)
             return
 
+        if self._evaluation:
+            self._write_evidence(
+                'request.json',
+                {
+                    'trial_id': self._evaluation['trial_id'],
+                    'mission': message,
+                    'execution_requested': False,
+                    'goal_context': self._evaluation['goal_context'],
+                },
+            )
+
         self._active_mission_task = asyncio.create_task(
             self._run_mission(message, auto_execute=auto_execute)
         )
@@ -208,6 +241,8 @@ class ChatInterfaceNode(Node):
             auto_execute=auto_execute,
             feedback_callback=self._mission_feedback,
             session_prefix='chatui',
+            session_id=str(self._evaluation.get('trial_id', '')),
+            context=self._evaluation.get('goal_context'),
         )
         if not session_id:
             msg = f'Mission coordinator action {self.mission_coordinator_action} unavailable.'
@@ -262,6 +297,56 @@ class ChatInterfaceNode(Node):
         )
         self._write_transcript('result', outcome['message'], outcome)
         self._active_mission_session_id = ''
+
+    async def complete_evaluation(self, timeout_sec: float) -> Dict[str, Any]:
+        async def wait_for_plan_or_result() -> None:
+            while True:
+                if self._has_valid_pending_plan():
+                    return
+                if self._active_mission_task and self._active_mission_task.done():
+                    return
+                await asyncio.sleep(0.1)
+
+        trial_id = str(self._evaluation['trial_id'])
+        timed_out = False
+        try:
+            await asyncio.wait_for(wait_for_plan_or_result(), timeout=max(1.0, timeout_sec))
+        except asyncio.TimeoutError:
+            timed_out = True
+
+        plan = dict(self.pending_plan or {}) if self._has_valid_pending_plan() else {}
+        stop_message = ''
+        if plan:
+            _, stop_message = await self.gateway.send_control(
+                MissionControl.Request.REJECT,
+                session_id=trial_id,
+                note='',
+            )
+        elif timed_out:
+            _, stop_message = await self.gateway.send_control(
+                MissionControl.Request.ABORT,
+                session_id=trial_id,
+                note='Evaluation planning timed out.',
+            )
+
+        if self._active_mission_task and not self._active_mission_task.done():
+            try:
+                await asyncio.wait_for(self._active_mission_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                pass
+
+        result = {
+            'trial_id': trial_id,
+            'planning_status': (
+                'captured' if plan else ('timeout' if timed_out else 'failed_before_plan')
+            ),
+            'execution_requested': False,
+            'selected_tree': plan.get('tree_id'),
+            'coordinator_result': dict(self._last_result),
+            'stop_message': stop_message,
+        }
+        self._write_evidence('result.json', result)
+        return result
 
     def _mission_feedback(self, feedback_msg) -> None:
         feedback = feedback_msg.feedback
@@ -454,11 +539,39 @@ class ChatInterfaceNode(Node):
 
         if self._has_valid_pending_plan():
             self._emit_pending_plan_details()
+            if self._evaluation:
+                plan = dict(self.pending_plan or {})
+                self._write_evidence('pending_plan.json', plan)
+                self._copy_review_artifact(plan)
             self._write_transcript(
                 'pending_plan',
                 'Operator approval needed',
                 {'session_id': str(self.pending_plan.get('session_id', ''))},
             )
+
+    def _copy_review_artifact(self, plan: Dict[str, Any]) -> None:
+        review = plan.get('plan_review')
+        if not isinstance(review, dict):
+            return
+        uri = str(review.get('review_image_uri') or '')
+        parsed = urlparse(uri)
+        source = Path(parsed.path if parsed.scheme == 'file' else uri)
+        if not source.is_file():
+            return
+        destination = Path(self._evaluation['trial_directory']) / (
+            'plan_review' + source.suffix.lower()
+        )
+        shutil.copy2(source, destination)
+        self._write_evidence(
+            'artifacts.json',
+            {
+                'plan_review': {
+                    'source_uri': uri,
+                    'path': str(destination),
+                    'sha256': hashlib.sha256(destination.read_bytes()).hexdigest(),
+                }
+            },
+        )
 
     def _diagnostics_callback(self, topic_name: str, msg: String) -> None:
         self._emit_diag_line(topic_name, msg.data)
@@ -586,6 +699,13 @@ async def _run_one_shot(node: ChatInterfaceNode, cli_args: argparse.Namespace) -
     if cli_args.mission:
         await node.handle_user_input(cli_args.mission, auto_execute=cli_args.auto_execute)
 
+    if cli_args.trial_id:
+        result = await node.complete_evaluation(cli_args.evaluation_timeout_s)
+        if cli_args.json:
+            console.print_json(data=json.dumps(result, ensure_ascii=False))
+        await node._cmd_quit('')
+        return
+
     if cli_args.watch:
         await node._cmd_monitor('1.0')
         try:
@@ -619,12 +739,73 @@ def _parse_cli_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         help='Keep running and continuously monitor status after one-shot execution',
     )
     parser.add_argument('--json', action='store_true', help='Emit one-shot output as JSON')
+    parser.add_argument(
+        '--trial-id',
+        help='Safe fixed session ID; enables plan-only evaluation mode.',
+    )
+    parser.add_argument(
+        '--context-fixture',
+        help='JSON fixture reference, for example core_contexts.json#/fixtures/M1.',
+    )
+    parser.add_argument(
+        '--evaluation-timeout-s',
+        type=float,
+        default=240.0,
+        help='Maximum time to wait for a pending plan in evaluation mode.',
+    )
     return parser.parse_known_args(argv)
 
 
-async def main_async(cli_args: argparse.Namespace, ros_args: list[str]) -> None:
+def _prepare_evaluation(cli_args: argparse.Namespace) -> Dict[str, Any]:
+    if not cli_args.trial_id and not cli_args.context_fixture:
+        return {}
+    if not cli_args.trial_id or not cli_args.context_fixture or not cli_args.mission:
+        raise ValueError(
+            '--trial-id, --context-fixture, and --mission are required together'
+        )
+    if cli_args.auto_execute:
+        raise ValueError('--auto-execute is forbidden in evaluation mode')
+    if cli_args.watch:
+        raise ValueError('--watch is not used in plan-only evaluation mode')
+    if cli_args.evaluation_timeout_s <= 0:
+        raise ValueError('--evaluation-timeout-s must be greater than zero')
+
+    evidence_root = os.environ.get('GENERALIST_BT_EVIDENCE_ROOT', '').strip()
+    if not evidence_root:
+        raise ValueError(
+            'GENERALIST_BT_EVIDENCE_ROOT must be set for evaluation mode'
+        )
+    trial_id = validate_trial_id(cli_args.trial_id)
+    fixture = load_context_fixture(cli_args.context_fixture)
+    trial_directory = Path(evidence_root).expanduser().resolve() / trial_id
+    trial_directory.mkdir(parents=True, exist_ok=True)
+    source = {
+        key: fixture[key]
+        for key in ('source_path', 'json_pointer', 'source_sha256', 'fixture_sha256')
+    }
+    return {
+        'trial_id': trial_id,
+        'trial_directory': str(trial_directory),
+        'goal_context': {
+            'evaluation_mode': True,
+            'evaluation_trial_id': trial_id,
+            'evaluation_source': source,
+            'evaluation_context': fixture['context'],
+            'evaluation_attachment_uris': fixture['attachment_uris'],
+        },
+    }
+
+
+async def main_async(
+    cli_args: argparse.Namespace,
+    ros_args: list[str],
+    evaluation: Optional[Dict[str, Any]] = None,
+) -> None:
     rclpy.init(args=ros_args)
-    node = ChatInterfaceNode(json_output=bool(cli_args.json))
+    node = ChatInterfaceNode(
+        json_output=bool(cli_args.json),
+        evaluation=evaluation,
+    )
     executor = SingleThreadedExecutor()
     executor.add_node(node)
 
@@ -650,7 +831,11 @@ async def main_async(cli_args: argparse.Namespace, ros_args: list[str]) -> None:
 def main(args=None) -> None:
     argv = list(args) if args is not None else sys.argv[1:]
     cli_args, ros_args = _parse_cli_args(argv)
-    asyncio.run(main_async(cli_args, ros_args))
+    try:
+        evaluation = _prepare_evaluation(cli_args)
+    except (KeyError, OSError, ValueError, json.JSONDecodeError) as exc:
+        raise SystemExit(f'Evaluation setup failed: {exc}') from exc
+    asyncio.run(main_async(cli_args, ros_args, evaluation))
 
 
 if __name__ == '__main__':  # pragma: no cover

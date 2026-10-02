@@ -3,14 +3,21 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import os
 from pathlib import Path
+import re
+import time
 from typing import Any, Dict, Optional
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 import rclpy
 from gen_bt_interfaces.srv import ReviewPlan
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 
+from llm_interface.gemini_direct import direct_gemini_runnable
 from .renderer import load_json_value, render_plan_review_image
 from .safety_validation import deterministic_plan_findings
 
@@ -32,7 +39,74 @@ except ModuleNotFoundError:
     ChatOpenRouter = None
 
 
-REVIEW_PROMPT_TEMPLATE = """You are a plan safety reviewer for a Clearpath Husky A200 ground robot.
+def _openrouter_generation_metadata(generation_id: str) -> dict[str, Any]:
+    api_key = os.environ.get('OPENROUTER_API_KEY')
+    if not generation_id or not api_key:
+        return {}
+    request = Request(
+        'https://openrouter.ai/api/v1/generation?'
+        + urlencode({'id': generation_id}),
+        headers={'Authorization': f'Bearer {api_key}'},
+    )
+    for attempt in range(15):
+        try:
+            with urlopen(request, timeout=10) as response:
+                data = json.load(response).get('data', {})
+            if data.get('provider_name'):
+                return data
+        except (OSError, ValueError):
+            pass
+        if attempt < 14:
+            time.sleep(1)
+    return {}
+
+
+def _provider_recording_openrouter(**kwargs):
+    class ProviderRecordingChatOpenRouter(ChatOpenRouter):
+        def _create_chat_result(self, response):
+            raw = (
+                response
+                if isinstance(response, dict)
+                else response.model_dump(by_alias=True)
+            )
+            result = super()._create_chat_result(response)
+            usage = raw.get('usage') if isinstance(raw.get('usage'), dict) else {}
+            cost = raw.get('cost')
+            if cost is None:
+                cost = usage.get('cost')
+            metadata = (
+                _openrouter_generation_metadata(str(raw.get('id') or ''))
+                if not raw.get('provider') or cost is None else {}
+            )
+            provider = raw.get('provider') or metadata.get('provider_name')
+            if cost is None:
+                cost = metadata.get('total_cost')
+            for generation in result.generations:
+                if provider:
+                    generation.message.response_metadata[
+                        'openrouter_provider'
+                    ] = provider
+                if model := raw.get('model'):
+                    generation.message.response_metadata['openrouter_model'] = model
+                if service_tier := raw.get('service_tier'):
+                    generation.message.response_metadata[
+                        'openrouter_service_tier'
+                    ] = service_tier
+                if cost is not None:
+                    generation.message.response_metadata[
+                        'openrouter_cost_usd'
+                    ] = cost
+            return result
+
+    llm = ProviderRecordingChatOpenRouter(**kwargs)
+    from openrouter import UNSET
+    if 'temperature' not in kwargs:
+        llm.temperature = UNSET
+    llm.top_p = UNSET
+    return llm
+
+
+REVIEW_PROMPT_TEMPLATE = """You are a plan safety reviewer for the deployed robot described in PLAN_REVIEW_INPUT_JSON.
 
 Review the generated waypoint plan using the rendered map image and JSON context.
 OSM and satellite geometry are reasoning context. MoveTo executes x,y,yaw map-frame waypoints; MoveToGPS executes geographic waypoints through FollowGPSWaypoints.
@@ -41,7 +115,7 @@ FindAnything results are shown as magenta crosshair rings labeled with the objec
 Review criteria:
 - Mission fulfillment: requested count/coverage, refinement request honored, obvious omissions.
 - Object-target fidelity: for find_and_drive_to_nearest_object.xml, map-frame destinations must match FindAnything object markers. When FindAnything has no locations, GPS destinations must match distinct OSM_CONTEXT.tree_features centers; honor singular, nearest, plural, and all-matches wording.
-- Robot constraints: Husky must not drive through water, barriers, steps, unsafe streets, unknown SLAM space, or non-path terrain where avoidable.
+- Platform constraints: Apply the platform type and capabilities from context. Ground robots must avoid water, barriers, steps, unsafe streets, unknown SLAM space, and non-path terrain where avoidable. Water-surface vessels must stay in navigable water and avoid land, barriers, and restricted water.
 - Coordinate sanity: waypoint mode matches map mode, waypoints are visible/in-bounds, no impossible jumps, no lat/lon accidentally treated as x,y.
 - Exploration coverage: for explore_area.xml, GPS waypoints should stay inside the geographic area overlay when one is supplied, and frontiers should cover the requested area.
 - Context use: compare the route against OSM_CONTEXT.linear_features, SATELLITE_MAP, ROBOT_POSE, GPS_FIX, and mission reasoner capability constraints.
@@ -77,6 +151,17 @@ class PlanReviewerNode(Node):
         self.declare_parameter('provider', 'gemini')
         self.declare_parameter('model_name', 'gemini-2.5-flash')
         self.declare_parameter('temperature', 0.0)
+        self.declare_parameter('omit_temperature', False)
+        self.declare_parameter('max_output_tokens', 4096)
+        self.declare_parameter('reasoning_effort', '')
+        self.declare_parameter(
+            'openrouter_provider_only', Parameter.Type.STRING_ARRAY
+        )
+        self.declare_parameter('openrouter_allow_fallbacks', False)
+        self.declare_parameter('openrouter_seed', -1)
+        self.declare_parameter('openrouter_max_retries', 0)
+        self.declare_parameter('openrouter_service_tier', '')
+        self.declare_parameter('openrouter_timeout_sec', 60.0)
         self.declare_parameter('max_image_bytes', 5_000_000)
 
         self._review_artifact_directory = Path(
@@ -86,8 +171,33 @@ class PlanReviewerNode(Node):
         self._provider = str(self.get_parameter('provider').value or 'gemini').lower()
         self._model_name = str(self.get_parameter('model_name').value or 'gemini-2.5-flash')
         self._temperature = float(self.get_parameter('temperature').value)
+        self._omit_temperature = bool(self.get_parameter('omit_temperature').value)
+        self._max_output_tokens = int(self.get_parameter('max_output_tokens').value)
+        self._reasoning_effort = str(
+            self.get_parameter('reasoning_effort').value or ''
+        ).strip()
+        self._openrouter_provider_only = list(
+            self.get_parameter('openrouter_provider_only').value
+        )
+        self._openrouter_allow_fallbacks = bool(
+            self.get_parameter('openrouter_allow_fallbacks').value
+        )
+        self._openrouter_seed = int(self.get_parameter('openrouter_seed').value)
+        self._openrouter_max_retries = int(
+            self.get_parameter('openrouter_max_retries').value
+        )
+        self._openrouter_service_tier = str(
+            self.get_parameter('openrouter_service_tier').value or ''
+        ).strip()
+        self._openrouter_timeout_sec = float(
+            self.get_parameter('openrouter_timeout_sec').value
+        )
         self._max_image_bytes = int(self.get_parameter('max_image_bytes').value)
         self._llm = None
+        evidence_root = os.environ.get('GENERALIST_BT_EVIDENCE_ROOT', '').strip()
+        self._evaluation_evidence_root = (
+            Path(evidence_root).expanduser().resolve() if evidence_root else None
+        )
 
         service_name = str(self.get_parameter('review_service_name').value)
         self._review_service = self.create_service(
@@ -97,8 +207,173 @@ class PlanReviewerNode(Node):
         )
         self.get_logger().info(
             f'PlanReviewerNode ready (service={service_name}, provider={self._provider}, '
-            f'model={self._model_name}, llm_enabled={self._llm_enabled})'
+            f'model={self._model_name}, max_output_tokens={self._max_output_tokens}, '
+            f'reasoning_effort={self._reasoning_effort or "<disabled>"}, '
+            f'llm_enabled={self._llm_enabled})'
         )
+
+    @staticmethod
+    def _provider_key(provider: Any) -> str:
+        return str(provider or '').strip().lower().replace(' ', '-')
+
+    def _audit_review_request(
+        self, session_id: str, prompt: str, image_path: str
+    ) -> Optional[tuple[Path, float]]:
+        if self._evaluation_evidence_root is None or not session_id:
+            return None
+        safe_session = re.sub(r'[^A-Za-z0-9._-]', '_', session_id)
+        directory = self._evaluation_evidence_root / safe_session / 'llm_calls'
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f'{time.time_ns()}_plan_review_request.json'
+        path.write_text(
+            json.dumps(
+                {
+                    'session_id': session_id,
+                    'stage': 'plan_review',
+                    'provider': self._provider,
+                    'model': self._model_name,
+                    'requested_provider_only': (
+                        list(getattr(self, '_openrouter_provider_only', []))
+                        if self._provider == 'openrouter'
+                        else ['google-gemini-api'] if self._provider == 'gemini' else []
+                    ),
+                    'allow_fallbacks_requested': (
+                        bool(getattr(self, '_openrouter_allow_fallbacks', False))
+                        if self._provider == 'openrouter' else None
+                    ),
+                    'seed': (
+                        getattr(self, '_openrouter_seed', -1)
+                        if self._provider in {'openrouter', 'gemini'}
+                        and getattr(self, '_openrouter_seed', -1) >= 0
+                        else None
+                    ),
+                    'cache_disabled_requested': bool(
+                        self._provider == 'openrouter'
+                        and getattr(self, '_openrouter_provider_only', [])
+                    ),
+                    'max_output_tokens': getattr(self, '_max_output_tokens', 4096),
+                    'requested_service_tier': (
+                        getattr(self, '_openrouter_service_tier', '') or None
+                        if self._provider == 'openrouter' else None
+                    ),
+                    'max_transport_retries': (
+                        getattr(self, '_openrouter_max_retries', 0)
+                        if self._provider == 'openrouter' else 0
+                    ),
+                    'reasoning': (
+                        {'effort': getattr(self, '_reasoning_effort', '')}
+                        if getattr(self, '_reasoning_effort', '')
+                        else None
+                    ),
+                    'prompt': prompt,
+                    'attachment_uris': [Path(image_path).resolve().as_uri()]
+                    if image_path
+                    else [],
+                    'started_unix_s': time.time(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+        return path, time.monotonic()
+
+    def _audit_review_response(
+        self,
+        audit: Optional[tuple[Path, float]], result=None, error: Any = ''
+    ) -> None:
+        if audit is None:
+            return
+        request_path, started = audit
+        response_path = request_path.with_name(
+            request_path.name.replace('_request.json', '_response.json')
+        )
+        response_metadata = getattr(result, 'response_metadata', None)
+        returned_provider = (
+            response_metadata.get('openrouter_provider')
+            or response_metadata.get('provider')
+            if isinstance(response_metadata, dict) else None
+        )
+        request = json.loads(request_path.read_text(encoding='utf-8'))
+        requested_providers = list(request.get('requested_provider_only') or [])
+        provider_verified = (
+            self._provider_key(returned_provider)
+            in {self._provider_key(provider) for provider in requested_providers}
+            if requested_providers
+            else None
+        )
+        returned_service_tier = (
+            response_metadata.get('openrouter_service_tier')
+            if isinstance(response_metadata, dict) else None
+        )
+        requested_service_tier = request.get('requested_service_tier')
+        response_path.write_text(
+            json.dumps(
+                {
+                    'status': 'error' if error else 'ok',
+                    'error': error,
+                    'raw_content': str(getattr(result, 'content', result or '')),
+                    'response_metadata': response_metadata,
+                    'returned_provider': returned_provider,
+                    'provider_verified': provider_verified,
+                    'returned_service_tier': returned_service_tier,
+                    'service_tier_verified': (
+                        returned_service_tier == requested_service_tier
+                        if requested_service_tier else None
+                    ),
+                    'usage_metadata': getattr(result, 'usage_metadata', None),
+                    'cost_usd': (
+                        response_metadata.get('openrouter_cost_usd')
+                        if isinstance(response_metadata, dict)
+                        and response_metadata.get('openrouter_cost_usd') is not None
+                        else response_metadata.get('cost_usd')
+                        if isinstance(response_metadata, dict)
+                        else None
+                    ),
+                    'elapsed_s': time.monotonic() - started,
+                    'finished_unix_s': time.time(),
+                },
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+
+    @staticmethod
+    def _exception_details(exc: Exception) -> dict:
+        def safe_attr(value, name):
+            try:
+                return getattr(value, name, None)
+            except Exception as nested:
+                return f'<unavailable: {type(nested).__name__}: {nested}>'
+
+        details = {
+            'type': f'{type(exc).__module__}.{type(exc).__name__}',
+            'message': str(exc),
+            'repr': repr(exc),
+            'args': list(exc.args),
+        }
+        for name in ('status_code', 'body', 'request_id', 'code'):
+            value = safe_attr(exc, name)
+            if value is not None:
+                details[name] = value
+        response = safe_attr(exc, 'raw_response')
+        if response is None:
+            response = safe_attr(exc, 'response')
+        if response is not None and not isinstance(response, str):
+            details.setdefault('status_code', safe_attr(response, 'status_code'))
+            details.setdefault('body', safe_attr(response, 'text'))
+            headers = safe_attr(response, 'headers')
+            if headers and not isinstance(headers, str):
+                details['response_headers'] = {
+                    name: headers[name]
+                    for name in ('content-type', 'x-request-id', 'cf-ray')
+                    if name in headers
+                }
+        return details
 
     def handle_review_plan(
         self,
@@ -228,40 +503,103 @@ class PlanReviewerNode(Node):
 
     def _invoke_llm(self, review_input: Dict[str, Any], image_path: str) -> str:
         llm = self._get_llm()
+        llm_review_input = {
+            key: value for key, value in review_input.items() if key != 'context_snapshot'
+        }
         prompt = REVIEW_PROMPT_TEMPLATE.format(
-            review_input_json=json.dumps(review_input, ensure_ascii=False, indent=2)
+            review_input_json=json.dumps(llm_review_input, ensure_ascii=False, indent=2)
+        )
+        audit = self._audit_review_request(
+            str(review_input.get('session_id') or ''), prompt, image_path
         )
         image_part = self._image_part(image_path)
-        if image_part and HumanMessage is not None:
-            message = HumanMessage(
-                content=[
-                    {'type': 'text', 'text': prompt},
-                    image_part,
-                ]
-            )
-            result = llm.invoke([message])
-        else:
-            result = llm.invoke(prompt)
+        try:
+            if image_part and HumanMessage is not None:
+                message = HumanMessage(
+                    content=[
+                        {'type': 'text', 'text': prompt},
+                        image_part,
+                    ]
+                )
+                result = llm.invoke([message])
+            else:
+                result = llm.invoke(prompt)
+        except Exception as exc:
+            self._audit_review_response(audit, error=self._exception_details(exc))
+            raise
+        self._audit_review_response(audit, result=result)
         return str(getattr(result, 'content', result))
 
     def _get_llm(self):
         if self._llm is not None:
             return self._llm
         if self._provider == 'gemini':
-            if ChatGoogleGenerativeAI is None:
-                raise RuntimeError('langchain-google-genai is not installed')
-            self._llm = ChatGoogleGenerativeAI(
+            self._llm = direct_gemini_runnable(
                 model=self._model_name,
-                temperature=self._temperature,
+                max_output_tokens=self._max_output_tokens,
+                seed=max(0, int(getattr(self, '_openrouter_seed', 42))),
+                thinking_level=self._reasoning_effort or 'medium',
+                temperature=(
+                    None if getattr(self, '_omit_temperature', False)
+                    else self._temperature
+                ),
+                timeout_s=max(1.0, self._openrouter_timeout_sec),
             )
         elif self._provider == 'openai':
             if ChatOpenAI is None:
                 raise RuntimeError('langchain-openai is not installed')
-            self._llm = ChatOpenAI(model=self._model_name, temperature=self._temperature)
+            kwargs = {
+                'model': self._model_name,
+                'max_tokens': self._max_output_tokens,
+            }
+            if not getattr(self, '_omit_temperature', False):
+                kwargs['temperature'] = self._temperature
+            self._llm = ChatOpenAI(**kwargs)
         elif self._provider == 'openrouter':
             if ChatOpenRouter is None:
                 raise RuntimeError('langchain-openrouter is not installed')
-            self._llm = ChatOpenRouter(model=self._model_name, temperature=self._temperature)
+            kwargs = {
+                'model': self._model_name,
+                'max_tokens': self._max_output_tokens,
+                'max_retries': max(
+                    0, int(getattr(self, '_openrouter_max_retries', 0))
+                ),
+                'timeout': max(
+                    1,
+                    int(
+                        round(
+                            1000.0
+                            * float(getattr(self, '_openrouter_timeout_sec', 60.0))
+                        )
+                    ),
+                ),
+            }
+            if not getattr(self, '_omit_temperature', False):
+                kwargs['temperature'] = self._temperature
+            providers = list(getattr(self, '_openrouter_provider_only', []))
+            if providers:
+                kwargs['openrouter_provider'] = {
+                    'only': providers,
+                    'allow_fallbacks': bool(
+                        getattr(self, '_openrouter_allow_fallbacks', False)
+                    ),
+                    'require_parameters': True,
+                    'data_collection': 'deny',
+                }
+            seed = int(getattr(self, '_openrouter_seed', -1))
+            if seed >= 0:
+                kwargs['seed'] = seed
+            reasoning_effort = str(
+                getattr(self, '_reasoning_effort', '') or ''
+            ).strip()
+            if reasoning_effort:
+                kwargs['reasoning'] = {'effort': reasoning_effort}
+            service_tier = str(
+                getattr(self, '_openrouter_service_tier', '') or ''
+            ).strip()
+            if service_tier:
+                kwargs['model_kwargs'] = {'service_tier': service_tier}
+            self._llm = _provider_recording_openrouter(**kwargs)
         else:
             raise RuntimeError(f'Unsupported review provider: {self._provider}')
         return self._llm

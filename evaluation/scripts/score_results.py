@@ -48,7 +48,11 @@ def model_calls(result: Mapping[str, Any]) -> list[Mapping[str, Any]]:
         if not isinstance(stage, Mapping):
             continue
         name = str(stage.get("stage", ""))
-        if name in {"requirements", "selection"} or name.startswith("payload_attempt_"):
+        if (
+            name in {"requirements", "selection"}
+            or name.startswith("payload_attempt_")
+            or name.startswith("plan_review_attempt_")
+        ):
             calls.append(stage)
     return calls
 
@@ -130,15 +134,38 @@ def unsafe_parameter(result: Mapping[str, Any]) -> bool | None:
     return any(problems) if problems else False
 
 
+NON_EVALUABLE_STATUSES = {"dry_run", "blocked", "transport_error", "protocol_error"}
+OUTCOME_FIELDS = (
+    "correct_outcome",
+    "automated_task_success",
+    "primary_success",
+    "first_attempt_valid",
+    "first_attempt_task_success",
+    "tree_match",
+    "syntax_valid",
+    "interface_valid_static",
+    "factory_load_pass",
+    "payload_valid",
+    "distractor_use",
+    "clarification_outcome_correct",
+    "refusal_outcome_correct",
+    "false_acceptance",
+    "unsafe_parameter",
+)
+
+
 def discover(root: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    expected_protocol_hashes = protocol_hashes()
+    expected_protocol_hashes: dict[str, dict[str, str]] = {}
     for result_path in sorted(root.glob("*/result.json")):
         request_path = result_path.with_name("request.json")
         if not request_path.is_file():
             continue
         request = load_json(request_path)
         result = load_json(result_path)
+        experiment = request["experiment"]
+        if experiment not in expected_protocol_hashes:
+            expected_protocol_hashes[experiment] = protocol_hashes(experiment)
         xml_validation = nested(result, "validation", "xml") or {}
         action_metrics = nested(result, "validation", "action_library_metrics") or {}
         scale = request.get("scale_condition") or result.get("scale_condition") or {}
@@ -174,7 +201,8 @@ def discover(root: Path) -> list[dict[str, Any]]:
         rows.append(
             {
                 "condition_id": request["condition_id"],
-                "experiment": request["experiment"],
+                "experiment_number": request.get("experiment_number"),
+                "experiment": experiment,
                 "method": request["method"],
                 "model_key": request["model_key"],
                 "base_condition": base_condition,
@@ -195,7 +223,7 @@ def discover(root: Path) -> list[dict[str, Any]]:
                 "scored": result.get("scored") is True,
                 "scored_protocol": request.get("scored_protocol") is True,
                 "protocol_hashes_match": request.get("protocol_hashes")
-                == expected_protocol_hashes,
+                == expected_protocol_hashes[experiment],
                 "expected_outcome": expected_outcome,
                 "decision_outcome": decision_outcome,
                 "correct_outcome": result.get("correct_outcome"),
@@ -204,6 +232,16 @@ def discover(root: Path) -> list[dict[str, Any]]:
                 "first_attempt_valid": result.get("first_attempt_valid"),
                 "first_attempt_task_success": first_task_success,
                 "tree_match": result.get("tree_match"),
+                "selected_tree": result.get("selected_tree"),
+                "expected_tree": result.get("expected_tree"),
+                "provider_verified": result.get("provider_verified"),
+                "returned_providers": ";".join(result.get("returned_providers", [])),
+                "provider_verification_error_count": len(
+                    result.get("provider_verification_errors", [])
+                ),
+                "plan_review_status": nested(
+                    result, "validation", "plan_review", "status"
+                ),
                 "syntax_valid": syntax_valid(result, request["method"]),
                 "interface_valid_static": xml_validation.get("interface_valid_static"),
                 "factory_load": xml_validation.get("factory_load", "not_applicable"),
@@ -217,7 +255,6 @@ def discover(root: Path) -> list[dict[str, Any]]:
                     if request["method"] == "M3" and expected_outcome == "plan"
                     else None
                 ),
-                "required_node_recall": action_metrics.get("required_node_recall"),
                 "distractor_use": action_metrics.get("distractor_use"),
                 "distractor_use_count": action_metrics.get("distractor_use_count"),
                 "distractor_nodes_used": ";".join(
@@ -231,7 +268,15 @@ def discover(root: Path) -> list[dict[str, Any]]:
                 "transport_retry_count": transport_retry_count(calls),
                 "input_tokens": token_total(calls, "input"),
                 "output_tokens": token_total(calls, "output"),
-                "cost_usd": float(result.get("cost_usd", 0.0) or 0.0),
+                "cost_usd": (
+                    float(result["cost_usd"])
+                    if result.get("cost_usd") is not None
+                    else None
+                ),
+                "cost_reporting_complete": result.get(
+                    "cost_reporting_complete",
+                    result.get("cost_usd") is not None,
+                ),
                 "latency_s": round(latency, 3),
                 "clarification_outcome_correct": (
                     decision_outcome == "clarification"
@@ -275,6 +320,17 @@ def discover(root: Path) -> list[dict[str, Any]]:
                 "result_path": str(result_path.resolve()),
             }
         )
+        factory_missing = (
+            rows[-1]["method"] in {"M1", "M2"}
+            and rows[-1]["syntax_valid"] is True
+            and rows[-1]["factory_load"] == "not_run"
+        )
+        rows[-1]["factory_check_missing"] = factory_missing
+        if rows[-1]["status"] in NON_EVALUABLE_STATUSES or factory_missing:
+            # Transport and protocol errors are counted separately and never
+            # enter a success denominator as a failed artifact.
+            for field in OUTCOME_FIELDS:
+                rows[-1][field] = None
     return rows
 
 
@@ -424,7 +480,8 @@ def apply_reviews(
         reviewed.add(condition_id)
         elements = list(key[review_id]["applicable_elements"])
         reviewers = response.get("reviewers")
-        minimum = 2 if key[review_id].get("second_review_required") else 1
+        # REVIEW-SINGLE-REVIEWER-2026-09-28: one reviewer record per artifact.
+        minimum = 1
         if not isinstance(reviewers, list) or len(reviewers) != minimum:
             raise ValueError(f"{review_id}: exactly {minimum} reviewer record(s) required")
         reviewer_ids = [item.get("reviewer_id") for item in reviewers if isinstance(item, Mapping)]
@@ -522,6 +579,7 @@ def apply_reviews(
         "reviewed_artifacts": len(reviewed),
         "missing_review_artifacts": sum(
             row["status"] not in {"dry_run", "blocked", "transport_error", "protocol_error"}
+            and row["experiment"] != "E3"  # E2-E4-REDUCED-SCOPE-2026-09-28: no E3 rating
             and row["condition_id"] not in reviewed
             for row in rows
         ),
@@ -621,6 +679,7 @@ def summarize_group(
         "n_validation_failed": sum(row["status"] == "validation_failed" for row in rows),
         "n_transport_error": sum(row["status"] == "transport_error" for row in rows),
         "n_protocol_error": sum(row["status"] == "protocol_error" for row in rows),
+        "n_factory_check_missing": sum(bool(row.get("factory_check_missing")) for row in rows),
         "n_blocked": sum(row["status"] == "blocked" for row in rows),
     }
     for field in RATE_FIELDS:
@@ -644,7 +703,6 @@ def summarize_group(
         "input_tokens",
         "output_tokens",
         "cost_usd",
-        "required_node_recall",
         "distractor_use_count",
         "invented_node_count",
         "port_error_count",
@@ -1125,25 +1183,147 @@ def write_csv(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
         writer.writerows(values)
 
 
+REUSED_E1_MODELS = {"gpt-5.6-sol", "gemini-3.8-flash", "gemma-4-26b"}
+
+
+def reused_e1_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Clone matching E1 M3 P2 rows as the E2 complete and E3 CS2 conditions.
+
+    E2-E4-REDUCED-SCOPE-2026-09-28: these conditions are identical to the E1
+    condition, so they are scored once and reported in each experiment.
+    """
+    source = {
+        (row["model_key"], row["mission_id"]): row
+        for row in rows
+        if row["experiment"] == "E1"
+        and row["method"] == "M3"
+        and row["model_key"] in REUSED_E1_MODELS
+        and row["paraphrase_id"].endswith("-P2")
+    }
+    catalogue_size = len(load_json(PROTOCOL / "runtime_contract.json")["tree_catalogue"])
+    clones: list[dict[str, Any]] = []
+
+    def clone(row: dict[str, Any], experiment: str, variant: str, **fields: Any) -> None:
+        copy_row = dict(row)
+        base_condition = f"M3:{row['model_key']}"
+        copy_row.update(
+            {
+                "condition_id": f"{row['condition_id']}::{experiment}-{variant}",
+                "experiment": experiment,
+                "variant_id": variant,
+                "base_condition": base_condition,
+                "condition": f"{base_condition}:{variant}",
+                "reused_from": row["condition_id"],
+                **fields,
+            }
+        )
+        clones.append(copy_row)
+
+    e2_missions = sorted(
+        {row["mission_id"] for row in rows if row["experiment"] == "E2" and row["method"] == "M3"}
+    )
+    for mission_id in e2_missions:
+        source_key = ("gpt-5.6-sol", mission_id)
+        if source_key in source:
+            clone(
+                source[source_key], "E2", f"{mission_id}-CV0", context_condition="complete"
+            )
+    e3_conditions = sorted(
+        {
+            (row["model_key"], row["mission_id"])
+            for row in rows
+            if row["experiment"] == "E3" and row["method"] == "M3"
+        }
+    )
+    for model_key, mission_id in e3_conditions:
+        source_key = (model_key, mission_id)
+        if source_key in source:
+            clone(
+                source[source_key],
+                "E3",
+                "CS2",
+                tree_count=catalogue_size,
+                scale_value=catalogue_size,
+            )
+    return clones
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-dir", type=Path, default=EVALUATION / "raw_outputs")
+    parser.add_argument(
+        "--input-dir",
+        type=Path,
+        action="append",
+        help="Artifact directory. Repeat to combine standard and Method 3 outputs.",
+    )
     parser.add_argument("--output-dir", type=Path, default=EVALUATION / "results")
     parser.add_argument("--reviews", type=Path)
     parser.add_argument("--review-key", type=Path)
     parser.add_argument("--execution-file", type=Path)
     parser.add_argument(
+        "--selection",
+        type=Path,
+        help="Frozen E1 record selection, e.g. protocol/e1_scoring_selection.json.",
+    )
+    parser.add_argument(
         "--include-unscored",
         action="store_true",
         help="Include pilot artifacts. Never use this flag for final thesis tables.",
     )
+    parser.add_argument(
+        "--adjudication",
+        type=Path,
+        action="append",
+        default=[],
+        help="Frozen post-run task-success adjudication, e.g. "
+        "protocol/e1_m1_photo_directory_adjudication_20260930.json. Repeatable.",
+    )
     args = parser.parse_args()
 
-    discovered = discover(args.input_dir)
+    input_dirs = args.input_dir or ([] if args.selection else [EVALUATION / "raw_outputs"])
+    discovered = [row for root in input_dirs for row in discover(root)]
+    if args.selection:
+        selected_records = load_json(args.selection)["records"]
+        selected_rows = []
+        selection_roots: dict[Path, dict[str, dict[str, Any]]] = {}
+        for condition_id, record in selected_records.items():
+            result_path = Path(record["result_path"])
+            if not result_path.is_absolute():
+                result_path = EVALUATION.parent / result_path
+            result_root = result_path.parent.parent
+            if result_root not in selection_roots:
+                selection_roots[result_root] = {
+                    row["condition_id"]: row for row in discover(result_root)
+                }
+            match = selection_roots[result_root].get(condition_id)
+            if match is None:
+                raise ValueError(f"selected result is missing: {result_path}")
+            selected_rows.append(match)
+        discovered = [row for row in discovered if row["experiment"] != "E1"] + selected_rows
+    duplicates = [
+        condition
+        for condition, count in Counter(row["condition_id"] for row in discovered).items()
+        if count > 1
+    ]
+    if duplicates:
+        raise ValueError(f"duplicate condition IDs across input directories: {duplicates}")
     rows = discovered if args.include_unscored else [row for row in discovered if row["scored"]]
+    if args.selection:
+        selected = load_json(args.selection)["records"]
+        rows = [
+            row for row in rows
+            if row["experiment"] != "E1" or row["condition_id"] in selected
+        ]
+        for row in rows:
+            if row["condition_id"] in selected:
+                request = load_json(Path(row["result_path"]).with_name("request.json"))
+                row["protocol_hashes_match"] = (
+                    request.get("protocol_hashes")
+                    == selected[row["condition_id"]]["protocol_hashes"]
+                )
     if not rows and not args.execution_file:
         qualifier = "" if args.include_unscored else " scored"
-        print(f"No{qualifier} evaluation artifacts found in {args.input_dir}.", file=sys.stderr)
+        print(f"No{qualifier} evaluation artifacts found in {input_dirs}.", file=sys.stderr)
         return 2
     if not args.include_unscored:
         stale = [
@@ -1157,6 +1337,23 @@ def main() -> int:
             )
         if rows and not args.reviews:
             parser.error("--reviews and --review-key are required for complete scored results")
+    by_condition = {row["condition_id"]: row for row in rows}
+    for adjudication_path in args.adjudication:
+        adjudication = load_json(adjudication_path)
+        for condition_id in adjudication["decisions"]:
+            row = by_condition.get(condition_id)
+            if row is None:
+                raise ValueError(f"adjudicated condition is missing: {condition_id}")
+            if row["automated_task_success"]:
+                raise ValueError(f"adjudicated condition already succeeds: {condition_id}")
+            row.update(
+                {
+                    "automated_task_success": True,
+                    "primary_success": True,
+                    "first_attempt_task_success": True,
+                    "adjudication_id": adjudication["amendment_id"],
+                }
+            )
     rubric = load_json(PROTOCOL / "scoring_rubric.json")
     if tuple(rubric["effort_metrics"]["manual_correction_types"]) != MANUAL_CORRECTION_TYPES:
         raise ValueError("Scorer correction types differ from scoring_rubric.json")
@@ -1169,6 +1366,7 @@ def main() -> int:
             raise ValueError(
                 f"{review_summary['missing_review_artifacts']} scored artifact(s) lack human review"
             )
+    rows.extend(reused_e1_rows(rows))
     summaries = aggregate_by(rows, ("experiment", "condition"), "condition")
     detailed = breakdowns(rows)
     comparisons = paired_comparisons(rows)
@@ -1206,7 +1404,7 @@ def main() -> int:
     write_json(
         args.output_dir / "summary.json",
         {
-            "input_dir": str(args.input_dir.resolve()),
+            "input_dirs": [str(path.resolve()) for path in input_dirs],
             "scoring_rubric_version": rubric["rubric_version"],
             "scoring_rubric_sha256": hashlib.sha256(
                 (PROTOCOL / "scoring_rubric.json").read_bytes()

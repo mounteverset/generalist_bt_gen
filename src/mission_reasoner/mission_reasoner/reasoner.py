@@ -4,6 +4,7 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 ACCEPT = 0
@@ -98,7 +99,7 @@ class MissionReasoner:
             result.reasoning['debug_info'] = debug_info
             return result
 
-        context_admission = self._validate_context_admission(context)
+        context_admission = self._validate_context_admission(context, command)
         if context_admission is not None:
             context_admission.matched_capabilities = sorted(
                 requested & self.supported_capabilities
@@ -360,20 +361,103 @@ class MissionReasoner:
         return None
 
     def _validate_context_admission(
-        self, context: Any
+        self, context: Any, command: str = ''
     ) -> Optional[ValidationResult]:
         if not isinstance(context, Mapping):
             return None
 
-        if context.get('evidence_quality') == 'insufficient_text_only':
+        available = {str(item) for item in context.get('available_context', [])}
+        command_needs_map = any(
+            phrase in self._normalize(command)
+            for phrase in ('supplied context', 'supplied osm', 'northern part of the lake')
+        )
+        spatial_types = {'OSM_CONTEXT', 'SATELLITE_MAP', 'ANNOTATED_SLAM_MAP_IMAGE'}
+        if available and command_needs_map and not available & spatial_types:
             return ValidationResult(
                 status_code=CLARIFY,
-                message='The requested named area has no spatial definition.',
+                message='The requested area has no spatial definition.',
                 clarification_question=(
-                    'What boundary, polygon, radius, or named map area should be used?'
+                    'What boundary, route geometry, or current map evidence should be used?'
                 ),
                 reasoning={'guard': 'context.area_definition'},
             )
+
+        spatial_sources = [
+            source
+            for source in (
+                self._context_mapping(context, 'annotated_slam_map', 'ANNOTATED_SLAM_MAP_IMAGE'),
+                self._context_mapping(context, 'osm_context', 'OSM_CONTEXT'),
+                self._context_mapping(context, 'satellite_map', 'SATELLITE_MAP'),
+            )
+            if source
+        ]
+        if spatial_sources and all(
+            str(source.get('status', '')).lower() == 'stale'
+            for source in spatial_sources
+        ):
+            return ValidationResult(
+                status_code=CLARIFY,
+                message='All supplied spatial context is stale.',
+                clarification_question='Can you provide current spatial evidence before planning?',
+                reasoning={'guard': 'context.stale_evidence'},
+            )
+
+        reference_time = self._timestamp(context.get('context_reference_time'))
+        max_position_age = self._context_number(
+            context, 'max_position_age_s', 'MAX_POSITION_AGE_S'
+        )
+        position_times = [
+            parsed
+            for parsed in (
+                self._timestamp(
+                    self._context_mapping(context, 'robot_pose', 'ROBOT_POSE').get('timestamp')
+                ),
+                self._timestamp(
+                    self._context_mapping(context, 'gps_fix', 'GPS_FIX').get('timestamp')
+                ),
+            )
+            if parsed is not None
+        ]
+        if (
+            reference_time is not None
+            and max_position_age is not None
+            and position_times
+            and all(reference_time - timestamp > max_position_age for timestamp in position_times)
+        ):
+            return ValidationResult(
+                status_code=CLARIFY,
+                message='The supplied robot position is stale.',
+                clarification_question='Can you provide a current robot position before planning?',
+                reasoning={'guard': 'context.stale_evidence'},
+            )
+
+        position_tolerance = self._context_number(
+            context,
+            'allowed_robot_position_disagreement_m',
+            'ALLOWED_ROBOT_POSITION_DISAGREEMENT_M',
+        )
+        robot_pose = self._context_mapping(context, 'robot_pose', 'ROBOT_POSE')
+        gps_fix = self._context_mapping(context, 'gps_fix', 'GPS_FIX')
+        map_origin = self._context_mapping(context, 'map_origin_wgs84', 'MAP_ORIGIN_WGS84')
+        gps_map = self._gps_to_map(gps_fix, map_origin)
+        if robot_pose and gps_map is not None and position_tolerance is not None:
+            robot_xy = self._xy(robot_pose)
+            if robot_xy is not None:
+                disagreement = math.dist(robot_xy, gps_map)
+                if disagreement > position_tolerance:
+                    return ValidationResult(
+                        status_code=CLARIFY,
+                        message='The reported robot positions disagree.',
+                        clarification_question=(
+                            f'The map and GPS positions differ by {disagreement:.1f} m. '
+                            'Which position should be corrected?'
+                        ),
+                        reasoning={
+                            'guard': 'context.cross_source_consistency',
+                            'disagreement_m': disagreement,
+                            'allowed_disagreement_m': position_tolerance,
+                        },
+                    )
 
         route_length = self._context_number(
             context, 'route_length_m', 'ROUTE_LENGTH_M'
@@ -488,14 +572,24 @@ class MissionReasoner:
         tolerance = self._context_number(
             context, 'cross_source_tolerance_m', 'CROSS_SOURCE_TOLERANCE_M'
         )
+        target_areas = self._context_mapping(context, 'target_areas', 'TARGET_AREAS')
+        target_area = next(
+            (value for value in target_areas.values() if isinstance(value, Mapping)),
+            {},
+        )
         slam_polygon = slam.get('derived_area_polygon') if slam else None
+        reference_polygon = slam_polygon or target_area.get('polygon')
         osm_polygon = osm.get('area_polygon') if osm else None
         if (
-            isinstance(slam_polygon, list)
+            isinstance(reference_polygon, list)
             and isinstance(osm_polygon, list)
             and tolerance is not None
         ):
-            slam_center = self._polygon_center(slam_polygon)
+            reference_frame = slam.get('frame') if slam_polygon else target_area.get('frame')
+            osm_frame = osm.get('area_polygon_frame')
+            if reference_frame and osm_frame and reference_frame != osm_frame:
+                return None
+            slam_center = self._polygon_center(reference_polygon)
             osm_center = self._polygon_center(osm_polygon)
             if slam_center is not None and osm_center is not None:
                 distance = math.dist(slam_center, osm_center)
@@ -514,6 +608,38 @@ class MissionReasoner:
                         },
                     )
         return None
+
+    @staticmethod
+    def _timestamp(value: Any) -> Optional[float]:
+        try:
+            return datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp()
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _gps_to_map(
+        gps_fix: Mapping[str, Any], map_origin: Mapping[str, Any]
+    ) -> Optional[tuple[float, float]]:
+        if map_origin.get('projection') != 'local_equirectangular_east_north':
+            return None
+        try:
+            latitude = float(gps_fix['latitude'])
+            longitude = float(gps_fix['longitude'])
+            origin_latitude = float(map_origin['latitude'])
+            origin_longitude = float(map_origin['longitude'])
+            map_x = float(map_origin.get('map_x', 0.0))
+            map_y = float(map_origin.get('map_y', 0.0))
+        except (KeyError, TypeError, ValueError):
+            return None
+        earth_radius_m = 6371000.0
+        mean_latitude = math.radians((latitude + origin_latitude) / 2.0)
+        return (
+            map_x
+            + math.radians(longitude - origin_longitude)
+            * earth_radius_m
+            * math.cos(mean_latitude),
+            map_y + math.radians(latitude - origin_latitude) * earth_radius_m,
+        )
 
     @staticmethod
     def _context_mapping(

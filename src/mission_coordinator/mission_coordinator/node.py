@@ -188,6 +188,7 @@ class MissionCoordinatorNode(Node):
         self._pending_decisions: Dict[str, Future] = {}
         self._operator_feedback: Dict[str, str] = {}
         self._refinement_history: Dict[str, List[Dict[str, Any]]] = {}
+        self._planning_trace: Dict[str, Any] = {}
         self._status_service = self.create_service(
             GetMissionState,
             self.params.status_service,
@@ -382,6 +383,29 @@ class MissionCoordinatorNode(Node):
         normalized = (raw_session_id or '').strip()
         return normalized or 'unknown'
 
+    @staticmethod
+    def _goal_context(goal: MissionCommand.Goal) -> Dict[str, Any]:
+        try:
+            parsed = json.loads(goal.context_json or '{}')
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @classmethod
+    def _evaluation_context(cls, goal: MissionCommand.Goal) -> Optional[Dict[str, Any]]:
+        goal_context = cls._goal_context(goal)
+        if goal_context.get('evaluation_mode') is not True:
+            return None
+        context = goal_context.get('evaluation_context')
+        return context if isinstance(context, dict) else None
+
+    @classmethod
+    def _mission_reasoner_context_json(cls, goal: MissionCommand.Goal) -> str:
+        context = cls._evaluation_context(goal)
+        if context is None:
+            return goal.context_json or ''
+        return json.dumps(context, ensure_ascii=False)
+
     def _noop_spin_tick(self) -> None:
         """Placeholder timer callback to keep executor ticking."""
         pass
@@ -518,6 +542,7 @@ class MissionCoordinatorNode(Node):
         selected_tree = ''
         payload_response = None
         aborted = False
+        self._planning_trace = {}
 
         try:
             self._set_lifecycle_state(self.STATE_VALIDATING_MISSION)
@@ -845,13 +870,25 @@ class MissionCoordinatorNode(Node):
         request = ValidateMission.Request()
         request.session_id = goal.session_id or 'unknown'
         request.user_command = goal.command or ''
-        request.context_json = goal.context_json or ''
+        request.context_json = self._mission_reasoner_context_json(goal)
         request.tree_catalog_json = self._build_reasoner_tree_catalog_json()
         response = await self._call_service(self._mission_reasoner_client, request)
         if response is None:
             message = 'Mission reasoner returned no response.'
             self._publish_status(message)
             return None
+        self._planning_trace['mission_reasoner'] = {
+            'status_code': int(response.status_code),
+            'message': response.message,
+            'clarification_question': response.clarification_question,
+            'reasoning': self._parse_reasoning_json(response.reasoning_json),
+            'matched_capabilities': list(response.matched_capabilities),
+            'missing_capabilities': list(response.missing_capabilities),
+            'candidate_trees': list(response.candidate_trees),
+        }
+        self._write_evaluation_decision(
+            request.session_id, int(response.status_code), response
+        )
         if response.status_code == response.ACCEPT:
             candidates = list(response.candidate_trees)
             if not candidates:
@@ -882,6 +919,39 @@ class MissionCoordinatorNode(Node):
         message = response.message or 'Mission reasoner failed to validate mission.'
         self._publish_status(message)
         return None
+
+    def _write_evaluation_decision(
+        self, session_id: str, status_code: int, response: ValidateMission.Response
+    ) -> None:
+        """Record the admission decision for offline scoring in evaluation mode."""
+        evidence_root = os.environ.get('GENERALIST_BT_EVIDENCE_ROOT', '').strip()
+        if not evidence_root or not session_id or '/' in session_id:
+            return
+        decision = {
+            response.ACCEPT: 'accept',
+            response.CLARIFY: 'clarify',
+            response.REFUSE: 'refuse',
+        }.get(status_code, 'error')
+        record = {
+            'session_id': session_id,
+            'decision': decision,
+            'status_code': status_code,
+            'message': response.message,
+            'clarification_question': response.clarification_question,
+            'matched_capabilities': list(response.matched_capabilities),
+            'missing_capabilities': list(response.missing_capabilities),
+            'candidate_trees': list(response.candidate_trees),
+            'reasoning': self._parse_reasoning_json(response.reasoning_json),
+        }
+        directory = Path(evidence_root).expanduser() / session_id
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / 'mission_decision.json').write_text(
+                json.dumps(record, indent=2, ensure_ascii=False) + '\n',
+                encoding='utf-8',
+            )
+        except OSError as exc:
+            self.get_logger().warn(f'Could not write evaluation decision: {exc}')
 
     def _format_reasoner_rejection(self, response: ValidateMission.Response) -> str:
         base_message = response.message or 'Mission refused by capability reasoner.'
@@ -975,6 +1045,11 @@ class MissionCoordinatorNode(Node):
             return None
         if len(catalog) == 1:
             selected_tree = catalog[0][0]
+            self._planning_trace['tree_selection'] = {
+                'mode': 'single_reasoner_candidate',
+                'candidate_trees': [selected_tree],
+                'selected_tree': selected_tree,
+            }
             self.get_logger().info(
                 'Skipping SelectBehaviorTree service because mission reasoner '
                 f'returned one candidate: {selected_tree}'
@@ -992,7 +1067,7 @@ class MissionCoordinatorNode(Node):
         request.user_command = goal.command
         request.available_trees = [tree_id for tree_id, _ in catalog]
         request.tree_descriptions = [desc for _, desc in catalog]
-        request.context_snapshot = goal.context_json or ''
+        request.context_snapshot = self._mission_reasoner_context_json(goal)
         self._log_debug(f'Calling selection service for session={request.session_id}')
         try:
             response = await self._call_service_with_timeout(
@@ -1002,6 +1077,11 @@ class MissionCoordinatorNode(Node):
             )
         except TimeoutError:
             fallback = self._fallback_select_behavior_tree(goal.command, catalog)
+            self._planning_trace['tree_selection'] = {
+                'mode': 'timeout_fallback',
+                'candidate_trees': [tree_id for tree_id, _ in catalog],
+                'selected_tree': fallback,
+            }
             self.get_logger().warn(
                 'SelectBehaviorTree timed out '
                 f'after {self.params.selection_timeout_sec:.1f}s; '
@@ -1009,10 +1089,23 @@ class MissionCoordinatorNode(Node):
             )
             return fallback
         if not response or response.status_code != 0:
+            self._planning_trace['tree_selection'] = {
+                'mode': 'service_no_match',
+                'candidate_trees': [tree_id for tree_id, _ in catalog],
+                'status_code': getattr(response, 'status_code', None),
+                'reason': getattr(response, 'reason', ''),
+            }
             self.get_logger().warn('SelectBehaviorTree returned no match.')
             if response:
                 self._log_debug(f'Select service response: status={response.status_code}, reason="{response.reason}"')
             return None
+        self._planning_trace['tree_selection'] = {
+            'mode': 'llm',
+            'candidate_trees': [tree_id for tree_id, _ in catalog],
+            'selected_tree': response.selected_tree,
+            'confidence': response.confidence,
+            'reason': response.reason,
+        }
         self._log_debug(
             f'Selection response -> tree={response.selected_tree}, confidence={response.confidence}, reason="{response.reason}"'
         )
@@ -1099,11 +1192,7 @@ class MissionCoordinatorNode(Node):
                 else:
                     hint_payload['original_goal_context'] = parsed_context
 
-        hint_payload['MISSION_REQUEST'] = {
-            'session_id': goal.session_id or 'unknown',
-            'subtree_id': tree_id,
-            'mission_text': goal.command or '',
-        }
+        hint_payload['MISSION_REQUEST'] = self._mission_request_hint(tree_id, goal)
         if operator_feedback:
             hint_payload['MISSION_REFINEMENT'] = {
                 'requested': True,
@@ -1120,6 +1209,14 @@ class MissionCoordinatorNode(Node):
                 ),
             }
         return json.dumps(hint_payload, ensure_ascii=False)
+
+    @staticmethod
+    def _mission_request_hint(tree_id: str, goal: MissionCommand.Goal) -> Dict[str, Any]:
+        return {
+            'session_id': goal.session_id or 'unknown',
+            'subtree_id': tree_id,
+            'mission_text': goal.command or '',
+        }
 
     def _compose_payload_user_command(
         self,
@@ -1177,6 +1274,31 @@ class MissionCoordinatorNode(Node):
         prior_reasoning: str = '',
         refinement_history: Optional[List[Dict[str, Any]]] = None,
     ):
+        evaluation_context = self._evaluation_context(goal)
+        if evaluation_context is not None:
+            goal_context = self._goal_context(goal)
+            attachments = goal_context.get('evaluation_attachment_uris', [])
+            result = GatherContext.Result()
+            result.success = True
+            # Mirror the live context gatherer, which embeds the geo_hint as REQUEST_HINTS.
+            replayed_context = dict(evaluation_context)
+            replayed_context['REQUEST_HINTS'] = {
+                'MISSION_REQUEST': self._mission_request_hint(tree_id, goal)
+            }
+            result.context_json = json.dumps(replayed_context, ensure_ascii=False)
+            result.attachment_uris = (
+                [str(uri) for uri in attachments]
+                if isinstance(attachments, list)
+                else []
+            )
+            result.message = 'Replayed frozen evaluation context.'
+            self.get_logger().info(
+                f'Replayed evaluation context (session={goal.session_id or "unknown"}, '
+                f'subtree={tree_id}, context_bytes={len(result.context_json)}, '
+                f'attachments={len(result.attachment_uris)})'
+            )
+            return result
+
         if not self._wait_for_action(
             self._context_gather_client, self.params.context_gather_action
         ):
@@ -1421,6 +1543,8 @@ class MissionCoordinatorNode(Node):
         return '\n'.join(lines)
 
     def _requires_operator_accept(self, goal: MissionCommand.Goal) -> bool:
+        if self._goal_context(goal).get('evaluation_mode') is True:
+            return True
         if not self.params.require_operator_accept:
             return False
         auto_execute = False
@@ -1454,6 +1578,7 @@ class MissionCoordinatorNode(Node):
             'operator_feedback': operator_feedback,
             'refinement_iteration': int(refinement_iteration),
             'plan_review': plan_review or {},
+            'planning_trace': dict(getattr(self, '_planning_trace', {})),
             'operator_decision_service': self._operator_service_name,
         }
 
