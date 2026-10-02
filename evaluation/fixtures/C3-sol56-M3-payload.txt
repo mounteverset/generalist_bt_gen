@@ -1,0 +1,2 @@
+prompt={"Use the supplied context to identify five mapped trees, then drive the Husky to all five tree locations."}
+payload={"gps_waypoints": "48.2843748,11.6081389,0.0,0.0; 48.2844416,11.6082031,0.0,0.0; 48.2844416,11.6080513,0.0,0.0; 48.2842156,11.6078587,0.0,0.0; 48.2841472,11.6079194,0.0,0.0", "waypoints": "", "waypoint_frame_id": "map"}
